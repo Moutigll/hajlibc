@@ -17,10 +17,13 @@
  * to _start.
  *
  * Our job in _start:
- *   1. Read argc, argv, and envp from the initial stack.
+ *   1. Read argc, argv, envp, and auxv from the initial stack.
  *   2. Store argv[0] into __progname (for diagnostics).
- *   3. Call main(argc, argv, envp).
- *   4. Call exit(main_return_value).
+ *   3. Store argc in __haj_argc.
+ *   4. Store envp in environ.
+ *   5. Store the auxv pointer in __haj_auxv.
+ *   6. Call main(argc, argv, envp).
+ *   7. Call exit(main_return_value).
  *
  * REGISTERS (x86_64 System V ABI)
  *
@@ -83,6 +86,11 @@
 .global _start
 .type   _start, @function
 
+.extern __haj_argc
+.extern __progname
+.extern environ
+.extern __haj_auxv
+
 _start:
 	/*
 	 * Step 1: read argc from the stack.
@@ -99,6 +107,9 @@ _start:
 	 * are preparing to call main(argc, ...).
 	 */
 	movq	(%rsp), %rdi
+
+	/* Save argc in __haj_argc (32-bit store: argc is `int`). */
+	movl	%edi, __haj_argc(%rip)
 
 	/*
 	 * Step 2: compute argv.
@@ -162,6 +173,26 @@ _start:
 	 * main(argc, argv, envp).
 	 */
 	leaq	8(%rsi,%rdi,8), %rdx
+
+	/* Save envp in environ. */
+	movq	%rdx, environ(%rip)
+
+	/*
+	 * Step 4b: walk envp to find the auxiliary vector.
+	 *
+	 * The auxv starts right after the NULL terminator of envp.
+	 * We scan forward until we hit a NULL pointer, then skip
+	 * that NULL. The result is the address of auxv[0].
+	 */
+	movq	%rdx, %rax
+.Lauxv_loop:
+	cmpq	$0, (%rax)
+	je	.Lauxv_found
+	addq	$8, %rax
+	jmp	.Lauxv_loop
+.Lauxv_found:
+	addq	$8, %rax
+	movq	%rax, __haj_auxv(%rip)
 
 	/*
 	 * Step 5: align the stack.

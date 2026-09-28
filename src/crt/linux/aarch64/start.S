@@ -47,6 +47,11 @@
 .global _start
 .type   _start, %function
 
+.extern __haj_argc
+.extern __progname
+.extern environ
+.extern __haj_auxv
+
 _start:
 	/*
 	 * Load argc from [sp].
@@ -57,6 +62,11 @@ _start:
 	 * After: x0 = argc
 	 */
 	ldr	x0, [sp]
+
+	/* Save argc in __haj_argc (32-bit store: argc is `int`). */
+	adrp	x5, __haj_argc
+	add	x5, x5, :lo12:__haj_argc
+	str	w0, [x5]
 
 	/*
 	 * Compute argv = sp + 8.
@@ -104,6 +114,30 @@ _start:
 	 */
 	add	x2, x1, x0, lsl #3
 	add	x2, x2, #8
+
+	/* Save envp in environ. */
+	adrp	x4, environ
+	add	x4, x4, :lo12:environ
+	str	x2, [x4]
+
+	/*
+	 * Walk envp to find the auxiliary vector.
+	 *
+	 * The auxv starts right after the NULL terminator of envp.
+	 * We scan forward until we hit a NULL pointer, then skip
+	 * that NULL. The result is the address of auxv[0].
+	 */
+	mov	x3, x2
+.Lauxv_loop:
+	ldr	x4, [x3]
+	cbz	x4, .Lauxv_found
+	add	x3, x3, #8
+	b	.Lauxv_loop
+.Lauxv_found:
+	add	x3, x3, #8
+	adrp	x4, __haj_auxv
+	add	x4, x4, :lo12:__haj_auxv
+	str	x3, [x4]
 
 	/*
 	 * Call main.

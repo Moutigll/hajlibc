@@ -44,6 +44,7 @@ ALL_SRCS := \
 	$(CPU_SRCS) \
 	$(CRT_SRCS) \
 	$(CRT_START_SRCS) \
+	$(SYS_SRCS) \
 	$(SYSCALL_SRCS) \
 	$(SETJMP_SRCS) \
 	$(SIGSETJMP_SRCS) \

@@ -40,6 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux: `/dev/shm` + name; FreeBSD: dedicated syscalls; Darwin: `/var/tmp/.hajlib-shm-<uid>-...`
 - FreeBSD: `SYS_shm_open`, `SYS_shm_unlink` in `bits/syscall/freebsd.h`
 - `bits/mman.h`: `SHM_PREFIX`, `SHM_PREFIX_LEN`, `SHM_PATH_MAX` per OS
+- `sys/random.h`: `getrandom` (with `GRND_*` flags) and `getentropy`
+- `src/sys/getrandom.c`, `src/sys/getentropy.c` (Linux/BSD via `SYS_getrandom`, Darwin via `SYS_getentropy`)
+- `bits/time.h`: `struct timespec`, `struct timeval`, per-OS `CLOCK_*`, `CLOCKS_PER_SEC`, `TIMER_ABSTIME`, `TIME_UTC`
+- `bits/select.h`: `fd_set` type, `FD_ZERO`/`FD_SET`/`FD_CLR`/`FD_ISSET` (inline helpers, out-of-range fds ignored)
+- `__HAJ_USE_32_OFFSET_BITS` in `bits/wordsize.h` (32-bit off_t only when 32-bit platform + `_FILE_OFFSET_BITS=32`)
+- `time.h`: ISO C + POSIX time API (`struct tm`, `struct itimerspec`, clock/timer/sleep/format functions, `tzset`)
+- `sys/time.h`: `struct timeval`, `select`, `utimes`
+- `sys/times.h`: `struct tms`, `times`
+- `bits/types.h`: `id_t`, `key_t`, `fsblkcnt_t`, `fsfilcnt_t`, `reclen_t`, opaque pthread types, `timer_t`
+- `src/time/time.c`: `time()` (Linux/FreeBSD `SYS_time`, else `clock_gettime`)
+- `src/time/timespec_get.c`: `timespec_get(TIME_UTC)`
+- `src/time/nanosleep.c`: `nanosleep` (Linux/FreeBSD syscall, Darwin `__semwait_signal`, Windows `Sleep`/`NtDelayExecution`)
+- `src/time/clock/`: `clock_gettime` (Darwin commpage), `clock_getres` (Darwin/Windows fixed), `clock_settime` (Darwin/Windows fallback), `clock_nanosleep` (emulated on non-Linux)
+- `src/sys/times.c`: `times()` (Linux `SYS_times`, else `getrusage` + `CLOCK_MONOTONIC`)
+- `SYS_time` added for Linux x86_64/aarch64 and FreeBSD
+- `mk/sources.mk`: `SYS_DIR` and `SYS_SRCS` (`getentropy`, `getrandom`, `times`), `TIME_SRCS` for `src/time/`
 
 ### Changed
 
@@ -49,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rewrote internal syscall call sites to use the smallest `__haj_syscallN` variant
 - `mk/targets.mk`: use `SYSCALL_BASE_SRCS` to include all 7 syscall files per target
 - All syscall6 assembly files now emit `.note.GNU-stack`
+- Public POSIX typedefs (`size_t`, `ssize_t`, `off_t`, `pid_t`, `time_t`, ...) moved from `sys/types.h` to `bits/types.h`
+- `sys/types.h` is now just `#include <bits/types.h>`
 
 ### Fixed
 
@@ -215,6 +233,6 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 
 - All `ft_*` sources and headers from the old libft structure
 
-[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.2.0...dev
 [0.2.0]: https://github.com/moutigll/hajlib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/moutigll/hajlib/releases/tag/v0.1.0

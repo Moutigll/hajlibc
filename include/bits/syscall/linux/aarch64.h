@@ -10,7 +10,7 @@
  * @file aarch64.h
  * @brief Syscall numbers for the aarch64 architecture.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 15:12:38 by Moutig
+ * @Updated: 2026/09/28 10:34:59 by Moutig
  *
  * Source: <asm-generic/unistd.h> from the Linux kernel.
  * aarch64 uses the generic syscall numbering. Many syscalls
@@ -131,6 +131,7 @@
 # define SYS_sched_getscheduler	120
 
 /* ---- Time ---- */
+# define SYS_time				169
 # define SYS_clock_gettime		113
 # define SYS_clock_settime		112
 # define SYS_clock_getres		114

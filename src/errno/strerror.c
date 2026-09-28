@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file strerror.c
  * @brief Translate an error code to a human-readable string.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:28:44 by Moutig
  *
  * This implementation returns a pointer to a static, read-only
  * string. It is therefore safe to call from multiple threads
@@ -41,9 +51,7 @@ static __HAJ_TLS char	__haj_strerror_buf[64];
 const char *strerror(int errnum)
 {
 	switch (errnum) {
-	/* ------------------------------------------------------------------
-	 * Generic codes, same value on all Unix-like OSes
-	 * ---------------------------------------------------------------- */
+	/* ----- Generic codes, same value on all Unix-like OSes ----- */
 	case 0:				return ("Success");
 	case EPERM:			return ("Operation not permitted");
 	case ENOENT:		return ("No such file or directory");
@@ -85,9 +93,7 @@ const char *strerror(int errnum)
 	case ENOTEMPTY:		return ("Directory not empty");
 	case ELOOP:			return ("Too many levels of symbolic links");
 
-	/* ------------------------------------------------------------------
-	 * Networking codes, common to all Unix-like OSes
-	 * ---------------------------------------------------------------- */
+	/* ----- Networking codes, common to all Unix-like OSes ----- */
 	case ENOTSOCK:		return ("Socket operation on non-socket");
 	case EDESTADDRREQ:	return ("Destination address required");
 	case EMSGSIZE:		return ("Message too long");
@@ -118,9 +124,7 @@ const char *strerror(int errnum)
 	case EINPROGRESS:	return ("Operation now in progress");
 	case ESTALE:		return ("Stale file handle");
 
-	/* ------------------------------------------------------------------
-	 * POSIX realtime / message queue codes
-	 * ---------------------------------------------------------------- */
+	/* ----- POSIX realtime / message queue codes ----- */
 	case ENOMSG:		return ("No message of desired type");
 	case EIDRM:			return ("Identifier removed");
 	case EPROTO:		return ("Protocol error");
@@ -130,9 +134,7 @@ const char *strerror(int errnum)
 	case EILSEQ:		return ("Invalid or incomplete multibyte sequence");
 	case ECANCELED:		return ("Operation canceled");
 
-	/* ------------------------------------------------------------------
-	 * OS-specific codes
-	 * ---------------------------------------------------------------- */
+	/* ----- OS-specific codes ----- */
 
 # if defined(HAJ_OS_LINUX)
 
@@ -221,9 +223,7 @@ const char *strerror(int errnum)
 
 # endif
 
-	/* ------------------------------------------------------------------
-	 * Unknown code: format "Unknown error N" into a TLS buffer.
-	 * ---------------------------------------------------------------- */
+	/* ----- Unknown code: format "Unknown error N" into a TLS buffer. ----- */
 	default:
 		snprintf(__haj_strerror_buf, sizeof(__haj_strerror_buf),
 				 "Unknown error %d", errnum);

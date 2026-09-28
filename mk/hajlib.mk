@@ -42,4 +42,4 @@ HAJ_LDFLAGS := \
 	-Wl,--build-id=none
 
 # Libraries.
-HAJ_LIBS := $(HAJ_ROOT)/libhaj.a
+HAJ_LIBS := $(HAJ_ROOT)/libhajc.a

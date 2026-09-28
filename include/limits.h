@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file limits.h
  * @brief Implementation-defined limits.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 16:16:43 by Moutig
  *
  * This header defines the limits of the standard integer types
  * (CHAR_BIT, INT_MAX, ...) and the POSIX limits (PATH_MAX,
@@ -17,17 +27,13 @@
 # include <bits/wordsize.h>
 # include <bits/limits.h>
 
-/* --------------------------------------------------------------------------
- * Number of bits in a byte
- * -------------------------------------------------------------------------- */
+/* ----- Number of bits in a byte ----- */
 
 # ifndef CHAR_BIT
 #  define CHAR_BIT	8
 # endif
 
-/* --------------------------------------------------------------------------
- * Limits of signed and unsigned char
- * -------------------------------------------------------------------------- */
+/* ----- Limits of signed and unsigned char ----- */
 
 # ifndef SCHAR_MIN
 #  define SCHAR_MIN	(-128)
@@ -51,9 +57,7 @@
 #  endif
 # endif
 
-/* --------------------------------------------------------------------------
- * Limits of short
- * -------------------------------------------------------------------------- */
+/* ----- Limits of short ----- */
 
 # ifndef SHRT_MIN
 #  define SHRT_MIN	(-32768)
@@ -61,9 +65,7 @@
 #  define USHRT_MAX	65535
 # endif
 
-/* --------------------------------------------------------------------------
- * Limits of int
- * -------------------------------------------------------------------------- */
+/* ----- Limits of int ----- */
 
 # ifndef INT_MIN
 #  define INT_MIN	(-2147483647 - 1)
@@ -71,10 +73,8 @@
 #  define UINT_MAX	4294967295U
 # endif
 
-/* --------------------------------------------------------------------------
- * Limits of long
- * --------------------------------------------------------------------------
- *
+/* ----- Limits of long ----- */
+/**
  * On LP64 (Linux, macOS, FreeBSD 64-bit), long is 64 bits.
  * On LLP64 (Windows 64-bit), long is 32 bits.
  * On ILP32 (32-bit platforms), long is 32 bits.
@@ -101,10 +101,8 @@
 #  endif
 # endif
 
-/* --------------------------------------------------------------------------
- * Limits of long long
- * --------------------------------------------------------------------------
- *
+/* ----- Limits of long long ----- */
+/**
  * long long is always 64 bits on all modern platforms.
  */
 
@@ -120,18 +118,14 @@
 #  endif
 # endif
 
-/* --------------------------------------------------------------------------
- * Limits of char (POSIX names)
- * -------------------------------------------------------------------------- */
+/* ----- Limits of char (POSIX names) ----- */
 
 # ifndef MB_LEN_MAX
 #  define MB_LEN_MAX	4
 # endif
 
-/* --------------------------------------------------------------------------
- * POSIX limits
- * --------------------------------------------------------------------------
- *
+/* ----- POSIX limits ----- */
+/**
  * PATH_MAX, NAME_MAX, etc. come from bits/limits.h because they
  * differ per OS.
  */

@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file div.c
  * @brief 64-bit division helpers for the compiler runtime.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:30:09 by Moutig
  *
  * On 32-bit architectures (i386, ARM 32-bit, MIPS 32-bit, ...),
  * the CPU cannot divide a 64-bit integer by another in a single
@@ -61,9 +71,7 @@ __haj_u64	__umoddi3(__haj_u64 n, __haj_u64 d);
 __haj_i64	__divdi3(__haj_i64 n, __haj_i64 d);
 __haj_i64	__moddi3(__haj_i64 n, __haj_i64 d);
 
-/* --------------------------------------------------------------------------
- * Unsigned 64-bit division
- * -------------------------------------------------------------------------- */
+/* ----- Unsigned 64-bit division ----- */
 
 /**
  * @brief Compute the quotient of a 64-bit unsigned division.
@@ -134,9 +142,7 @@ __haj_u64	__umoddi3(__haj_u64 n, __haj_u64 d)
 	return (remainder);
 }
 
-/* --------------------------------------------------------------------------
- * Signed 64-bit division
- * -------------------------------------------------------------------------- */
+/* ----- Signed 64-bit division ----- */
 
 /**
  * @brief Compute the quotient of a 64-bit signed division.

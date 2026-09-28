@@ -1,0 +1,22 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
+.text
+.globl __haj_syscall0
+.type  __haj_syscall0, %function
+
+__haj_syscall0:
+	mov	x8, x0
+	svc	#0
+	b.cc	.Lok0
+	neg	x0, x0
+.Lok0:
+	ret
+
+.size		__haj_syscall0, .-__haj_syscall0
+.section	.note.GNU-stack,"",@progbits

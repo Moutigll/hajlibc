@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/syscall/linux/aarch64.h
- * @brief Linux aarch64 syscall numbers.
+ * @file aarch64.h
+ * @brief Syscall numbers for the aarch64 architecture.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/28 12:13:47 by Moutig
  *
  * Source: <asm-generic/unistd.h> from the Linux kernel.
  * aarch64 uses the generic syscall numbering. Many syscalls
@@ -68,6 +78,7 @@
 # define SYS_epoll_create1		20
 # define SYS_epoll_ctl			21
 # define SYS_epoll_pwait		22
+# define SYS_times				153
 
 /* ---- Modern *at variants (aarch64 only has these) ---- */
 # define SYS_openat				56
@@ -121,6 +132,7 @@
 # define SYS_sched_getscheduler	120
 
 /* ---- Time ---- */
+# define SYS_time				169
 # define SYS_clock_gettime		113
 # define SYS_clock_settime		112
 # define SYS_clock_getres		114

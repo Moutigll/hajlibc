@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/limits.h
+ * @file limits.h
  * @brief POSIX limits per OS.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 16:02:21 by Moutig
  *
  * This header defines the POSIX limits (PATH_MAX, NAME_MAX, ...)
  * that differ between Linux, FreeBSD, and Darwin.
@@ -15,9 +25,7 @@
 
 # include <bits/os.h>
 
-/* --------------------------------------------------------------------------
- * Linux
- * -------------------------------------------------------------------------- */
+/* ----- Linux ----- */
 
 # if defined(HAJ_OS_LINUX)
 
@@ -53,9 +61,7 @@
  */
 #  define HAJ_PIPE_BUF	4096
 
-/* --------------------------------------------------------------------------
- * FreeBSD
- * -------------------------------------------------------------------------- */
+/* ----- FreeBSD ----- */
 
 # elif defined(HAJ_OS_FREEBSD)
 
@@ -65,9 +71,7 @@
 #  define HAJ_OPEN_MAX	1024
 #  define HAJ_PIPE_BUF	512
 
-/* --------------------------------------------------------------------------
- * Darwin (macOS, iOS)
- * -------------------------------------------------------------------------- */
+/* ----- Darwin (macOS, iOS) ----- */
 
 # elif defined(HAJ_OS_DARWIN)
 
@@ -77,9 +81,7 @@
 #  define HAJ_OPEN_MAX	10240
 #  define HAJ_PIPE_BUF	512
 
-/* --------------------------------------------------------------------------
- * Windows
- * -------------------------------------------------------------------------- */
+/* ----- Windows ----- */
 
 # elif defined(HAJ_OS_WINDOWS)
 
@@ -93,9 +95,7 @@
 #  define HAJ_OPEN_MAX	512
 #  define HAJ_PIPE_BUF	512
 
-/* --------------------------------------------------------------------------
- * Unknown
- * -------------------------------------------------------------------------- */
+/* ----- Unknown ----- */
 
 # else
 

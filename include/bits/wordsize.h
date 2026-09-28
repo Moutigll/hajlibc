@@ -1,11 +1,16 @@
-#ifndef _BITS_WORDSIZE_H
-# define _BITS_WORDSIZE_H
-
-# include <bits/arch.h>
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
 
 /**
- * @brief Word size detection.
- * @brief Defines __HAJ_WORDSIZE as 32 or 64, and a few derived sizes.
+ * @file wordsize.h
+ * @brief Word size detection macros.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/28 08:10:45 by Moutig
  *
  * "Word size" here means the size of a pointer and of a `long`,
  * which is what LP64/ILP32 conventions refer to.
@@ -21,6 +26,11 @@
  *
  * This header must only depend on bits/arch.h.
  */
+
+#ifndef _BITS_WORDSIZE_H
+# define _BITS_WORDSIZE_H
+
+# include <bits/arch.h>
 
 /**
  * @brief First, determine pointer size.
@@ -165,5 +175,28 @@
  */
 # define __HAJ_BYTE_ORDER	__HAJ_LITTLE_ENDIAN
 #endif
+
+/* bits/wordsize.h ou bits/types.h */
+
+/**
+ * @brief Whether to use 32-bit offset bits.
+ *
+ * Evaluates to 1 if and only if :
+ *   - the platform is 32-bit (pointer size == 4), AND
+ *   - the user explicitly asked for 32-bit off_t by defining
+ *     _FILE_OFFSET_BITS=32.
+ *
+ * On 64-bit platforms, this is always 0 : POSIX requires 64-bit
+ * off_t regardless of _FILE_OFFSET_BITS.
+ *
+ * Use it in #if, not #ifdef. The macro is always defined.
+ */
+# if __HAJ_SIZEOF_POINTER == 8
+#  define __HAJ_USE_32_OFFSET_BITS 0
+# elif defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 32
+#  define __HAJ_USE_32_OFFSET_BITS 1
+# else
+#  define __HAJ_USE_32_OFFSET_BITS 0
+# endif
 
 #endif /* _BITS_WORDSIZE_H */

@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file fcntl.c
  * @brief Implementation of fcntl().
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/26 05:05:17 by Moutig
  *
  * fcntl() performs various operations on an open file descriptor.
  * The operation is selected by `cmd` and may take an optional
@@ -96,7 +106,7 @@ int	fcntl(int fd, int cmd, ...)
 	 * to read the right type.
 	 *
 	 * On most ABIs, a pointer and a long have the same size, so
-	 * we can pass them to __haj_syscall6 as a long. This is
+	 * we can pass them to __haj_syscall3 as a long. This is
 	 * true on all 64-bit Unix systems (LP64). On 32-bit systems
 	 * (ILP32), long and pointer are both 32 bits, so it also
 	 * works. On Windows 64 (LLP64), long is 32 bits but a
@@ -121,7 +131,7 @@ int	fcntl(int fd, int cmd, ...)
 		 * Pointer argument: F_SETLK, F_SETLKW.
 		 *
 		 * The argument is a struct flock *. We pass it as a
-		 * long to __haj_syscall6.
+		 * long to __haj_syscall3.
 		 */
 		arg = (long)(__haj_uintptr)va_arg(ap, void *);
 	} else {
@@ -149,7 +159,7 @@ int	fcntl(int fd, int cmd, ...)
 	 * error. The assembly wrapper normalizes this to the Linux
 	 * convention.
 	 */
-	ret = __haj_syscall6(SYS_fcntl, fd, cmd, arg, 0, 0, 0);
+	ret = __haj_syscall3(SYS_fcntl, fd, cmd, arg);
 
 	if (ret < 0 && ret >= -4095) {
 		errno = (int)-ret;

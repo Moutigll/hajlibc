@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file cxa_atexit.c
  * @brief Implementation of __cxa_atexit.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:25:43 by Moutig
  *
  * __cxa_atexit is the C++ ABI function for registering
  * destructors that should run at exit. It is also used by GCC

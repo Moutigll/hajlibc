@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file setjmp.h
  * @brief Non-local jumps.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 16:17:50 by Moutig
  *
  * This header defines jmp_buf, sigjmp_buf, and declares setjmp,
  * longjmp, sigsetjmp, and siglongjmp.
@@ -22,10 +32,8 @@
 extern "C" {
 # endif
 
-/* --------------------------------------------------------------------------
- * jmp_buf layout
- * --------------------------------------------------------------------------
- *
+/* ----- jmp_buf layout ----- */
+/**
  * The register save area is large enough for all supported archs:
  *   x86_64   : 8 slots used (rbx, rbp, r12-r15, rsp, rip)
  *   aarch64  : 21 slots used (x19-x28, fp, lr, sp, d8-d15)
@@ -56,9 +64,7 @@ struct __haj_jmp_buf {
 typedef struct __haj_jmp_buf	jmp_buf[1];
 typedef struct __haj_jmp_buf	sigjmp_buf[1];
 
-/* --------------------------------------------------------------------------
- * Standard C functions
- * -------------------------------------------------------------------------- */
+/* ----- Standard C functions ----- */
 
 /**
  * @brief Save the current execution context.
@@ -77,9 +83,7 @@ int		setjmp(jmp_buf env) __attribute__((returns_twice));
 __HAJ_NORETURN
 void	longjmp(jmp_buf env, int val);
 
-/* --------------------------------------------------------------------------
- * POSIX variants without signal mask
- * -------------------------------------------------------------------------- */
+/* ----- POSIX variants without signal mask ----- */
 
 /**
  * @brief setjmp without saving the signal mask.
@@ -94,10 +98,7 @@ int	_setjmp(jmp_buf env) __attribute__((returns_twice));
 __HAJ_NORETURN
 void	_longjmp(jmp_buf env, int val);
 
-/* --------------------------------------------------------------------------
- * POSIX variants with signal mask
- * -------------------------------------------------------------------------- */
-
+/* ----- POSIX variants with signal mask ----- */
 /**
  * @brief Internal implementation of sigsetjmp.
  *

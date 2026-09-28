@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file stdint.h
  * @brief Fixed-width integer types.
+ * @Created: 2026/09/24 15:06:43 by Moutig
+ * @Updated: 2026/09/24 16:21:19 by Moutig
  *
  * This header defines int8_t..int64_t, uint8_t..uint64_t, their
  * _least and _fast variants, intptr_t, uintptr_t, intmax_t,
@@ -18,9 +28,7 @@
 
 # include <bits/types.h>
 
-/* --------------------------------------------------------------------------
- * Exact-width integer types
- * -------------------------------------------------------------------------- */
+/* ----- Exact-width integer types ----- */
 
 # ifndef __int8_t_defined
 #  define __int8_t_defined
@@ -46,10 +54,8 @@ typedef __haj_i64		int64_t;
 typedef __haj_u64		uint64_t;
 # endif
 
-/* --------------------------------------------------------------------------
- * Least-width integer types
- * --------------------------------------------------------------------------
- *
+/* ----- Least-width integer types ----- */
+/**
  * These are the smallest types with at least the given width.
  * On modern platforms, they are the same as the exact-width types.
  */
@@ -63,10 +69,8 @@ typedef uint32_t		uint_least32_t;
 typedef int64_t			int_least64_t;
 typedef uint64_t		uint_least64_t;
 
-/* --------------------------------------------------------------------------
- * Fastest minimum-width integer types
- * --------------------------------------------------------------------------
- *
+/* ----- Fastest minimum-width integer types ----- */
+/**
  * These are the fastest types with at least the given width.
  * On 64-bit platforms, int_fast8_t and friends are usually
  * 64-bit types, because they are the fastest to manipulate.
@@ -91,8 +95,11 @@ typedef __haj_u32		uint_fast32_t;
 typedef __haj_i64		int_fast64_t;
 typedef __haj_u64		uint_fast64_t;
 
-/* --------------------------------------------------------------------------
- * Pointer-sized integer types
+/* ----- Pointer-sized integer types ----- */
+/**
+ * These are integer types that are the same size as a pointer.
+ * On 64-bit platforms, they are 64-bit types.
+ * On 32-bit platforms, they are 32-bit types.
  * -------------------------------------------------------------------------- */
 
 # ifndef __intptr_t_defined
@@ -101,9 +108,7 @@ typedef __haj_intptr	intptr_t;
 typedef __haj_uintptr	uintptr_t;
 # endif
 
-/* --------------------------------------------------------------------------
- * Maximum-width integer types
- * -------------------------------------------------------------------------- */
+/* ----- Maximum-width integer types ----- */
 
 # ifndef __intmax_t_defined
 #  define __intmax_t_defined
@@ -111,10 +116,8 @@ typedef __haj_intmax	intmax_t;
 typedef __haj_uintmax	uintmax_t;
 # endif
 
-/* --------------------------------------------------------------------------
- * Limits
- * --------------------------------------------------------------------------
- *
+/* ----- Limits ----- */
+/**
  * Only define if not already defined elsewhere (e.g. by a system
  * header when hajlib is not replacing the libc).
  */
@@ -192,10 +195,8 @@ typedef __haj_uintmax	uintmax_t;
 # define PTRDIFF_MAX		INTPTR_MAX
 # define SIZE_MAX			UINTPTR_MAX
 
-/* --------------------------------------------------------------------------
- * Format macros for printf
- * --------------------------------------------------------------------------
- *
+/* ----- Format macros for printf ----- */
+/**
  * These are needed for printf-style format strings. The actual
  * strings depend on the platform's int64_t type: long on LP64,
  * long long on LLP64 (Windows).
@@ -235,10 +236,8 @@ typedef __haj_uintmax	uintmax_t;
 # define PRIxMAX			PRIx64
 # define PRIXMAX			PRIX64
 
-/* --------------------------------------------------------------------------
- * Constant macros for specifying minimum-width integer constants
- * --------------------------------------------------------------------------
- *
+/* ----- Constant macros for specifying minimum-width integer constants ----- */
+/**
  * These are used to construct integer constants with a specific
  * width, e.g. INT64_C(42) gives 42LL on some platforms.
  */

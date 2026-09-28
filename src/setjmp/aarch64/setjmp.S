@@ -1,4 +1,12 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
+/*
  * setjmp - aarch64 (AAPCS64 ABI).
  *
  * This file works on Linux, FreeBSD, and Darwin. Darwin requires

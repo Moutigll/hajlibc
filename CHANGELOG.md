@@ -9,14 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Development tooling: `.vscode/settings.json`, `.vscode/extensions.json`
-- License header scripts: `scripts/header.sh`, `scripts/header-update.sh`, `scripts/header-check.sh`
-- Git hook: `.githooks/pre-commit` (checks headers on commit)
+- Nothing yet
 
 ### Changed
 
-- `.gitignore`: track `.vscode/settings.json` and `.vscode/extensions.json`
-- `Makefile`: added `init`, `headers-add`, `headers-check` targets
+- Nothing yet
 
 ### Fixed
 
@@ -29,6 +26,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 - Nothing yet
+
+## [0.3.0] - 2026-09-28
+
+This release adds the full string and ctype APIs, the memory
+mapping interface, the random API, and the complete time API.
+Programs can now use `memcpy`, `strlen`, `mmap`, `getrandom`,
+`clock_gettime`, `nanosleep`, and the POSIX timers without
+falling back to the system libc.
+
+### Added
+
+#### String and character handling
+
+- `<string.h>`: `memcpy`, `memmove`, `memset` with SSE2 / AVX2 /
+  AVX-512 / NEON dispatch and a portable fallback
+- `<string.h>`: `memcmp`, `memchr`, `memccpy`, `memrchr`
+- `<string.h>`: `strlen`, `strnlen` (word-at-a-time scan)
+- `<string.h>`: `strcmp`, `strncmp` (word-at-a-time comparison)
+- `<string.h>`: `strchr`, `strrchr`, `strchrnul`, `strcpy`,
+  `stpcpy`, `strncpy`, `stpncpy`, `strlcpy`
+- `<string.h>`: `strcat`, `strncat`, `strlcat`, `strspn`, `strcspn`
+- `<string.h>`: `strpbrk`, `strstr` (Horspool + Two-Way),
+  `strcasestr`
+- `<string.h>`: `strtok`, `strtok_r`, `strsep`
+- `<ctype.h>`: full character classification and conversion
+  (inline `__haj_*` fast paths, external symbols in
+  `src/ctype/ctype.c`)
+
+#### Memory mapping
+
+- `<sys/mman.h>`: `mmap`, `munmap`, `mprotect`, `msync`,
+  `madvise`, `posix_madvise`
+- `<sys/mman.h>`: `mlock`, `munlock`, `mlockall`, `munlockall`
+- `<sys/mman.h>`: `shm_open`, `shm_unlink` (per-OS: `/dev/shm`
+  on Linux, native syscalls on FreeBSD, `/var/tmp/.hajlib-shm-*`
+  on Darwin)
+- `<sys/mman.h>`: POSIX typed memory API
+- `<bits/mman.h>`: per-OS `PROT_*`, `MAP_*`, `MS_*`, `MADV_*`,
+  `MCL_*` constants
+- `<bits/mman.h>`: `SHM_PREFIX`, `SHM_PREFIX_LEN`, `SHM_PATH_MAX`
+
+#### Random
+
+- `<sys/random.h>`: `getrandom` (with `GRND_*` flags) and
+  `getentropy`
+
+#### Time
+
+- `<time.h>`: complete ISO C + POSIX time API
+  - `<time.h>`: `struct tm` (with `tm_gmtoff`, `tm_zone`),
+    `struct itimerspec`
+  - `<time.h>`: `time`, `difftime`, `timespec_get`, `clock`
+  - `<time.h>`: `clock_gettime`, `clock_getres`, `clock_settime`,
+    `clock_getcpuclockid`
+  - `<time.h>`: `nanosleep`, `clock_nanosleep`
+  - `<time.h>`: `timer_create`, `timer_delete`, `timer_gettime`,
+    `timer_settime`, `timer_getoverrun` (declarations only)
+  - `<time.h>`: `gmtime`, `gmtime_r`, `localtime`, `localtime_r`,
+    `mktime`
+  - `<time.h>`: `strftime`, `strptime`, `asctime`, `ctime`,
+    `getdate` (declarations only)
+  - `<time.h>`: `tzset`, `daylight`, `timezone`, `tzname`,
+    `getdate_err`
+- `<sys/time.h>`: `struct timeval`, `select`, `utimes`
+- `<sys/times.h>`: `struct tms`, `times`
+- `<bits/time.h>`: `struct timespec`, `struct timeval`, per-OS
+  `CLOCK_*`, `CLOCKS_PER_SEC`, `TIMER_ABSTIME`, `TIME_UTC`
+
+#### Signal (partial)
+
+- `<signal.h>`: `union sigval`, `struct sigevent` (the minimum
+  required for POSIX timer notification; the full signal API is
+  not yet implemented)
+
+#### Type system
+
+- `<bits/types.h>`: `id_t`, `key_t`, `fsblkcnt_t`, `fsfilcnt_t`,
+  `reclen_t`
+- `<bits/types.h>`: opaque `timer_t`, `pthread_t`,
+  `pthread_key_t`, `pthread_once_t`, `pthread_spinlock_t`,
+  `pthread_attr_t`, `pthread_barrier_t`,
+  `pthread_barrierattr_t`, `pthread_cond_t`,
+  `pthread_condattr_t`, `pthread_mutex_t`,
+  `pthread_mutexattr_t`, `pthread_rwlock_t`,
+  `pthread_rwlockattr_t`
+- `<bits/select.h>`: `fd_set`, `FD_ZERO`, `FD_SET`, `FD_CLR`,
+  `FD_ISSET`
+- `<bits/wordsize.h>`: `__HAJ_USE_32_OFFSET_BITS` (32-bit `off_t`
+  only when the platform is 32-bit and `_FILE_OFFSET_BITS=32`)
+
+#### Syscall layer
+
+- `__haj_syscall0` .. `__haj_syscall5` variants for all supported
+  OS/arch
+- `SYS_time` added for Linux x86_64/aarch64 and FreeBSD
+- All syscall assembly files now emit `.note.GNU-stack`
+
+#### Build
+
+- `Makefile`: `init`, `headers-add`, `headers-check` targets
+- `mk/sources.mk`: `SYS_DIR` and `SYS_SRCS` (`getentropy`,
+  `getrandom`, `times`), `TIME_SRCS` for `src/time/`
+
+### Changed
+
+- Public POSIX typedefs (`size_t`, `ssize_t`, `off_t`, `pid_t`,
+  `time_t`, ...) moved from `<sys/types.h>` to `<bits/types.h>`;
+  `<sys/types.h>` is now just `#include <bits/types.h>`
+- Renamed library references from `libhaj.a` to `libhajc.a`
+  (`mk/config.mk`, `mk/hajlib.mk`)
+- Internal syscall call sites rewritten to use the smallest
+  `__haj_syscallN` variant
+- `mk/targets.mk` uses `SYSCALL_BASE_SRCS` to include all 7
+  syscall files per target
+
+### Fixed
+
+- Nothing yet
+
+### Removed
+
+- Nothing yet
+
+### Deprecated
+
+- `<time.h>`: `asctime`, `ctime` are marked obsolescent in
+  POSIX.1-2024 and tagged `__HAJ_DEPRECATED`
+- `<time.h>`: `daylight`, `timezone`, `tzname` are XSI and
+  obsolete; prefer `tm_gmtoff`, `tm_zone`, and `localtime_r`
 
 ## [0.2.0] - 2026-09-22
 
@@ -63,6 +189,8 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 - Standard headers: `include/stddef.h`, `include/stdint.h`,
   `include/stdbool.h`, `include/stdarg.h`, `include/limits.h`
   with `include/bits/limits.h`
+- `<sys/auxv.h>`: `getauxval` and the `AT_*` constants
+- `<unistd.h>`: `getpid`
 
 #### Error handling
 
@@ -76,8 +204,8 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 
 - Startup code for Linux x86_64 / aarch64, FreeBSD x86_64 /
   aarch64, and Darwin x86_64 / arm64
-- `_start` reads `argc`/`argv`/`envp`, stores `argv[0]` into
-  `__progname`, calls `main`, then `exit`
+- `_start` reads `argc`/`argv`/`envp`, stores `argv[0]`, `__progname`,
+  `__haj_argc`, `environ`, and `__haj_auxv`, calls `main`, then `exit`
 - `exit`, `_exit`, `abort`
 - `atexit`, `__cxa_atexit`, `__cxa_finalize`, `__dso_handle`
 - `include/bits/crt.h` (internal declarations)
@@ -183,6 +311,7 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 
 - All `ft_*` sources and headers from the old libft structure
 
-[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.3.0...dev
+[0.3.0]: https://github.com/moutigll/hajlib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/moutigll/hajlib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/moutigll/hajlib/releases/tag/v0.1.0

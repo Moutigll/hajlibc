@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file sigsetjmp.c
  * @brief Signal mask handling for sigsetjmp and siglongjmp.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:30:59 by Moutig
  *
  * The register save/restore is done in assembly (setjmp.S and
  * longjmp.S). This file handles the signal mask, which requires

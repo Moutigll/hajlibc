@@ -1,4 +1,12 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
+/*
  * __haj_syscall6 - Darwin x86_64.
  *
  * Symbol naming on macOS:

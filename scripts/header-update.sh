@@ -35,7 +35,7 @@ for f in "$@"; do
 
     # Only process supported extensions
     case "$f" in
-        *.c|*.h|*.hpp|*.cpp|*.S) ;;
+        *.c|*.h|*.hpp|*.cpp|*.S|*.inl) ;;
         *) continue ;;
     esac
 

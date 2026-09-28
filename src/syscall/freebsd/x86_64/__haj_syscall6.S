@@ -1,4 +1,12 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
+/*
  * __haj_syscall6 - FreeBSD x86_64.
  *
  * Same register layout as Linux x86_64:
@@ -65,4 +73,5 @@ __haj_syscall6:
 	popq	%rbx
 	ret
 
-.size	__haj_syscall6, .-__haj_syscall6
+.size		__haj_syscall6, .-__haj_syscall6
+.section	.note.GNU-stack,"",@progbits

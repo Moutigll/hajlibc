@@ -27,17 +27,20 @@ endif
 # Linux
 ifeq ($(TARGET_OS),Linux)
 
+    MMAN_PLATFORM_SRCS	:= src/sys/mman/linux/shm_open.c \
+						   src/sys/mman/linux/shm_unlink.c
   ifeq ($(TARGET_ARCH),x86_64)
-    CRT_START_SRCS	:= src/crt/linux/x86_64/start.S
-    SYSCALL_SRCS	:= src/syscall/linux/x86_64/__haj_syscall6.S
-    SETJMP_SRCS		:= src/setjmp/x86_64/setjmp.S \
-			   src/setjmp/x86_64/longjmp.S
+    CRT_START_SRCS		:= src/crt/linux/x86_64/start.S
+    SYSCALL_BASE_SRCS	:= src/syscall/linux/x86_64/
+    SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
+						   src/setjmp/x86_64/longjmp.S
+    CPU_SRCS			:= src/cpu/x86/cpuFeatures.c
 
   else ifeq ($(TARGET_ARCH),aarch64)
-    CRT_START_SRCS	:= src/crt/linux/aarch64/start.S
-    SYSCALL_SRCS	:= src/syscall/linux/aarch64/__haj_syscall6.S
-    SETJMP_SRCS		:= src/setjmp/aarch64/setjmp.S \
-			   src/setjmp/aarch64/longjmp.S
+    CRT_START_SRCS		:= src/crt/linux/aarch64/start.S
+    SYSCALL_BASE_SRCS	:= src/syscall/linux/aarch64/
+    SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
+						   src/setjmp/aarch64/longjmp.S
 
   else
     $(error targets.mk: unsupported Linux arch '$(TARGET_ARCH)')
@@ -46,17 +49,20 @@ ifeq ($(TARGET_OS),Linux)
 # FreeBSD
 else ifeq ($(TARGET_OS),FreeBSD)
 
+    MMAN_PLATFORM_SRCS	:= src/sys/mman/freebsd/shm_open.c \
+						   src/sys/mman/freebsd/shm_unlink.c
   ifeq ($(TARGET_ARCH),x86_64)
-    CRT_START_SRCS	:= src/crt/freebsd/x86_64/start.S
-    SYSCALL_SRCS	:= src/syscall/freebsd/x86_64/__haj_syscall6.S
-    SETJMP_SRCS		:= src/setjmp/x86_64/setjmp.S \
-			   src/setjmp/x86_64/longjmp.S
+    CRT_START_SRCS		:= src/crt/freebsd/x86_64/start.S
+    SYSCALL_BASE_SRCS	:= src/syscall/freebsd/x86_64/
+    SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
+						   src/setjmp/x86_64/longjmp.S
+	CPU_SRCS			:= src/cpu/x86/cpuFeatures.c
 
   else ifeq ($(TARGET_ARCH),aarch64)
-    CRT_START_SRCS	:= src/crt/freebsd/aarch64/start.S
-    SYSCALL_SRCS	:= src/syscall/freebsd/aarch64/__haj_syscall6.S
-    SETJMP_SRCS		:= src/setjmp/aarch64/setjmp.S \
-			   src/setjmp/aarch64/longjmp.S
+    CRT_START_SRCS		:= src/crt/freebsd/aarch64/start.S
+    SYSCALL_BASE_SRCS	:= src/syscall/freebsd/aarch64/
+    SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
+						   src/setjmp/aarch64/longjmp.S
 
   else
     $(error targets.mk: unsupported FreeBSD arch '$(TARGET_ARCH)')
@@ -65,17 +71,20 @@ else ifeq ($(TARGET_OS),FreeBSD)
 # Darwin (macOS, iOS)
 else ifeq ($(TARGET_OS),Darwin)
 
+    MMAN_PLATFORM_SRCS	:= src/sys/mman/darwin/shm_open.c \
+						   src/sys/mman/darwin/shm_unlink.c
   ifeq ($(TARGET_ARCH),x86_64)
-    CRT_START_SRCS	:= src/crt/darwin/x86_64/start.S
-    SYSCALL_SRCS	:= src/syscall/darwin/x86_64/__haj_syscall6.S
-    SETJMP_SRCS		:= src/setjmp/x86_64/setjmp.S \
-			   src/setjmp/x86_64/longjmp.S
+    CRT_START_SRCS		:= src/crt/darwin/x86_64/start.S
+    SYSCALL_BASE_SRCS	:= src/syscall/darwin/x86_64/
+    SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
+						   src/setjmp/x86_64/longjmp.S
+	CPU_SRCS			:= src/cpu/x86/cpuFeatures.c
 
   else ifeq ($(TARGET_ARCH),arm64)
-    CRT_START_SRCS	:= src/crt/darwin/arm64/start.S
-    SYSCALL_SRCS	:= src/syscall/darwin/arm64/__haj_syscall6.S
-    SETJMP_SRCS		:= src/setjmp/aarch64/setjmp.S \
-			   src/setjmp/aarch64/longjmp.S
+    CRT_START_SRCS		:= src/crt/darwin/arm64/start.S
+    SYSCALL_BASE_SRCS	:= src/syscall/darwin/arm64/
+    SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
+						   src/setjmp/aarch64/longjmp.S
 
   else
     $(error targets.mk: unsupported Darwin arch '$(TARGET_ARCH)')
@@ -93,4 +102,16 @@ else ifeq ($(TARGET_OS),Windows)
 # Unknown OS
 else
   $(error targets.mk: unsupported OS '$(TARGET_OS)')
+endif
+
+#For linux, freebsd, darwin we add all 7 syscall files
+ifneq ($(filter $(TARGET_OS),Linux FreeBSD Darwin),)
+  SYSCALL_SRCS := $(addprefix $(SYSCALL_BASE_SRCS), \
+						__haj_syscall0.S \
+						__haj_syscall1.S \
+						__haj_syscall2.S \
+						__haj_syscall3.S \
+						__haj_syscall4.S \
+						__haj_syscall5.S \
+						__haj_syscall6.S)
 endif

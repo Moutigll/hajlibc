@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file __haj_syscall6.c
  * @brief Windows fallback for __haj_syscall6.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:32:34 by Moutig
  *
  * Windows has no stable syscall ABI. The numbers of the NT
  * syscalls change between Windows builds, and Microsoft does not
@@ -34,9 +44,7 @@
 #include <direct.h>
 #include <errno.h>
 
-/* --------------------------------------------------------------------------
- * Flag translation
- * --------------------------------------------------------------------------
+/* ----- Flag translation -----
  *
  * hajlib uses POSIX O_* flags in its public headers. The mingw
  * CRT uses its own _O_* flags. We translate them here.
@@ -76,9 +84,7 @@ static int	translate_open_flags(int haj_flags)
 	return (win_flags);
 }
 
-/* --------------------------------------------------------------------------
- * Error normalization
- * --------------------------------------------------------------------------
+/* ----- Error normalization  -----
  *
  * On Windows, the CRT sets errno to a POSIX-like value when a
  * function fails. We return -errno to match Unix.
@@ -91,9 +97,7 @@ static long	normalize_result(long ret)
 	return (ret);
 }
 
-/* --------------------------------------------------------------------------
- * Dispatch
- * -------------------------------------------------------------------------- */
+/* ----- Dispatch ----- */
 
 long	__haj_syscall6(long nr, long a1, long a2, long a3,
                        long a4, long a5, long a6)

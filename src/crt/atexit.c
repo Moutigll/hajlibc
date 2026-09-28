@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file atexit.c
  * @brief Implementation of atexit() and __haj_run_atexit().
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:25:25 by Moutig
  *
  * atexit() registers a function to be called when the process
  * terminates normally. The C standard requires at least 32

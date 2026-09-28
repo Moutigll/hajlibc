@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file assert.h
  * @brief Assertions.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 16:14:25 by Moutig
  *
  * This header defines the assert() macro and the __assert_fail
  * function. When NDEBUG is defined, assert() becomes a no-op.
@@ -17,10 +27,8 @@
 extern "C" {
 # endif
 
-/* --------------------------------------------------------------------------
- * Internal function called by the assert() macro on failure.
- * --------------------------------------------------------------------------
- *
+/* ----- Internal function called by the assert() macro on failure. ----- */
+/**
  * The C standard requires the assert macro to print a diagnostic
  * containing the failing expression, the file name, the line
  * number, and the enclosing function name, then call abort().

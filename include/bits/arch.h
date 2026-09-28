@@ -1,9 +1,17 @@
-#ifndef _BITS_ARCH_H
-# define _BITS_ARCH_H
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
 
 /**
+ * @file arch.h
  * @brief Architecture detection.
- * -----------------------
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 15:58:03 by Moutig
+ *
  * This header defines exactly one of the following macros:
  *
  *   HAJ_ARCH_X86_64   : 64-bit x86 (AMD64, Intel 64, EM64T)
@@ -23,9 +31,10 @@
  *     use different names.
  */
 
-/* -------------------------------------------------------------------------- */
-/* x86_64 (AMD64)                                                             */
-/* -------------------------------------------------------------------------- */
+#ifndef _BITS_ARCH_H
+# define _BITS_ARCH_H
+
+/* ----- x86_64 (AMD64) ----- */
 /**
  * __x86_64__    : defined by GCC/Clang on x86_64.
  * _M_X64        : defined by MSVC (and clang-cl) on x86_64.
@@ -37,9 +46,7 @@
 # define HAJ_ARCH_X86_64  1
 # define HAJ_ARCH_NAME    "x86_64"
 
-/* -------------------------------------------------------------------------- */
-/* AArch64 (ARM64)                                                            */
-/* -------------------------------------------------------------------------- */
+/* ----- AArch64 (ARM64) ----- */
 /**
  * __aarch64__   : defined by GCC/Clang on 64-bit ARM.
  * _M_ARM64      : defined by MSVC on 64-bit ARM.
@@ -53,9 +60,7 @@
 # define HAJ_ARCH_AARCH64 1
 # define HAJ_ARCH_NAME    "aarch64"
 
-/* -------------------------------------------------------------------------- */
-/* i386 (32-bit x86)                                                          */
-/* -------------------------------------------------------------------------- */
+/* ----- i386 (32-bit x86) ----- */
 /**
  * __i386__      : defined by GCC/Clang on 32-bit x86.
  * _M_IX86       : defined by MSVC on 32-bit x86.
@@ -68,9 +73,7 @@
 # define HAJ_ARCH_I386    1
 # define HAJ_ARCH_NAME    "i386"
 
-/* -------------------------------------------------------------------------- */
-/* ARM (32-bit)                                                               */
-/* -------------------------------------------------------------------------- */
+/* ----- ARM (32-bit) ----- */
 /**
  * __arm__       : defined by GCC/Clang on 32-bit ARM.
  * _M_ARM        : defined by MSVC on 32-bit ARM (rare).
@@ -82,9 +85,7 @@
 # define HAJ_ARCH_ARM     1
 # define HAJ_ARCH_NAME    "arm"
 
-/* -------------------------------------------------------------------------- */
-/* Unknown                                                                    */
-/* -------------------------------------------------------------------------- */
+/* ----- Unknown ----- */
 /**
  * Fallback: we don't know this arch. The build will likely fail later
  * when trying to compile the syscall layer for this arch.

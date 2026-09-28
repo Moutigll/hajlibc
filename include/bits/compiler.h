@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/compiler.h
+ * @file compiler.h
  * @brief Compiler-specific macros and attributes.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/25 21:18:53 by Moutig
  *
  * This header provides portable macros for compiler-specific
  * features: TLS, attributes, and other extensions.
@@ -65,7 +75,7 @@
 #  define __HAJ_PACKED		__attribute__((__packed__))			/* Structure without padding between members. */
 #  define __HAJ_ALIGNED(n)	__attribute__((__aligned__(n)))		/* Force a minimum alignment. */
 #  define __HAJ_WEAK		__attribute__((__weak__))			/* Symbol that may be undefined at link time. */
-#  define __HAJ_ALIAS(name)	__attribute__((__alias__(name)))	/* Symbol that aliases another symbol. */
+#  define __HAJ_ALIAS(name)	__attribute__((__alias__(#name)))	/* Symbol that aliases another symbol. */
 #  define __HAJ_USED		__attribute__((__used__))			/* Prevent the compiler from removing an unused symbol. */
 #  define __HAJ_CONSTRUCTOR	__attribute__((__constructor__))	/* Function called at program startup. */
 #  define __HAJ_DESTRUCTOR	__attribute__((__destructor__))		/* Function called at program termination. */
@@ -81,6 +91,8 @@
 #  define __HAJ_DEPRECATED	__attribute__((__deprecated__))		/* Mark a function or variable as deprecated. */
 #  define __HAJ_PACK_PUSH										/* No-op: GCC/Clang use __HAJ_PACKED instead. */
 #  define __HAJ_PACK_POP										/* No-op: GCC/Clang use __HAJ_PACKED instead. */
+#  define __HAJ_MAY_ALIAS	__attribute__((__may_alias__))		/* Type that may alias other types (for type-punning). */
+#  define __HAJ_EXTENSION	__extension__						/* Suppress warnings for non-standard extensions (GCC/Clang). */
 
 # endif /* __HAJ_COMPILER_GNULIKE */
 
@@ -106,6 +118,8 @@
 #  define __HAJ_DEPRECATED	__declspec(deprecated)
 #  define __HAJ_PACK_PUSH	__pragma(pack(push, 1))
 #  define __HAJ_PACK_POP	__pragma(pack(pop))
+#  define __HAJ_MAY_ALIAS
+#  define __HAJ_EXTENSION
 
 # endif /* __HAJ_COMPILER_MSVC */
 
@@ -134,6 +148,8 @@
 #  define __HAJ_ALIGNED(n)
 #  define __HAJ_WEAK
 #  define __HAJ_ALIAS(name)
+#  define __HAJ_MAY_ALIAS
+#  define __HAJ_EXTENSION
 
 # endif /* __HAJ_COMPILER_UNKNOWN */
 
@@ -227,5 +243,106 @@
 #   define __HAJ_STATIC_ASSERT(cond, msg)
 #  endif
 # endif
+
+/**
+ * @brief Portable typeof operator.
+ *
+ * C23 has typeof. C11 and earlier use compiler extensions.
+ */
+# ifndef __HAJ_TYPEOF
+#  if __HAJ_C_VERSION >= 202311L
+#   define __HAJ_TYPEOF(x)	typeof(x)
+#  elif defined(__HAJ_COMPILER_GNULIKE)
+#   define __HAJ_TYPEOF(x)	__typeof__(x)
+#  elif defined(__HAJ_COMPILER_MSVC)
+#   define __HAJ_TYPEOF(x)	__typeof__(x)  /* MSVC 17.9+ */
+#  else
+#   define __HAJ_TYPEOF(x)
+#  endif
+# endif
+
+/* ----- Maximum alignment ----- */
+/**
+ * @brief Maximum alignment of the platform.
+ *
+ * On x86_64: 16 (long double, SSE).
+ * On aarch64: 16 (long double, NEON).
+ * On 32-bit: 8 (double).
+ *
+ * Use with __HAJ_ALIGNED(__HAJ_ALIGNED_MAX) to force max alignment.
+ */
+# ifndef __HAJ_ALIGNED_MAX
+#  if defined(__HAJ_ARCH_X86_64) || defined(__HAJ_ARCH_AARCH64)
+#   define __HAJ_ALIGNED_MAX	16
+#  else
+#   define __HAJ_ALIGNED_MAX	8
+#  endif
+# endif
+
+/* ----- Unaligned word type ----- */
+/**
+ * @brief A type that can be used to read/write unaligned words.
+ *
+ * - __HAJ_MAY_ALIAS: allows aliasing with unsigned char *
+ * - __HAJ_ALIGNED(1): tells the compiler the type can be at any
+ *   address, removing "cast increases alignment" warnings.
+ *
+ * Use:
+ *   typedef __HAJ_UNALIGNED_WORD size_t ...
+ */
+# define __HAJ_UNALIGNED_WORD \
+	__HAJ_MAY_ALIAS __HAJ_ALIGNED(1)
+
+/* ----- Per-function target attribute ----- */
+/**
+ * @brief Apply a target-specific instruction set to a function.
+ *
+ * Usage:
+ *   __HAJ_TARGET("avx2")
+ *   static void foo(void) { ... }
+ *
+ * Supported on GCC 4.9+ and Clang 3.4+. On other compilers, the
+ * macro expands to nothing, and the function is compiled with the
+ * default target. If you rely on SIMD in that function, you must
+ * handle the fallback yourself.
+ */
+# ifndef __HAJ_TARGET
+#  if defined(__HAJ_COMPILER_GNULIKE)
+#   define __HAJ_TARGET(str)	__attribute__((__target__(str)))
+#   define __HAJ_HAVE_TARGET_ATTR 1
+#  else
+#   define __HAJ_TARGET(str)
+#   define __HAJ_HAVE_TARGET_ATTR 0
+#  endif
+# endif
+
+/* ----- Ifunc attribute ----- */
+/**
+ * @brief Declare a function as an ifunc resolver.
+ *
+ * Usage:
+ *   void *foo(void) __HAJ_IFUNC("foo_resolver");
+ *
+ * Supported on GCC 4.9+ and Clang 3.4+. On other compilers, the
+ * macro expands to nothing, and the function is compiled normally.
+ */
+# ifndef __HAJ_IFUNC
+#  if defined(__HAJ_COMPILER_GNULIKE)
+#   define __HAJ_IFUNC(resolver)	__attribute__((__ifunc__(resolver)))
+#   define __HAJ_HAVE_IFUNC_ATTR 1
+#  else
+#   define __HAJ_IFUNC(resolver)
+#   define __HAJ_HAVE_IFUNC_ATTR 0
+#  endif
+# endif
+
+/* ----- Concatenation macro ----- */
+# define __HAJ_CONCAT_(a, b)	a##b
+# define __HAJ_CONCAT(a, b)		__HAJ_CONCAT_(a, b)
+
+/* ----- HAJ SOURCE ----- */
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE) || defined(_POSIX_C_SOURCE) || defined(__HAJ_COMPILER_GNULIKE)
+# define __HAJ_SOURCE	1
+#endif
 
 #endif /* _BITS_COMPILER_H */

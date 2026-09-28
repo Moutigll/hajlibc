@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file assert.c
  * @brief Implementation of assertion failure handlers.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/26 05:04:28 by Moutig
  *
  * When an assertion fails, the assert() macro calls
  * __assert_fail(). This function prints a diagnostic message to
@@ -15,7 +25,6 @@
  *
  * We use this format for compatibility with tools that parse
  * assertion messages (test runners, CI, etc.).
- *
  */
 
 #include <assert.h>
@@ -27,7 +36,7 @@
 /** --------------------------------------------------------------------------
  * Minimal output helpers
  * --------------------------------------------------------------------------
- * @TODO: Use fprintf() or fprintf() instead of __haj_syscall6(SYS_write, ...).
+ * @TODO: Use fprintf() or fprintf() instead of __haj_syscall3(SYS_write, ...).
  * We do not use printf() or fprintf() because they are not
  * implemented yet, and because __assert_fail must work even in
  * a minimal environment (before stdio is initialized).
@@ -45,7 +54,7 @@ static void	__haj_assert_write_str(const char *s)
 	while (s[len] != '\0')
 		len++;
 	if (len > 0)
-		__haj_syscall6(SYS_write, 2, (long)s, (long)len, 0, 0, 0);
+		__haj_syscall3(SYS_write, 2, (long)s, (long)len);
 }
 
 /**
@@ -59,7 +68,7 @@ static void	__haj_assert_write_uint(unsigned int n)
 	int	i = 0;
 
 	if (n == 0) {
-		__haj_syscall6(SYS_write, 2, (long)"0", 1, 0, 0, 0);
+		__haj_syscall3(SYS_write, 2, (long)"0", 1);
 		return;
 	}
 	while (n > 0) {
@@ -68,7 +77,7 @@ static void	__haj_assert_write_uint(unsigned int n)
 	}
 	while (i > 0) {
 		i--;
-		__haj_syscall6(SYS_write, 2, (long)&buf[i], 1, 0, 0, 0);
+		__haj_syscall3(SYS_write, 2, (long)&buf[i], 1);
 	}
 }
 
@@ -82,7 +91,7 @@ static void	__haj_assert_write_int(int n)
 	unsigned int	u;
 
 	if (n < 0) {
-		__haj_syscall6(SYS_write, 2, (long)"-", 1, 0, 0, 0);
+		__haj_syscall3(SYS_write, 2, (long)"-", 1);
 		u = (unsigned int)(-(n + 1)) + 1;
 	} else {
 		u = (unsigned int)n;
@@ -117,7 +126,7 @@ void	__assert_fail(const char	*expr,
 	 * If abort() is not implemented, we do the syscall directly
 	 * (SYS_exit_group with status 134 = 128 + SIGABRT).
 	 */
-	__haj_syscall6(SYS_exit_group, 134, 0, 0, 0, 0, 0);
+	__haj_syscall1(SYS_exit_group, 134);
 	for (;;) {
 	}
 }
@@ -139,7 +148,7 @@ void	__assert_perror_fail(int		errnum,
 	__haj_assert_write_int(errnum);
 	__haj_assert_write_str(".\n");
 
-	__haj_syscall6(SYS_exit_group, 134, 0, 0, 0, 0, 0);
+	__haj_syscall1(SYS_exit_group, 134);
 	for (;;) {
 	}
 }

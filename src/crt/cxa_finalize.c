@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file cxa_finalize.c
  * @brief Implementation of __cxa_finalize.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:25:59 by Moutig
  *
  * __cxa_finalize is called when a shared library is unloaded, or
  * when the process exits, to run all destructors registered with

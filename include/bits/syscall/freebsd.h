@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/syscall/freebsd.h
+ * @file freebsd.h
  * @brief FreeBSD syscall numbers.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/28 10:39:20 by Moutig
  *
  * Source: <sys/syscall.h> from the FreeBSD kernel.
  * FreeBSD uses the same syscall numbers on all 64-bit
@@ -115,6 +125,8 @@
 # define SYS_munlockall			325
 # define SYS_msync				65
 # define SYS_break				17
+# define SYS_shm_open			482
+# define SYS_shm_unlink			483
 
 /* ---- Signals ---- */
 # define SYS_sigaction			46
@@ -140,6 +152,7 @@
 # define SYS_sched_getscheduler	236
 
 /* ---- Time ---- */
+# define SYS_time				13
 # define SYS_gettimeofday		116
 # define SYS_settimeofday		122
 # define SYS_clock_gettime		232

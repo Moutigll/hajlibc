@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file stdarg.h
  * @brief Variable argument list support.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 16:18:32 by Moutig
  *
  * This header provides the va_list type and the va_start, va_arg,
  * va_end, and va_copy macros, as specified by the C standard.
@@ -17,10 +27,8 @@
 #ifndef _STDARG_H
 # define _STDARG_H
 
-/* --------------------------------------------------------------------------
- * va_list
- * --------------------------------------------------------------------------
- *
+/* ----- va_list ----- */
+/**
  * GCC and Clang define __builtin_va_list as the actual type.
  * We alias it to va_list.
  */
@@ -39,10 +47,8 @@ typedef __builtin_va_list	va_list;
 typedef __builtin_va_list	__gnuc_va_list;
 # endif
 
-/* --------------------------------------------------------------------------
- * Macros
- * --------------------------------------------------------------------------
- *
+/* ----- Macros ----- */
+/**
  * All of these map directly to the compiler built-ins. They are
  * the only portable way to implement variable arguments in C.
  */

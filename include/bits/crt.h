@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/crt.h
+ * @file crt.h
  * @brief Internal C runtime declarations.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 15:59:00 by Moutig
  *
  * This header declares symbols that are internal to the C runtime.
  * They are used by the startup code, by exit(), and by code

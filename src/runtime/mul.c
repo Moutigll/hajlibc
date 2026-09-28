@@ -1,11 +1,16 @@
 /*
- * hajlib - A POSIX-like C library.
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
  */
 
 /**
  * @file mul.c
  * @brief 64-bit multiplication helpers for the compiler runtime.
+ * @Created: 2026/09/24 15:30:32 by Moutig
+ * @Updated: 2026/09/24 18:30:32 by Moutig
  *
  * On 32-bit architectures, the CPU's `mul` instruction computes
  * a 32x32 -> 64 product. Multiplying two 64-bit values requires

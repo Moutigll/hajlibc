@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/syscall/windows.h
+ * @file windows.h
  * @brief Windows pseudo-syscall numbers.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 15:56:49 by Moutig
  *
  * Windows has no stable syscall ABI. These numbers are used
  * only inside src/syscall/windows/__haj_syscall6.c to dispatch

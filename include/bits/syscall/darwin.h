@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/syscall/darwin.h
+ * @file darwin.h
  * @brief Darwin (macOS, iOS) syscall numbers.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 15:55:54 by Moutig
  *
  * Source: <sys/syscall.h> from the XNU kernel.
  * Darwin prefixes every BSD-class syscall with 0x2000000.

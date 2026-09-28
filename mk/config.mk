@@ -25,7 +25,7 @@
 #   Public (user):
 #     HAJ_ROOT              root of the hajlib source tree
 #     HAJ_INCLUDE           path to include/
-#     HAJ_LIB               path to libhaj.a
+#     HAJ_LIB               path to libhajc.a
 #     HAJ_CPPFLAGS          preprocessor flags for users
 #     HAJ_CFLAGS            C compiler flags for users
 #     HAJ_LDFLAGS           linker flags for users
@@ -46,7 +46,7 @@ LD		?= $(CC)
 
 # Public paths (for users of hajlib)
 HAJ_INCLUDE	:= $(HAJ_ROOT)/include
-HAJ_LIB		:= $(HAJ_ROOT)/libhaj.a
+HAJ_LIB		:= $(HAJ_ROOT)/libhajc.a
 
 # Common compiler flags:
 # These flags are shared between building hajlib and building

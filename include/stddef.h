@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file stddef.h
  * @brief Standard type definitions.
+ * @Created: 2026/09/24 15:06:43 by Moutig
+ * @Updated: 2026/09/24 16:19:38 by Moutig
  *
  * This header defines size_t, ptrdiff_t, wchar_t, NULL, offsetof,
  * and max_align_t, as specified by the C standard.
@@ -15,9 +25,7 @@
 
 # include <bits/types.h>
 
-/* --------------------------------------------------------------------------
- * Standard types
- * -------------------------------------------------------------------------- */
+/* ----- Standard types ----- */
 
 # ifndef __size_t_defined
 #  define __size_t_defined
@@ -54,9 +62,7 @@ typedef int				wchar_t;
 #  endif
 # endif
 
-/* --------------------------------------------------------------------------
- * Macros
- * -------------------------------------------------------------------------- */
+/* ----- Macros ----- */
 
 /**
  * @brief Null pointer constant.
@@ -82,10 +88,8 @@ typedef int				wchar_t;
 #  define offsetof(type, member) __builtin_offsetof(type, member)
 # endif
 
-/* --------------------------------------------------------------------------
- * max_align_t
- * --------------------------------------------------------------------------
- *
+/* ----- max_align_t ----- */
+/**
  * max_align_t is a type whose alignment is at least as strict as
  * any other scalar type. It is used by malloc-like allocators.
  *

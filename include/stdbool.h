@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file stdbool.h
  * @brief Boolean type and values.
+ * @Created: 2026/09/24 15:06:43 by Moutig
+ * @Updated: 2026/09/24 16:18:53 by Moutig
  *
  * This header defines bool, true, false, and
  * __bool_true_false_are_defined, as specified by the C standard.

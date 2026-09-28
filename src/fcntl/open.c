@@ -1,6 +1,21 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file open.c
  * @brief Implementation of open().
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/26 06:39:05 by Moutig
+ *
+ * open() opens or creates a file and returns a file descriptor.
+ * It is a variadic function: the third argument (mode) is only
+ * present if O_CREAT or O_TMPFILE is set in flags. The mode
+ * argument is ignored if the file already exists.
  */
 
 #include <fcntl.h>
@@ -9,13 +24,6 @@
 
 #include <bits/syscall.h>
 
-/**
- * @brief Open or create a file.
- *
- * On Linux, we use the openat syscall with AT_FDCWD as the
- * directory file descriptor, because the raw open syscall is
- * not available on all architectures (aarch64 only has openat).
- */
 int	open(const char *path, int flags, ...)
 {
 	mode_t	mode = 0;
@@ -39,12 +47,11 @@ int	open(const char *path, int flags, ...)
 	}
 
 	/* We use the openat syscall since open is not available on all architectures. */
-	ret = __haj_syscall6(SYS_openat,
-	                     AT_FDCWD,
-	                     (long)path,
-	                     flags,
-	                     (long)mode,
-	                     0, 0);
+	ret = __haj_syscall4(SYS_openat,
+						 AT_FDCWD,
+						 (long)path,
+						 flags,
+						 (long)mode);
 
 	if (ret < 0 && ret >= -4095) {
 		errno = (int)-ret;

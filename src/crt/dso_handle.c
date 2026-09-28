@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file dso_handle.c
  * @brief Definition of __dso_handle.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 18:26:18 by Moutig
  *
  * __dso_handle is a symbol that GCC/Clang generate references to
  * when compiling code that uses __attribute__((destructor)) or

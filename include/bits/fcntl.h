@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
- * @file bits/fcntl.h
+ * @file fcntl.h
  * @brief File control flags per OS.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/24 16:01:21 by Moutig
  *
  * This header defines the O_* flags (used by open) and the F_*
  * commands (used by fcntl) with the values used by the target OS.
@@ -26,9 +36,7 @@
 #  endif
 # endif
 
-/* --------------------------------------------------------------------------
- * Linux
- * -------------------------------------------------------------------------- */
+/* ----- Linux ----- */
 
 # if defined(HAJ_OS_LINUX)
 
@@ -96,9 +104,7 @@
 #  define F_WRLCK		1	/* Write lock */
 #  define F_UNLCK		2	/* Remove lock */
 
-/* --------------------------------------------------------------------------
- * FreeBSD
- * -------------------------------------------------------------------------- */
+/* ----- FreeBSD ----- */
 
 # elif defined(HAJ_OS_FREEBSD)
 
@@ -159,9 +165,7 @@
 #  define F_UNLCK		2
 #  define F_WRLCK		3
 
-/* --------------------------------------------------------------------------
- * Darwin (macOS, iOS)
- * -------------------------------------------------------------------------- */
+/* ----- Darwin (macOS, iOS) ----- */
 
 # elif defined(HAJ_OS_DARWIN)
 
@@ -222,9 +226,7 @@
 #  define F_UNLCK		2
 #  define F_WRLCK		3
 
-/* --------------------------------------------------------------------------
- * Windows (mingw CRT)
- * -------------------------------------------------------------------------- */
+/* ----- Windows (mingw CRT) ----- */
 
 # elif defined(HAJ_OS_WINDOWS)
 
@@ -273,9 +275,7 @@
 #  define F_WRLCK		1
 #  define F_UNLCK		2
 
-/* --------------------------------------------------------------------------
- * Unknown
- * -------------------------------------------------------------------------- */
+/* ----- Unknown ----- */
 
 # else
 

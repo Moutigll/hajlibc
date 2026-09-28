@@ -1,31 +1,45 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
+/**
+ * @file types.h
+ * @brief Internal fixed-width and POSIX-like types.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/28 09:25:05 by Moutig
+ *
+ * This header defines the real typedefs used across hajlib: the
+ * fixed-width integer types, the size-related types, and the
+ * POSIX types. Public headers (stddef.h, sys/types.h, time.h, ...)
+ * expose them by including this header; they do not define them
+ * themselves.
+ *
+ * Naming convention:
+ *   - Internal types use the __haj_ prefix (e.g. __haj_i64,
+ *     __haj_size, __haj_mode).
+ *   - Public types use their POSIX/C name (size_t, mode_t,
+ *     time_t, ...) and are defined here, guarded so that a
+ *     system header cannot redefine them.
+ *
+ * Do NOT include this header directly from user code. Use the
+ * public headers (stddef.h, sys/types.h, time.h, ...) instead.
+ */
+
+
 #ifndef _BITS_TYPES_H
 # define _BITS_TYPES_H
 
 # include <bits/os.h>
 # include <bits/arch.h>
 # include <bits/wordsize.h>
+# include <bits/compiler.h>
 
+/* ----- Fixed-width integer types ----- */
 /**
- * @file bits/types.h
- * @brief Internal fixed-width and POSIX-like types.
- *
- * This header defines the real typedefs used across hajlib. The
- * public headers (stddef.h, stdint.h, sys/types.h) alias these
- * into the standard names.
- *
- * Naming convention:
- *   - Internal types use the __haj_ prefix.
- *   - Public types (size_t, mode_t, ...) are defined in their
- *     respective public headers.
- *
- * Do NOT include this header directly from user code. Use the
- * public headers (sys/types.h, stdint.h, ...) instead.
- */
-
-/* --------------------------------------------------------------------------
- * Fixed-width integer types
- * --------------------------------------------------------------------------
- *
  * We could use the compiler's __INT8_TYPE__ and friends, but we
  * define them explicitly for clarity. All modern platforms use
  * two's complement, so signed/unsigned char, short, int, long
@@ -72,10 +86,8 @@ typedef __haj_u32			__haj_uintptr;
 typedef __haj_i64			__haj_intmax;
 typedef __haj_u64			__haj_uintmax;
 
-/* --------------------------------------------------------------------------
- * Size-related types
- * --------------------------------------------------------------------------
- *
+/* ----- Size-related types ----- */
+/**
  * size_t   : unsigned, result of sizeof
  * ssize_t  : signed, size of a buffer, return of read/write
  * ptrdiff_t: signed, result of pointer subtraction
@@ -94,10 +106,8 @@ typedef int					__haj_ssize;
 typedef int					__haj_ptrdiff;
 # endif
 
-/* --------------------------------------------------------------------------
- * POSIX types
- * --------------------------------------------------------------------------
- *
+/* ----- POSIX types ----- */
+/**
  * These match the kernel ABI per OS. The sizes are chosen to match
  * what the kernel expects when passing these values to syscalls.
  */
@@ -122,30 +132,6 @@ typedef unsigned int		__haj_mode;
 # endif
 
 /*
- * off_t: file offset, size, and count of bytes.
- *
- * hajlib uses 64 bits everywhere. This is the natural size on
- * all 64-bit platforms and on Darwin. On 32-bit Linux, you must
- * define _FILE_OFFSET_BITS=64 to use the 64-bit lseek syscall
- * (_llseek on some arches). Otherwise, the kernel will interpret
- * the value as 32 bits.
- */
-typedef __haj_i64 __haj_off;
-
-/*
- * pid_t: process ID.
- * 32 bits signed on Linux, FreeBSD, Darwin.
- */
-typedef int					__haj_pid;
-
-/*
- * uid_t / gid_t: user and group IDs.
- * 32 bits unsigned on Linux, FreeBSD, Darwin.
- */
-typedef unsigned int		__haj_uid;
-typedef unsigned int		__haj_gid;
-
-/*
  * dev_t: device ID.
  * 64 bits unsigned on modern Linux and FreeBSD.
  * 32 bits signed on Darwin (historical).
@@ -155,12 +141,6 @@ typedef __haj_i32			__haj_dev;
 # else
 typedef __haj_u64			__haj_dev;
 # endif
-
-/*
- * ino_t: inode number.
- * 64 bits unsigned on modern Linux, FreeBSD, Darwin.
- */
-typedef __haj_u64			__haj_ino;
 
 /*
  * nlink_t: link count.
@@ -178,40 +158,347 @@ typedef unsigned short __haj_nlink;
 typedef __haj_u64 __haj_nlink;
 # endif
 
-/*
- * blksize_t: block size.
- * Signed long on all platforms.
+/**
+ * __hajULW_t: an unaligned word type.
+ * This type is used to represent a word that is not aligned to its natural
+ * boundary. It is typically used in low-level memory operations where
+ * alignment is not guaranteed.
  */
-typedef long				__haj_blksize;
+typedef __haj_size __HAJ_UNALIGNED_WORD __hajULW_t;
+
+
+/* ----- Public types ----- */
+
+
+/* ----- Size-related types ----- */
+
+# ifndef __size_t_defined
+#  define __size_t_defined
+/**
+ * @brief Unsigned integer type of the result of the sizeof operator.
+ */
+typedef __haj_size		size_t;
+# endif
+
+# ifndef __ssize_t_defined
+#  define __ssize_t_defined
+/**
+ * @brief Signed integer type, used for sizes and counts.
+ *
+ * Used by read(), write(), and other functions that return a
+ * byte count or -1 on error.
+ */
+typedef __haj_ssize		ssize_t;
+# endif
+
+# ifndef __ptrdiff_t_defined
+#  define __ptrdiff_t_defined
+/**
+ * @brief Signed integer type of the result of subtracting two pointers.
+ */
+typedef __haj_ptrdiff	ptrdiff_t;
+# endif
+
+/* ----- POSIX types ----- */
+
+# ifndef __mode_t_defined
+#  define __mode_t_defined
+/**
+ * @brief File mode (permissions and file type).
+ *
+ * Used by open(), mkdir(), chmod(), and struct stat.
+ */
+typedef __haj_mode		mode_t;
+# endif
+
+# ifndef __off_t_defined
+#  define __off_t_defined
+/**
+ * @brief File offset.
+ *
+ * Used by lseek(), mmap(), and struct stat.
+ * 64 bits on all modern 64-bit platforms.
+ * The user can force 32 bits with -D_FILE_OFFSET_BITS=32.
+ */
+#  if __HAJ_USE_32_OFFSET_BITS
+typedef __haj_i32		off_t;
+#  else
+typedef __haj_i64		off_t;
+#  endif
+# endif
+
+# ifndef __pid_t_defined
+#  define __pid_t_defined
+/**
+ * @brief Process ID.
+ */
+typedef int				pid_t;
+# endif
+
+# ifndef __uid_t_defined
+#  define __uid_t_defined
+/**
+ * @brief User ID.
+ */
+typedef unsigned int	uid_t;
+# endif
+
+# ifndef __gid_t_defined
+#  define __gid_t_defined
+/**
+ * @brief Group ID.
+ */
+typedef unsigned int	gid_t;
+# endif
+
+# ifndef __id_t_defined
+#  define __id_t_defined
+/**
+ * @brief General identifier.
+ *
+ * Can hold at least a pid_t, uid_t, or gid_t.
+ */
+typedef unsigned int	id_t;
+# endif
+
+# ifndef __key_t_defined
+#  define __key_t_defined
+/**
+ * @brief XSI IPC key.
+ */
+typedef __haj_i32		key_t;
+# endif
+
+# ifndef __dev_t_defined
+#  define __dev_t_defined
+/**
+ * @brief Device ID.
+ *
+ * Used by mknod(), struct stat, and struct dirent.
+ */
+typedef __haj_dev		dev_t;
+# endif
+
+# ifndef __ino_t_defined
+#  define __ino_t_defined
+/**
+ * @brief Inode number.
+ *
+ * Used by struct stat and struct dirent.
+ */
+#  if __HAJ_USE_32_OFFSET_BITS
+typedef __haj_u32		ino_t;
+#  else
+typedef __haj_u64		ino_t;
+#  endif
+# endif
+
+# ifndef __nlink_t_defined
+#  define __nlink_t_defined
+/**
+ * @brief Link count.
+ *
+ * Used by struct stat.
+ */
+typedef __haj_nlink		nlink_t;
+# endif
+
+# ifndef __blksize_t_defined
+#  define __blksize_t_defined
+/**
+ * @brief Block size.
+ *
+ * Used by struct stat.
+ */
+typedef long			blksize_t;
+# endif
+
+# ifndef __blkcnt_t_defined
+#  define __blkcnt_t_defined
+/**
+ * @brief Block count.
+ *
+ * Used by struct stat.
+ */
+#  if __HAJ_USE_32_OFFSET_BITS
+typedef __haj_i32		blkcnt_t;
+#  else
+typedef __haj_i64		blkcnt_t;
+#  endif
+# endif
+
+# ifndef __fsblkcnt_t_defined
+#  define __fsblkcnt_t_defined
+/**
+ * @brief File system block count.
+ *
+ * Used by statvfs().
+ */
+typedef __haj_u64	fsblkcnt_t;
+# endif
+
+# ifndef __fsfilcnt_t_defined
+#  define __fsfilcnt_t_defined
+/**
+ * @brief File system file count.
+ *
+ * Used by statvfs().
+ */
+typedef __haj_u64	fsfilcnt_t;
+# endif
+
+# ifndef __reclen_t_defined
+#  define __reclen_t_defined
+/**
+ * @brief Directory entry length.
+ *
+ * Unsigned integer; matches d_reclen in struct dirent.
+ * New in POSIX.1-2024 (Issue 8).
+ */
+typedef unsigned short	reclen_t;
+# endif
+
+# ifndef __time_t_defined
+#  define __time_t_defined
+/**
+ * @brief Calendar time in seconds since the Unix epoch.
+ *
+ * Used by time(), struct stat, struct timespec, struct timeval.
+ */
+typedef __haj_i64		time_t;
+# endif
+
+# ifndef __suseconds_t_defined
+#  define __suseconds_t_defined
+/**
+ * @brief Microseconds.
+ *
+ * Used by struct timeval.
+ */
+typedef long			suseconds_t;
+# endif
+
+# ifndef __clock_t_defined
+#  define __clock_t_defined
+/**
+ * @brief Clock ticks.
+ *
+ * Used by clock().
+ */
+typedef long			clock_t;
+# endif
+
+# ifndef __clockid_t_defined
+#  define __clockid_t_defined
+/**
+ * @brief Clock ID.
+ *
+ * Used by clock_gettime(), clock_settime(), etc.
+ */
+typedef int				clockid_t;
+# endif
+
+/* ----- Opaque POSIX types ----- */
+/**
+ * The following types are not required to be arithmetic by POSIX.
+ * Their layout is implementation-defined. We provide placeholder
+ * definitions so that code including <sys/types.h> compiles even
+ * without the full subsystem (pthreads, timers) being available.
+ */
+
+# ifndef __timer_t_defined
+#  define __timer_t_defined
+/**
+ * @brief Timer ID returned by timer_create().
+ *
+ * Used by timer_create(), timer_delete(), timer_settime(), etc.
+ */
+typedef void			*timer_t;
+# endif
+
+/* Thread handle: fits in a pointer-sized integer. */
+# ifndef __pthread_t_defined
+#  define __pthread_t_defined
+typedef unsigned long	pthread_t;
+# endif
+
+/* Small integer types. */
+# ifndef __pthread_key_t_defined
+#  define __pthread_key_t_defined
+typedef unsigned int	pthread_key_t;
+# endif
+
+# ifndef __pthread_once_t_defined
+#  define __pthread_once_t_defined
+typedef int				pthread_once_t;
+# endif
+
+# ifndef __pthread_spinlock_t_defined
+#  define __pthread_spinlock_t_defined
+typedef int				pthread_spinlock_t;
+# endif
 
 /*
- * blkcnt_t: block count.
- * 64 bits signed on modern Linux and FreeBSD.
+ * Opaque object types. Each is a distinct struct type so that the
+ * compiler catches accidental mixing (pthread_attr_t* passed where
+ * pthread_mutex_t* is expected). The 64-byte size and long
+ * alignment are placeholders; the pthread implementation will fit
+ * inside them without changing the public type.
  */
-typedef __haj_i64			__haj_blkcnt;
 
-/*
- * time_t: seconds since the Unix epoch.
- * 64 bits signed on all modern 64-bit platforms.
+/**
+ * @brief Thread attributes.
+ *
+ * Used by pthread_create() and pthread_attr_init().
  */
-typedef __haj_i64			__haj_time;
-
-/*
- * suseconds_t: microseconds.
- * Signed long on all platforms.
+typedef struct { char __data[64]; long __align; } pthread_attr_t;
+/**
+ * @brief Barrier object.
+ *
+ * Used by pthread_barrier_init() and pthread_barrier_wait().
  */
-typedef long				__haj_suseconds;
-
-/*
- * clock_t: clock ticks.
- * Signed long on all platforms.
+typedef struct { char __data[64]; long __align; } pthread_barrier_t;
+/**
+ * @brief Barrier attributes.
+ *
+ * Used by pthread_barrierattr_init() and pthread_barrierattr_setpshared().
  */
-typedef long				__haj_clock;
-
-/*
- * clockid_t: clock ID for clock_gettime.
- * Signed int on all platforms.
+typedef struct { char __data[64]; long __align; } pthread_barrierattr_t;
+/**
+ * @brief Condition variable.
+ *
+ * Used by pthread_cond_init() and pthread_cond_wait().
  */
-typedef int					__haj_clockid;
+typedef struct { char __data[64]; long __align; } pthread_cond_t;
+/**
+ * @brief Condition variable attributes.
+ *
+ * Used by pthread_condattr_init() and pthread_condattr_setpshared().
+ */
+typedef struct { char __data[64]; long __align; } pthread_condattr_t;
+/**
+ * @brief Mutex object.
+ *
+ * Used by pthread_mutex_init() and pthread_mutex_lock().
+ */
+typedef struct { char __data[64]; long __align; } pthread_mutex_t;
+/**
+ * @brief Mutex attributes.
+ *
+ * Used by pthread_mutexattr_init() and pthread_mutexattr_settype().
+ */
+typedef struct { char __data[64]; long __align; } pthread_mutexattr_t;
+/**
+ * @brief Read-write lock object.
+ *
+ * Used by pthread_rwlock_init() and pthread_rwlock_rdlock().
+ */
+typedef struct { char __data[64]; long __align; } pthread_rwlock_t;
+/**
+ * @brief Read-write lock attributes.
+ *
+ * Used by pthread_rwlockattr_init() and pthread_rwlockattr_setpshared().
+ */
+typedef struct { char __data[64]; long __align; } pthread_rwlockattr_t;
 
 #endif /* _BITS_TYPES_H */

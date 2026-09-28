@@ -1,6 +1,16 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
+ *
+ * This file is part of hajlib.
+ * See LICENSE for the full license text.
+ */
+
 /**
  * @file stack_chk_fail.c
- * @brief Definition of __stack_chk_fail.
+ * @brief Implementation of __stack_chk_fail.
+ * @Created: 2026/09/24 15:06:42 by Moutig
+ * @Updated: 2026/09/26 05:06:41 by Moutig
  *
  * WHEN IS THIS FUNCTION CALLED ?
  *
@@ -65,7 +75,7 @@ static void	__haj_stack_chk_write(const char *s)
 	while (s[len] != '\0')
 		len++;
 	if (len > 0)
-		__haj_syscall6(SYS_write, 2, (long)s, (long)len, 0, 0, 0);
+		__haj_syscall3(SYS_write, 2, (long)s, (long)len);
 }
 
 /**
@@ -89,7 +99,7 @@ __HAJ_NORETURN void	__stack_chk_fail(void)
 	 * handler for SIGABRT, it will not be called; we exit
 	 * immediately.
 	 */
-	__haj_syscall6(SYS_exit_group, 134, 0, 0, 0, 0, 0);
+	__haj_syscall1(SYS_exit_group, 134);
 
 	/*
 	 * Safety net. The syscall should never return.

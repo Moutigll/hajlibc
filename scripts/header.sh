@@ -39,7 +39,7 @@ fi
 
 # File type
 case "$FILE" in
-    *.c|*.h|*.hpp|*.cpp)
+    *.c|*.h|*.hpp|*.cpp|*.inl)
         # C/C++ source / header: license + doxygen
         cat > "$FILE.new" << EOF
 /*

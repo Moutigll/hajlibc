@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bits/mman.h`: `SHM_PREFIX`, `SHM_PREFIX_LEN`, `SHM_PATH_MAX` per OS
 - `sys/random.h`: `getrandom` (with `GRND_*` flags) and `getentropy`
 - `src/sys/getrandom.c`, `src/sys/getentropy.c` (Linux/BSD via `SYS_getrandom`, Darwin via `SYS_getentropy`)
+- `bits/time.h`: `struct timespec`, `struct timeval`, per-OS `CLOCK_*`, `CLOCKS_PER_SEC`, `TIMER_ABSTIME`, `TIME_UTC`
+- `bits/select.h`: `fd_set` type, `FD_ZERO`/`FD_SET`/`FD_CLR`/`FD_ISSET` (inline helpers, out-of-range fds ignored)
+- `__HAJ_USE_32_OFFSET_BITS` in `bits/wordsize.h` (32-bit off_t only when 32-bit platform + `_FILE_OFFSET_BITS=32`)
 
 ### Changed
 
@@ -51,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rewrote internal syscall call sites to use the smallest `__haj_syscallN` variant
 - `mk/targets.mk`: use `SYSCALL_BASE_SRCS` to include all 7 syscall files per target
 - All syscall6 assembly files now emit `.note.GNU-stack`
+- Public POSIX typedefs (`size_t`, `ssize_t`, `off_t`, `pid_t`, `time_t`, ...) moved from `sys/types.h` to `bits/types.h`
+- `sys/types.h` is now just `#include <bits/types.h>`
 
 ### Fixed
 

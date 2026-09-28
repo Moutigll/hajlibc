@@ -49,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sys/time.h`: `struct timeval`, `select`, `utimes`
 - `sys/times.h`: `struct tms`, `times`
 - `bits/types.h`: `id_t`, `key_t`, `fsblkcnt_t`, `fsfilcnt_t`, `reclen_t`, opaque pthread types, `timer_t`
+- `src/time/time.c`: `time()` (Linux/FreeBSD `SYS_time`, else `clock_gettime`)
+- `src/time/timespec_get.c`: `timespec_get(TIME_UTC)`
+- `src/time/nanosleep.c`: `nanosleep` (Linux/FreeBSD syscall, Darwin `__semwait_signal`, Windows `Sleep`/`NtDelayExecution`)
+- `src/time/clock/`: `clock_gettime` (Darwin commpage), `clock_getres` (Darwin/Windows fixed), `clock_settime` (Darwin/Windows fallback), `clock_nanosleep` (emulated on non-Linux)
+- `src/sys/times.c`: `times()` (Linux `SYS_times`, else `getrusage` + `CLOCK_MONOTONIC`)
+- `SYS_time` added for Linux x86_64/aarch64 and FreeBSD
+- `mk/sources.mk`: `SYS_DIR` and `SYS_SRCS` (`getentropy`, `getrandom`, `times`), `TIME_SRCS` for `src/time/`
 
 ### Changed
 

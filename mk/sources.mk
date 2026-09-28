@@ -32,6 +32,7 @@ STAT_DIR		:= $(SRC_DIR)/stat
 STDIO_DIR		:= $(SRC_DIR)/stdio
 STDLIB_DIR		:= $(SRC_DIR)/stdlib
 STRING_DIR		:= $(SRC_DIR)/string
+SYS_DIR			:= $(SRC_DIR)/sys
 TIME_DIR		:= $(SRC_DIR)/time
 UNISTD_DIR		:= $(SRC_DIR)/unistd
 
@@ -145,13 +146,23 @@ STRING_SRCS := \
 	str/strtok_r.c \
 	str/strsep.c
 
+SYS_SRCS := \
+	getentropy.c \
+	getrandom.c \
+	times.c
+
 # time
-TIME_SRCS :=
+TIME_SRCS := \
+	time.c \
+	timespec_get.c \
+	nanosleep.c \
+	clock/clock_getres.c \
+	clock/clock_gettime.c \
+	clock/clock_nanosleep.c \
+	clock/clock_settime.c
 
 # unistd-
-UNISTD_SRCS := \
-	../sys/getrandom.c \
-	../sys/getentropy.c
+UNISTD_SRCS :=
 
 # Prefix each section with its directory.
 ASSERT_SRCS		:= $(addprefix $(ASSERT_DIR)/,$(ASSERT_SRCS))
@@ -171,5 +182,6 @@ STAT_SRCS		:= $(addprefix $(STAT_DIR)/,$(STAT_SRCS))
 STDIO_SRCS		:= $(addprefix $(STDIO_DIR)/,$(STDIO_SRCS))
 STDLIB_SRCS		:= $(addprefix $(STDLIB_DIR)/,$(STDLIB_SRCS))
 STRING_SRCS		:= $(addprefix $(STRING_DIR)/,$(STRING_SRCS))
+SYS_SRCS		:= $(addprefix $(SYS_DIR)/,$(SYS_SRCS))
 TIME_SRCS		:= $(addprefix $(TIME_DIR)/,$(TIME_SRCS))
 UNISTD_SRCS		:= $(addprefix $(UNISTD_DIR)/,$(UNISTD_SRCS))

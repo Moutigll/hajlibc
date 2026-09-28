@@ -10,7 +10,7 @@
  * @file x86_64.h
  * @brief Linux x86_64 syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 15:55:26 by Moutig
+ * @Updated: 2026/09/28 10:34:28 by Moutig
  *
  * Source: <asm/unistd_64.h> from the Linux kernel.
  * These numbers are stable for the Linux x86_64 ABI.
@@ -174,6 +174,7 @@
 # define SYS_sched_getscheduler	145
 
 /* ---- Time ---- */
+# define SYS_time				201
 # define SYS_clock_gettime		228
 # define SYS_clock_settime		227
 # define SYS_clock_getres		229

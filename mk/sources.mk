@@ -149,7 +149,9 @@ STRING_SRCS := \
 TIME_SRCS :=
 
 # unistd-
-UNISTD_SRCS :=
+UNISTD_SRCS := \
+	../sys/getrandom.c \
+	../sys/getentropy.c
 
 # Prefix each section with its directory.
 ASSERT_SRCS		:= $(addprefix $(ASSERT_DIR)/,$(ASSERT_SRCS))

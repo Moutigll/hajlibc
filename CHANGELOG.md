@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux: `/dev/shm` + name; FreeBSD: dedicated syscalls; Darwin: `/var/tmp/.hajlib-shm-<uid>-...`
 - FreeBSD: `SYS_shm_open`, `SYS_shm_unlink` in `bits/syscall/freebsd.h`
 - `bits/mman.h`: `SHM_PREFIX`, `SHM_PREFIX_LEN`, `SHM_PATH_MAX` per OS
+- `sys/random.h`: `getrandom` (with `GRND_*` flags) and `getentropy`
+- `src/sys/getrandom.c`, `src/sys/getentropy.c` (Linux/BSD via `SYS_getrandom`, Darwin via `SYS_getentropy`)
 
 ### Changed
 

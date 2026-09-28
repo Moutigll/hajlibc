@@ -45,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bits/time.h`: `struct timespec`, `struct timeval`, per-OS `CLOCK_*`, `CLOCKS_PER_SEC`, `TIMER_ABSTIME`, `TIME_UTC`
 - `bits/select.h`: `fd_set` type, `FD_ZERO`/`FD_SET`/`FD_CLR`/`FD_ISSET` (inline helpers, out-of-range fds ignored)
 - `__HAJ_USE_32_OFFSET_BITS` in `bits/wordsize.h` (32-bit off_t only when 32-bit platform + `_FILE_OFFSET_BITS=32`)
+- `time.h`: ISO C + POSIX time API (`struct tm`, `struct itimerspec`, clock/timer/sleep/format functions, `tzset`)
+- `sys/time.h`: `struct timeval`, `select`, `utimes`
+- `sys/times.h`: `struct tms`, `times`
+- `bits/types.h`: `id_t`, `key_t`, `fsblkcnt_t`, `fsfilcnt_t`, `reclen_t`, opaque pthread types, `timer_t`
 
 ### Changed
 
@@ -222,6 +226,6 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 
 - All `ft_*` sources and headers from the old libft structure
 
-[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.2.0...dev
 [0.2.0]: https://github.com/moutigll/hajlib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/moutigll/hajlib/releases/tag/v0.1.0

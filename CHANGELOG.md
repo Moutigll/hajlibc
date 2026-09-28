@@ -9,64 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Development tooling: `.vscode/settings.json`, `.vscode/extensions.json`
-- License header scripts: `scripts/header.sh`, `scripts/header-update.sh`, `scripts/header-check.sh`
-- Git hook: `.githooks/pre-commit` (checks headers on commit)
-- CPU feature detection: `include/bits/cpu.h` (SSE2/3/SSSE3, SSE4.1/4.2, AVX, AVX2, FMA, AVX-512F/BW/VL, ERMS)
-- Implementation: `src/cpu/x86/cpuFeatures.c` (CPUID + XGETBV, lazy detection, cached in static struct)
-- Compiler attributes: `__HAJ_MAY_ALIAS`, `__HAJ_EXTENSION`, `__HAJ_TYPEOF`, `__HAJ_ALIGNED_MAX`, `__HAJ_UNALIGNED_WORD`, `__HAJ_TARGET`, `__HAJ_IFUNC`
-- Renamed library references from `libhaj.a` to `libhajc.a` (`mk/config.mk`, `mk/hajlib.mk`)
-- `Makefile`, `mk/sources.mk` and `mk/targets.mk`: added CPU source selection per OS/arch
-- `string.h` with `memcpy` (SSE2/AVX2/AVX-512/NEON dispatch via CPU detection, generic fallback)
-- `string.h`: `memmove`
-- Refactored `memcpy` into a shared vector template (`src/string/memcpyImpl.h`), reused by `memmove`
-- `string.h`: `memset` (SSE2/AVX2/AVX-512/NEON dispatch) and `bzero` macro
-- `__HAJ_SOURCE` macro in `bits/compiler.h` (gated on `_GNU_SOURCE`/`_BSD_SOURCE`/`_POSIX_C_SOURCE`/GNU-like compilers)
-- `string.h`: `memcmp`, `memchr`, `memccpy`, and `memrchr` (GNU, under `__HAJ_SOURCE`)
-- Internal helpers: `src/string/impl/wordOps.h` (`__hajSplatByte`, `__hajHasZeroByte`, first/last zero byte index)
-- `string.h`: `strlen`, `strnlen` (word-at-a-time scan)
-- `string.h`: `strcmp`, `strncmp` (word-at-a-time, with zero-byte/diff detection)
-- `string.h`: `strchr`, `strrchr`, `strchrnul` (GNU), `strcpy`, `stpcpy`, `strncpy`, `stpncpy`, `strlcpy` (BSD)
-- `string.h`: `strcat`, `strncat`, `strlcat` (BSD), `strspn`, `strcspn`
-- `ctype.h`: character classification and conversion (inline `__haj_*` fast paths, `HAJ_NO_CTYPE_MACROS` toggle, external symbols in `src/ctype/ctype.c`)
-- `string.h`: `strpbrk`, `strstr` (Horspool + Two-Way for long needles), `strcasestr` (GNU)
-- `string.h`: `strtok`, `strtok_r`, `strsep` (BSD)
-- `bits/mman.h`: per-OS `mmap` constants (`PROT_*`, `MAP_*`, `MS_*`, `MADV_*`, `MCL_*`) for Linux, FreeBSD, Darwin
-- `__haj_syscall0` .. `__haj_syscall5` variants for all supported OS/arch (assembly)
-- `sys/mman.h`: `mmap`, `munmap` (other mman functions declared, implementations pending)
-- `src/mman/`: `mmap.c`, `munmap.c` using raw syscalls
-- `sys/mman.h`: `mprotect`, `msync`, `madvise`, `posix_madvise`, `mlock`, `munlock`, `mlockall`, `munlockall`, `shm_open`, `shm_unlink`, POSIX typed-memory API
-- `src/sys/mman/`: platform-agnostic implementations + per-OS `shm_open`/`shm_unlink`
-- Linux: `/dev/shm` + name; FreeBSD: dedicated syscalls; Darwin: `/var/tmp/.hajlib-shm-<uid>-...`
-- FreeBSD: `SYS_shm_open`, `SYS_shm_unlink` in `bits/syscall/freebsd.h`
-- `bits/mman.h`: `SHM_PREFIX`, `SHM_PREFIX_LEN`, `SHM_PATH_MAX` per OS
-- `sys/random.h`: `getrandom` (with `GRND_*` flags) and `getentropy`
-- `src/sys/getrandom.c`, `src/sys/getentropy.c` (Linux/BSD via `SYS_getrandom`, Darwin via `SYS_getentropy`)
-- `bits/time.h`: `struct timespec`, `struct timeval`, per-OS `CLOCK_*`, `CLOCKS_PER_SEC`, `TIMER_ABSTIME`, `TIME_UTC`
-- `bits/select.h`: `fd_set` type, `FD_ZERO`/`FD_SET`/`FD_CLR`/`FD_ISSET` (inline helpers, out-of-range fds ignored)
-- `__HAJ_USE_32_OFFSET_BITS` in `bits/wordsize.h` (32-bit off_t only when 32-bit platform + `_FILE_OFFSET_BITS=32`)
-- `time.h`: ISO C + POSIX time API (`struct tm`, `struct itimerspec`, clock/timer/sleep/format functions, `tzset`)
-- `sys/time.h`: `struct timeval`, `select`, `utimes`
-- `sys/times.h`: `struct tms`, `times`
-- `bits/types.h`: `id_t`, `key_t`, `fsblkcnt_t`, `fsfilcnt_t`, `reclen_t`, opaque pthread types, `timer_t`
-- `src/time/time.c`: `time()` (Linux/FreeBSD `SYS_time`, else `clock_gettime`)
-- `src/time/timespec_get.c`: `timespec_get(TIME_UTC)`
-- `src/time/nanosleep.c`: `nanosleep` (Linux/FreeBSD syscall, Darwin `__semwait_signal`, Windows `Sleep`/`NtDelayExecution`)
-- `src/time/clock/`: `clock_gettime` (Darwin commpage), `clock_getres` (Darwin/Windows fixed), `clock_settime` (Darwin/Windows fallback), `clock_nanosleep` (emulated on non-Linux)
-- `src/sys/times.c`: `times()` (Linux `SYS_times`, else `getrusage` + `CLOCK_MONOTONIC`)
-- `SYS_time` added for Linux x86_64/aarch64 and FreeBSD
-- `mk/sources.mk`: `SYS_DIR` and `SYS_SRCS` (`getentropy`, `getrandom`, `times`), `TIME_SRCS` for `src/time/`
+- Nothing yet
 
 ### Changed
 
-- `.gitignore`: track `.vscode/settings.json` and `.vscode/extensions.json`
-- `Makefile`: added `init`, `headers-add`, `headers-check` targets
-- Renamed library references from `libhaj.a` to `libhajc.a` (`mk/config.mk`, `mk/hajlib.mk`)
-- Rewrote internal syscall call sites to use the smallest `__haj_syscallN` variant
-- `mk/targets.mk`: use `SYSCALL_BASE_SRCS` to include all 7 syscall files per target
-- All syscall6 assembly files now emit `.note.GNU-stack`
-- Public POSIX typedefs (`size_t`, `ssize_t`, `off_t`, `pid_t`, `time_t`, ...) moved from `sys/types.h` to `bits/types.h`
-- `sys/types.h` is now just `#include <bits/types.h>`
+- Nothing yet
 
 ### Fixed
 
@@ -79,6 +26,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 - Nothing yet
+
+## [0.3.0] - 2026-09-28
+
+This release adds the full string and ctype APIs, the memory
+mapping interface, the random API, and the complete time API.
+Programs can now use `memcpy`, `strlen`, `mmap`, `getrandom`,
+`clock_gettime`, `nanosleep`, and the POSIX timers without
+falling back to the system libc.
+
+### Added
+
+#### String and character handling
+
+- `<string.h>`: `memcpy`, `memmove`, `memset` with SSE2 / AVX2 /
+  AVX-512 / NEON dispatch and a portable fallback
+- `<string.h>`: `memcmp`, `memchr`, `memccpy`, `memrchr`
+- `<string.h>`: `strlen`, `strnlen` (word-at-a-time scan)
+- `<string.h>`: `strcmp`, `strncmp` (word-at-a-time comparison)
+- `<string.h>`: `strchr`, `strrchr`, `strchrnul`, `strcpy`,
+  `stpcpy`, `strncpy`, `stpncpy`, `strlcpy`
+- `<string.h>`: `strcat`, `strncat`, `strlcat`, `strspn`, `strcspn`
+- `<string.h>`: `strpbrk`, `strstr` (Horspool + Two-Way),
+  `strcasestr`
+- `<string.h>`: `strtok`, `strtok_r`, `strsep`
+- `<ctype.h>`: full character classification and conversion
+  (inline `__haj_*` fast paths, external symbols in
+  `src/ctype/ctype.c`)
+
+#### Memory mapping
+
+- `<sys/mman.h>`: `mmap`, `munmap`, `mprotect`, `msync`,
+  `madvise`, `posix_madvise`
+- `<sys/mman.h>`: `mlock`, `munlock`, `mlockall`, `munlockall`
+- `<sys/mman.h>`: `shm_open`, `shm_unlink` (per-OS: `/dev/shm`
+  on Linux, native syscalls on FreeBSD, `/var/tmp/.hajlib-shm-*`
+  on Darwin)
+- `<sys/mman.h>`: POSIX typed memory API
+- `<bits/mman.h>`: per-OS `PROT_*`, `MAP_*`, `MS_*`, `MADV_*`,
+  `MCL_*` constants
+- `<bits/mman.h>`: `SHM_PREFIX`, `SHM_PREFIX_LEN`, `SHM_PATH_MAX`
+
+#### Random
+
+- `<sys/random.h>`: `getrandom` (with `GRND_*` flags) and
+  `getentropy`
+
+#### Time
+
+- `<time.h>`: complete ISO C + POSIX time API
+  - `<time.h>`: `struct tm` (with `tm_gmtoff`, `tm_zone`),
+    `struct itimerspec`
+  - `<time.h>`: `time`, `difftime`, `timespec_get`, `clock`
+  - `<time.h>`: `clock_gettime`, `clock_getres`, `clock_settime`,
+    `clock_getcpuclockid`
+  - `<time.h>`: `nanosleep`, `clock_nanosleep`
+  - `<time.h>`: `timer_create`, `timer_delete`, `timer_gettime`,
+    `timer_settime`, `timer_getoverrun` (declarations only)
+  - `<time.h>`: `gmtime`, `gmtime_r`, `localtime`, `localtime_r`,
+    `mktime`
+  - `<time.h>`: `strftime`, `strptime`, `asctime`, `ctime`,
+    `getdate` (declarations only)
+  - `<time.h>`: `tzset`, `daylight`, `timezone`, `tzname`,
+    `getdate_err`
+- `<sys/time.h>`: `struct timeval`, `select`, `utimes`
+- `<sys/times.h>`: `struct tms`, `times`
+- `<bits/time.h>`: `struct timespec`, `struct timeval`, per-OS
+  `CLOCK_*`, `CLOCKS_PER_SEC`, `TIMER_ABSTIME`, `TIME_UTC`
+
+#### Signal (partial)
+
+- `<signal.h>`: `union sigval`, `struct sigevent` (the minimum
+  required for POSIX timer notification; the full signal API is
+  not yet implemented)
+
+#### Type system
+
+- `<bits/types.h>`: `id_t`, `key_t`, `fsblkcnt_t`, `fsfilcnt_t`,
+  `reclen_t`
+- `<bits/types.h>`: opaque `timer_t`, `pthread_t`,
+  `pthread_key_t`, `pthread_once_t`, `pthread_spinlock_t`,
+  `pthread_attr_t`, `pthread_barrier_t`,
+  `pthread_barrierattr_t`, `pthread_cond_t`,
+  `pthread_condattr_t`, `pthread_mutex_t`,
+  `pthread_mutexattr_t`, `pthread_rwlock_t`,
+  `pthread_rwlockattr_t`
+- `<bits/select.h>`: `fd_set`, `FD_ZERO`, `FD_SET`, `FD_CLR`,
+  `FD_ISSET`
+- `<bits/wordsize.h>`: `__HAJ_USE_32_OFFSET_BITS` (32-bit `off_t`
+  only when the platform is 32-bit and `_FILE_OFFSET_BITS=32`)
+
+#### Syscall layer
+
+- `__haj_syscall0` .. `__haj_syscall5` variants for all supported
+  OS/arch
+- `SYS_time` added for Linux x86_64/aarch64 and FreeBSD
+- All syscall assembly files now emit `.note.GNU-stack`
+
+#### Build
+
+- `Makefile`: `init`, `headers-add`, `headers-check` targets
+- `mk/sources.mk`: `SYS_DIR` and `SYS_SRCS` (`getentropy`,
+  `getrandom`, `times`), `TIME_SRCS` for `src/time/`
+
+### Changed
+
+- Public POSIX typedefs (`size_t`, `ssize_t`, `off_t`, `pid_t`,
+  `time_t`, ...) moved from `<sys/types.h>` to `<bits/types.h>`;
+  `<sys/types.h>` is now just `#include <bits/types.h>`
+- Renamed library references from `libhaj.a` to `libhajc.a`
+  (`mk/config.mk`, `mk/hajlib.mk`)
+- Internal syscall call sites rewritten to use the smallest
+  `__haj_syscallN` variant
+- `mk/targets.mk` uses `SYSCALL_BASE_SRCS` to include all 7
+  syscall files per target
+
+### Fixed
+
+- Nothing yet
+
+### Removed
+
+- Nothing yet
+
+### Deprecated
+
+- `<time.h>`: `asctime`, `ctime` are marked obsolescent in
+  POSIX.1-2024 and tagged `__HAJ_DEPRECATED`
+- `<time.h>`: `daylight`, `timezone`, `tzname` are XSI and
+  obsolete; prefer `tm_gmtoff`, `tm_zone`, and `localtime_r`
 
 ## [0.2.0] - 2026-09-22
 
@@ -113,6 +189,8 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 - Standard headers: `include/stddef.h`, `include/stdint.h`,
   `include/stdbool.h`, `include/stdarg.h`, `include/limits.h`
   with `include/bits/limits.h`
+- `<sys/auxv.h>`: `getauxval` and the `AT_*` constants
+- `<unistd.h>`: `getpid`
 
 #### Error handling
 
@@ -126,8 +204,8 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 
 - Startup code for Linux x86_64 / aarch64, FreeBSD x86_64 /
   aarch64, and Darwin x86_64 / arm64
-- `_start` reads `argc`/`argv`/`envp`, stores `argv[0]` into
-  `__progname`, calls `main`, then `exit`
+- `_start` reads `argc`/`argv`/`envp`, stores `argv[0]`, `__progname`,
+  `__haj_argc`, `environ`, and `__haj_auxv`, calls `main`, then `exit`
 - `exit`, `_exit`, `abort`
 - `atexit`, `__cxa_atexit`, `__cxa_finalize`, `__dso_handle`
 - `include/bits/crt.h` (internal declarations)
@@ -233,6 +311,7 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 
 - All `ft_*` sources and headers from the old libft structure
 
-[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.2.0...dev
+[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.3.0...dev
+[0.3.0]: https://github.com/moutigll/hajlib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/moutigll/hajlib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/moutigll/hajlib/releases/tag/v0.1.0

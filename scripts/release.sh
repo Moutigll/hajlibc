@@ -23,10 +23,10 @@ esac
 
 # Check branch
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [ "$BRANCH" != "hajlibc" ] && [ "$BRANCH" != "main" ]; then
-    echo "Error: must be on hajlibc or main (currently on $BRANCH)"
-    exit 1
-fi
+case "$BRANCH" in
+    hajlibc|main|dev|release*) ;;
+    *) echo "Branch $BRANCH not allowed" >&2 ; exit 1 ;;
+esac
 
 # Check clean working tree
 if [ -n "$(git status --porcelain)" ]; then
@@ -44,10 +44,9 @@ VERSION_HEADER="include/haj/version.h"
 
 # Update version.h
 sed -i.bak \
-    -e "s/^# define HAJ_VERSION_MAJOR .*/# define HAJ_VERSION_MAJOR  $MAJOR/" \
-    -e "s/^# define HAJ_VERSION_MINOR .*/# define HAJ_VERSION_MINOR  $MINOR/" \
-    -e "s/^# define HAJ_VERSION_PATCH .*/# define HAJ_VERSION_PATCH  $PATCH/" \
-    -e "s/^# define HAJ_VERSION_STRING_LITERAL .*/# define HAJ_VERSION_STRING_LITERAL \"$VERSION\"/" \
+    -e "s/^# define HAJ_VERSION_MAJOR[[:space:]].*/# define HAJ_VERSION_MAJOR	$MAJOR/" \
+    -e "s/^# define HAJ_VERSION_MINOR[[:space:]].*/# define HAJ_VERSION_MINOR	$MINOR/" \
+    -e "s/^# define HAJ_VERSION_PATCH[[:space:]].*/# define HAJ_VERSION_PATCH	$PATCH/" \
     "$VERSION_HEADER"
 rm -f "$VERSION_HEADER.bak"
 

@@ -51,7 +51,7 @@ CRT_SRCS := \
 	cxa_finalize.c \
 	dso_handle.c \
 	exit.c \
-	progname.c
+	start.c
 
 # ctype
 CTYPE_SRCS := \
@@ -147,6 +147,7 @@ STRING_SRCS := \
 	str/strsep.c
 
 SYS_SRCS := \
+	auxv.c \
 	getentropy.c \
 	getrandom.c \
 	times.c
@@ -162,7 +163,8 @@ TIME_SRCS := \
 	clock/clock_settime.c
 
 # unistd-
-UNISTD_SRCS :=
+UNISTD_SRCS := \
+	getpid.c
 
 # Prefix each section with its directory.
 ASSERT_SRCS		:= $(addprefix $(ASSERT_DIR)/,$(ASSERT_SRCS))

@@ -10,7 +10,7 @@
  * @file twoWay.h
  * @brief Two-Way string search algorithm for strstr implementation.
  * @Created: 2026/09/26 03:08:59 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/09/30 12:14:29 by Moutig
  *
  * Internal to src/string/. Guarantees O(n + m) worst-case time and
  * O(1) extra space (beyond a small critical factorization table).
@@ -114,8 +114,8 @@ static inline void	__hajCriticalFactorize(const unsigned char	*needle,
 										   size_t				*pos,
 										   size_t				*per)
 {
-	size_t	p1;
-	size_t	p2;
+	size_t	p1 = 0;
+	size_t	p2 = 0;
 	size_t	s1 = __hajMaxSuffix(needle, neLen, &p1, 0);
 	size_t	s2 = __hajMaxSuffix(needle, neLen, &p2, 1);
 

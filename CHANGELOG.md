@@ -17,12 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `make cov-build` / `make cov-clean` in the root Makefile
 - `HAJ_COV=1` support in `mk/config.mk` (adds `--coverage`, `COV_CFLAGS`, `COV_LDLIBS`)
 - Threading internals (headers only):
-  - `bits/signal.h`: per-OS signal numbers and `SA_*` flags
-  - `bits/clone.h`: Linux `clone()` flags and `HAJ_CLONE_THREAD_FLAGS`
-  - `bits/futex.h`: Linux futex operations, modifiers, and `__haj_futex*` wrappers
-  - `bits/tcb.h`: Thread Control Block layout and `__haj_tcbSelf`
-  - `bits/thread.h`: atomics, CPU relax, `__haj_gettid`, thread list, `cpu_set_t`
-  - `bits/tls.h`: TLS block layout, alloc/free, thread-area helpers
+- `bits/signal.h`: per-OS signal numbers and `SA_*` flags
+- `bits/clone.h`: Linux `clone()` flags and `HAJ_CLONE_THREAD_FLAGS`
+- `bits/futex.h`: Linux futex operations, modifiers, and `__haj_futex*` wrappers
+- `bits/tcb.h`: Thread Control Block layout and `__haj_tcbSelf`
+- `bits/thread.h`: atomics, CPU relax, `__haj_gettid`, thread list, `cpu_set_t`
+- `bits/tls.h`: TLS block layout, alloc/free, thread-area helpers
+- `sys/resource.h`: `getrlimit`, `setrlimit`, `getrlimit64`, `setrlimit64`, `getrusage`, `getpriority`, `setpriority`
+- `bits/resource.h`: per-OS `RLIMIT_*`, `RLIM_INFINITY`, `RLIM_SAVED_*`, `RUSAGE_*`
+- `rlim_t` / `rlim64_t` in `bits/types.h` (32-bit `rlim_t` only when `__HAJ_USE_32_OFFSET_BITS`)
+- `SYS_getrlimit`, `SYS_setrlimit`, `SYS_getrusage`, `SYS_prlimit64` in Linux x86_64/aarch64 syscall tables
 
 ### Changed
 

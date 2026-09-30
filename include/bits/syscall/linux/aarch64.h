@@ -10,7 +10,7 @@
  * @file aarch64.h
  * @brief Syscall numbers for the aarch64 architecture.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/09/30 13:21:20 by Moutig
  *
  * Source: <asm-generic/unistd.h> from the Linux kernel.
  * aarch64 uses the generic syscall numbering. Many syscalls
@@ -142,6 +142,12 @@
 # define SYS_timer_gettime		108
 # define SYS_timer_getoverrun	109
 # define SYS_timer_delete		111
+
+/* ---- Limits ---- */
+#define SYS_getrlimit			163
+#define SYS_setrlimit			164
+#define SYS_getrusage			165
+#define SYS_prlimit64			261
 
 /* ---- Random ---- */
 # define SYS_getrandom			278

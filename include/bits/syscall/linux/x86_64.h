@@ -10,7 +10,7 @@
  * @file x86_64.h
  * @brief Linux x86_64 syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/09/30 13:21:56 by Moutig
  *
  * Source: <asm/unistd_64.h> from the Linux kernel.
  * These numbers are stable for the Linux x86_64 ABI.
@@ -86,6 +86,7 @@
 # define SYS_umask				95
 # define SYS_gettimeofday		96
 # define SYS_getrlimit			97
+# define SYS_setrlimit			160
 # define SYS_getrusage			98
 # define SYS_sysinfo			99
 # define SYS_times				100
@@ -121,6 +122,7 @@
 # define SYS_inotify_init		253
 # define SYS_inotify_add_watch	254
 # define SYS_inotify_rm_watch	255
+#define SYS_prlimit64			302
 
 /* ---- Modern *at variants ---- */
 # define SYS_openat				257

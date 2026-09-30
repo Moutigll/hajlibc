@@ -10,7 +10,7 @@
  * @file types.h
  * @brief Internal fixed-width and POSIX-like types.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:15 by Moutig
+ * @Updated: 2026/09/30 13:25:12 by Moutig
  *
  * This header defines the real typedefs used across hajlib: the
  * fixed-width integer types, the size-related types, and the
@@ -436,6 +436,31 @@ typedef int				pthread_once_t;
 # ifndef __pthread_spinlock_t_defined
 #  define __pthread_spinlock_t_defined
 typedef int				pthread_spinlock_t;
+# endif
+
+/* ----- Resource limits ----- */
+
+/*
+ * rlim_t is the historical (possibly 32-bit) type used by
+ * getrlimit/setrlimit. rlim64_t is always 64-bit and is used by
+ * getrlimit64/setrlimit64.
+ *
+ * On 64-bit platforms, rlim_t and rlim64_t are both 64-bit and
+ * can be aliased. On 32-bit platforms, they must be distinct.
+ */
+
+# ifndef __rlim_t_defined
+#  define __rlim_t_defined
+#  if __HAJ_USE_32_OFFSET_BITS
+typedef __haj_u32	rlim_t;
+#  else
+typedef __haj_u64	rlim_t;
+#  endif
+# endif
+
+# ifndef __rlim64_t_defined
+#  define __rlim64_t_defined
+typedef __haj_u64	rlim64_t;
 # endif
 
 /*

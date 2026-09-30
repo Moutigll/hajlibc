@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First test case file: `tests/cases/ctype.c` (14 tests)
 - `make cov-build` / `make cov-clean` in the root Makefile
 - `HAJ_COV=1` support in `mk/config.mk` (adds `--coverage`, `COV_CFLAGS`, `COV_LDLIBS`)
+- Threading internals (headers only):
+  - `bits/signal.h`: per-OS signal numbers and `SA_*` flags
+  - `bits/clone.h`: Linux `clone()` flags and `HAJ_CLONE_THREAD_FLAGS`
+  - `bits/futex.h`: Linux futex operations, modifiers, and `__haj_futex*` wrappers
+  - `bits/tcb.h`: Thread Control Block layout and `__haj_tcbSelf`
+  - `bits/thread.h`: atomics, CPU relax, `__haj_gettid`, thread list, `cpu_set_t`
+  - `bits/tls.h`: TLS block layout, alloc/free, thread-area helpers
 
 ### Changed
 

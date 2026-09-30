@@ -20,7 +20,7 @@ $(OBJDIR):
 # Compile .c to .o
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(COV_CFLAGS) -c $< -o $@
 
 # Compile .S (preprocessed assembly) to .o
 $(OBJDIR)/%.o: %.S

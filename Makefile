@@ -69,7 +69,7 @@ ALL_SRCS := \
 ALL_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(patsubst %.S,$(OBJDIR)/%.o,$(ALL_SRCS)))
 
 # Info targets
-.PHONY: version info help clean fclean re headers-add headers-check init
+.PHONY: version info help clean fclean re headers-add headers-check init cov-build cov-clean
 
 init:
 	@echo "Installing git hooks..."
@@ -83,6 +83,12 @@ all: $(NAME)
 
 $(NAME): $(ALL_OBJS)
 	$(AR) rcs $@ $^
+
+cov-build: cov-clean
+	@$(MAKE) HAJ_COV=1 all
+
+cov-clean:
+	@rm -f $(OBJDIR)/*.gcda $(OBJDIR)/*.gcno
 
 version:
 	@echo "$(HAJ_VERSION)"
@@ -114,6 +120,8 @@ help:
 	@echo "  make headers-check  check headers in source files"
 	@echo "  make re       fclean + all"
 	@echo "  make version  print the current version"
+	@echo "  make cov-build  build with coverage"
+	@echo "  make cov-clean  clean coverage files"
 	@echo "  make info     print build configuration"
 	@echo "  make init     install git hooks"
 	@echo "  make help     this message"

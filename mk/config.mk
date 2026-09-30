@@ -39,6 +39,18 @@
 # If HAJ_ROOT is not set, guess it from the location of this file.
 HAJ_ROOT ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 
+# Coverage: if HAJ_COV=1, compile with gcov instrumentation.
+HAJ_COV		?= 0
+ifeq ($(HAJ_COV),1)
+COV_CFLAGS	:= --coverage -fprofile-arcs -ftest-coverage -O0 -g
+COV_LDFLAGS	:= --coverage
+COV_LDLIBS	:= $(shell $(CC) -print-file-name=libclang_rt.profile-$(shell uname -m).a)
+else
+COV_CFLAGS	:=
+COV_LDFLAGS	:=
+COV_LDLIBS	:=
+endif
+
 # Toolchain
 CC		?= clang
 AR		?= ar
@@ -105,3 +117,6 @@ export HAJ_CPPFLAGS
 export HAJ_CFLAGS
 export HAJ_LDFLAGS
 export HAJ_LIBS
+export COV_CFLAGS
+export COV_LDFLAGS
+export COV_LDLIBS

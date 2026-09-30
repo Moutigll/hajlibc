@@ -9,11 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Nothing yet
+- Constructors/destructors: `__haj_run_ctors` / `__haj_run_dtors` (called by `_start` and `exit`)
+- `mk/hajlibc.ld`: minimal linker script exposing `.init_array` / `.fini_array` boundaries
+- `unistd.h`: `write`
+- Test framework in `tests/framework/` (`TEST`, `ASSERT`, `ASSERT_EQ`, `ASSERT_STREQ`, colored report, filter)
+- First test case file: `tests/cases/ctype.c` (14 tests)
+- `make cov-build` / `make cov-clean` in the root Makefile
+- `HAJ_COV=1` support in `mk/config.mk` (adds `--coverage`, `COV_CFLAGS`, `COV_LDLIBS`)
 
 ### Changed
 
-- Nothing yet
+- Renamed of hajlib in License header to `hajlibc` to match the library name
+- All `_start` entry points call `__haj_run_ctors()` before `main()`
+- `mk/hajlib.mk`: added `-T $(HAJ_ROOT)/hajlibc.ld`
+- `memcpy` / `memmove` / `memset` dispatchers use typed function pointers instead of `void *`
+- `mk/cross.mk`: `CC` now uses `?=` so the user can override the compiler
+- `mk/build.mk`: `.c` and `.S` compile rules include `$(COV_CFLAGS)`
+- `tests/main.c` now runs the test framework instead of printing a version
 
 ### Fixed
 

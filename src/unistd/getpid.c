@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file getpid.c
  * @brief Implementation of getpid().
  * @Created: 2026/09/28 11:44:15 by Moutig
- * @Updated: 2026/09/28 12:08:00 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * Returns the process ID of the calling process. The PID is
  * placed in the parent process ID field of the child for

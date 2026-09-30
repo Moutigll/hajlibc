@@ -47,9 +47,11 @@ CPU_SRCS :=
 CRT_SRCS := \
 	_exit.c \
 	atexit.c \
+	ctors.c \
 	cxa_atexit.c \
 	cxa_finalize.c \
 	dso_handle.c \
+	dtors.c \
 	exit.c \
 	start.c
 
@@ -164,7 +166,8 @@ TIME_SRCS := \
 
 # unistd-
 UNISTD_SRCS := \
-	getpid.c
+	getpid.c \
+	write.c
 
 # Prefix each section with its directory.
 ASSERT_SRCS		:= $(addprefix $(ASSERT_DIR)/,$(ASSERT_SRCS))

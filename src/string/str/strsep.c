@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strsep.c
  * @brief Split a string into tokens, using the specified delimiter.
  * @Created: 2026/09/26 04:18:16 by Moutig
- * @Updated: 2026/09/26 04:18:26 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Extracts a token from *stringp, replacing the first byte in
  * `delim` with '\0'. Advances *stringp past the separator.

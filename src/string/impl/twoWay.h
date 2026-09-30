@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file twoWay.h
  * @brief Two-Way string search algorithm for strstr implementation.
  * @Created: 2026/09/26 03:08:59 by Moutig
- * @Updated: 2026/09/26 03:30:29 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Internal to src/string/. Guarantees O(n + m) worst-case time and
  * O(1) extra space (beyond a small critical factorization table).

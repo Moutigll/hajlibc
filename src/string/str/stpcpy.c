@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file stpcpy.c
  * @brief C standard stpcpy implementation.
  * @Created: 2026/09/26 01:24:18 by Moutig
- * @Updated: 2026/09/26 02:06:59 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Optimized word-at-a-time implementation. Aligns dest first,
  * then uses either an aligned loop (if src is also aligned) or

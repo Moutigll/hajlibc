@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file shm_open.c
  * @brief POSIX shared memory object open and unlink implementations for Linux.
  * @Created: 2026/09/26 06:27:37 by Moutig
- * @Updated: 2026/09/26 06:37:32 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * On Linux, shared memory objects are regular files in /dev/shm
  * (tmpfs). shm_open() is open() with a prefixed path, and

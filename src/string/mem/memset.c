@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memset.c
  * @brief Implementation of the memset function.
  * @Created: 2026/09/25 20:50:06 by Moutig
- * @Updated: 2026/09/25 22:39:54 by Moutig
+ * @Updated: 2026/09/30 10:43:57 by Moutig
  *
  * This file implements the memset function, which fills a block of memory
  * with a specified byte value. It uses architecture-specific implementations
@@ -30,23 +30,23 @@
 
 #if defined(__ELF__) && (defined(__x86_64__) || defined(_M_X64))
 
+typedef void *(*hajMemsetFn_t)(void *, int, size_t);
 
-
-static void *memsetSelectImpl(void)
+static hajMemsetFn_t memsetSelectImpl(void)
 {
 	if (hajCpuHasAvx512())
-		return ((void *)hajMemsetAvx512);
+		return (hajMemsetAvx512);
 	if (hajCpuHasAvx2())
-		return ((void *)hajMemsetAvx2);
-	return ((void *)hajMemsetSse2);
+		return (hajMemsetAvx2);
+	return (hajMemsetSse2);
 }
 
 void *memset(void *dest, int c, size_t n)
 {
-	static void *(*memsetFunc)(void *, int, size_t) = NULL;
+	static hajMemsetFn_t memsetFunc = NULL;
 
 	if (memsetFunc == NULL)
-		memsetFunc = (void *(*)(void *, int, size_t))memsetSelectImpl();
+		memsetFunc = memsetSelectImpl();
 
 	return (memsetFunc(dest, c, n));
 }

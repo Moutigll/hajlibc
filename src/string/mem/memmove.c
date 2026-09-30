@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memmove.c
  * @brief Implementation of the memmove function.
  * @Created: 2026/09/25 17:52:31 by Moutig
- * @Updated: 2026/09/26 00:27:11 by Moutig
+ * @Updated: 2026/09/30 10:43:17 by Moutig
  *
  * This file implements the memmove function, which copies n bytes from src to dest,
  * allowing for overlapping memory regions. It uses vectorized implementations for
@@ -34,21 +34,22 @@
 /* ----- Dispatcher ----- */
 
 #if defined(__ELF__) && (defined(__x86_64__) || defined(_M_X64))
+typedef void *(*hajMemmoveBackwardFn_t)(void *, const void *, size_t);
 
-static void *memmoveSelectImpl(void)
+static hajMemmoveBackwardFn_t memmoveSelectImpl(void)
 {
 	if (hajCpuHasAvx512())
-		return ((void *)hajMemmoveBackwardAvx512);
+		return (hajMemmoveBackwardAvx512);
 	if (hajCpuHasAvx2())
-		return ((void *)hajMemmoveBackwardAvx2);
-	return ((void *)hajMemmoveBackwardSse2);
+		return (hajMemmoveBackwardAvx2);
+	return (hajMemmoveBackwardSse2);
 }
 
 static void *memmoveBackward(void *dest, const void *src, size_t n)
 {
-	static void *(*memmoveBackFunc)(void *, const void *, size_t) = NULL;
+	static hajMemmoveBackwardFn_t memmoveBackFunc = NULL;
 	if (memmoveBackFunc == NULL)
-		memmoveBackFunc = (void *(*)(void *, const void *, size_t))memmoveSelectImpl();
+		memmoveBackFunc = memmoveSelectImpl();
 	return (memmoveBackFunc(dest, src, n));
 }
 

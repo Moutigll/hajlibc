@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file fcntl.h
  * @brief File control operations.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 16:15:20 by Moutig
+ * @Updated: 2026/09/30 09:20:14 by Moutig
  *
  * This header declares open(), creat(), and fcntl(), and defines
  * the O_* flags and F_* commands. The values themselves are

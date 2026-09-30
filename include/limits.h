@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file limits.h
  * @brief Implementation-defined limits.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 16:16:43 by Moutig
+ * @Updated: 2026/09/30 09:20:14 by Moutig
  *
  * This header defines the limits of the standard integer types
  * (CHAR_BIT, INT_MAX, ...) and the POSIX limits (PATH_MAX,

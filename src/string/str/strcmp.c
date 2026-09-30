@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strcmp.c
  * @brief C standard strcmp implementation.
  * @Created: 2026/09/26 00:22:51 by Moutig
- * @Updated: 2026/09/26 00:28:03 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Compares two NUL-terminated strings lexicographically. Returns
  * a negative value if s1 < s2, 0 if equal, positive if s1 > s2.

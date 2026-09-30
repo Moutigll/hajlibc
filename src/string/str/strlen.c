@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strlen.c
  * @brief POSIX strlen implementation.
  * @Created: 2026/09/25 23:16:20 by Moutig
- * @Updated: 2026/09/25 23:22:36 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Returns the number of bytes in a NUL-terminated string.
  * Uses word-at-a-time scanning with the "has zero byte" trick

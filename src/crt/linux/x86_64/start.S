@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -17,13 +17,14 @@
  * to _start.
  *
  * Our job in _start:
- *   1. Read argc, argv, envp, and auxv from the initial stack.
- *   2. Store argv[0] into __progname (for diagnostics).
- *   3. Store argc in __haj_argc.
- *   4. Store envp in environ.
- *   5. Store the auxv pointer in __haj_auxv.
+ *   1. Read argc and store it in __haj_argc.
+ *   2. Compute argv and fill __progname with argv[0].
+ *   3. Compute envp and store it in environ.
+ *   4. Compute auxv and store it in __haj_auxv.
+ *   5. Call __haj_run_ctors() to run all constructors.
  *   6. Call main(argc, argv, envp).
  *   7. Call exit(main_return_value).
+ *   8. If exit() returns, halt the CPU.
  *
  * REGISTERS (x86_64 System V ABI)
  *
@@ -90,6 +91,7 @@
 .extern __progname
 .extern environ
 .extern __haj_auxv
+.extern __haj_run_ctors
 
 _start:
 	/*
@@ -195,7 +197,7 @@ _start:
 	movq	%rax, __haj_auxv(%rip)
 
 	/*
-	 * Step 5: align the stack.
+	 * Step 4c: align the stack.
 	 *
 	 * The System V ABI requires rsp to be 16-byte aligned at the
 	 * `call` instruction. The kernel guarantees that rsp is
@@ -211,6 +213,29 @@ _start:
 	 * After:  rsp = 0x7fff...0 (aligned to 16)
 	 */
 	andq	$-16, %rsp
+
+	/*
+	 * Step 5: run constructors.
+	 *
+	 * We call __haj_run_ctors() to run all functions registered
+	 * with __attribute__((constructor)). This is required by the
+	 * C and C++ standards.
+	 *
+	 * __haj_run_ctors() is defined in src/crt/cxa_atexit.c. It
+	 * iterates over the g_cxa_handlers array and calls each
+	 * function in reverse order of registration.
+	 */
+	/* Save argc, argv and envp in registers to avoid overwriting them. */
+	movq	%rdi, %rbx	/* save argc */
+	movq	%rsi, %r12	/* save argv */
+	movq	%rdx, %r13	/* save envp */
+
+	call	__haj_run_ctors
+
+	/* Restore argc, argv and envp from registers. */
+	movq	%rbx, %rdi	/* restore argc */
+	movq	%r12, %rsi	/* restore argv */
+	movq	%r13, %rdx	/* restore envp */
 
 	/*
 	 * Step 6: call main.

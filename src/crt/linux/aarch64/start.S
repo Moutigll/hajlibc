@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -51,6 +51,7 @@
 .extern __progname
 .extern environ
 .extern __haj_auxv
+.extern __haj_run_ctors
 
 _start:
 	/*
@@ -138,6 +139,21 @@ _start:
 	adrp	x4, __haj_auxv
 	add	x4, x4, :lo12:__haj_auxv
 	str	x3, [x4]
+
+	/* Save argc, argv, envp in registers to avoid overwriting them. */
+	mov	x5, x0	/* save argc */
+	mov	x6, x1	/* save argv */
+	mov	x7, x2	/* save envp */
+
+	/*
+	 * Call __haj_run_ctors() to run all constructors.
+	 */
+	bl	__haj_run_ctors
+
+	/* Restore argc, argv, envp from registers. */
+	mov	x0, x5	/* restore argc */
+	mov	x1, x6	/* restore argv */
+	mov	x2, x7	/* restore envp */
 
 	/*
 	 * Call main.

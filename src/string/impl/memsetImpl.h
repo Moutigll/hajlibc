@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memsetImpl.h
  * @brief Template for vectorized memset implementations.
  * @Created: 2026/09/25 21:06:36 by Moutig
- * @Updated: 2026/09/25 22:38:37 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * This file is included by memset.c with different definitions of
  * HAJ_PREFIX, HAJ_VEC_TYPE, HAJ_VEC_SIZE, HAJ_SET1, HAJ_STORE, and HAJ_TARGET.

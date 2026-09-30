@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file ctype.h
  * @brief C standard character classification and conversion functions.
  * @Created: 2026/09/26 02:43:58 by Moutig
- * @Updated: 2026/09/26 03:49:09 by Moutig
+ * @Updated: 2026/09/30 09:20:14 by Moutig
  *
  * ASCII-only implementation for the "C" locale. The functions
  * accept an int whose value must be representable as unsigned

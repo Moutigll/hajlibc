@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file string.h
  * @brief C standard string and memory functions.
  * @Created: 2026/09/24 22:10:46 by Moutig
- * @Updated: 2026/09/26 04:15:11 by Moutig
+ * @Updated: 2026/09/30 09:20:14 by Moutig
  *
  * This header declares the C standard string and memory
  * functions, plus a few POSIX/GNU extensions (memrchr, strdup,

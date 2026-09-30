@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file getentropy.c
  * @brief Get entropy from the system.
  * @Created: 2026/09/28 01:19:01 by Moutig
- * @Updated: 2026/09/28 06:16:38 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This file provides the implementation of the getentropy() function,
  * which retrieves random bytes from the system's entropy source.

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file getrandom.c
  * @brief Get random bytes from the system.
  * @Created: 2026/09/28 01:14:57 by Moutig
- * @Updated: 2026/09/28 01:56:25 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This file provides the implementation of the getrandom() function,
  * which retrieves random bytes from the system's entropy source.

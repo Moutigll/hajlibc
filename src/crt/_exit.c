@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file _exit.c
  * @brief Implementation of _exit().
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/26 05:04:17 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * _exit() terminates the process immediately, without running
  * atexit handlers or flushing stdio buffers. This is the

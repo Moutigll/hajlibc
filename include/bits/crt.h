@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file crt.h
  * @brief Internal C runtime declarations.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 15:59:00 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This header declares symbols that are internal to the C runtime.
  * They are used by the startup code, by exit(), and by code
@@ -98,6 +98,20 @@ extern void	*__dso_handle;
  * handlers.
  */
 void	__haj_run_cxa_atexit(void);
+
+/**
+ * @brief Run all constructors.
+ *
+ * This function is called by the startup code before main().
+ */
+void __haj_run_ctors(void);
+
+/**
+ * @brief Run all destructors.
+ *
+ * This function is called by exit() before _exit().
+ */
+void __haj_run_dtors(void);
 
 # if defined(__cplusplus)
 }

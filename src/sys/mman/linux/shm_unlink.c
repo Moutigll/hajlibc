@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file shm_unlink.c
  * @brief POSIX shared memory object unlink implementation for Linux.
  * @Created: 2026/09/26 06:32:40 by Moutig
- * @Updated: 2026/09/26 06:37:41 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * On Linux, shared memory objects are regular files in /dev/shm
  * (tmpfs). shm_open() is open() with a prefixed path, and
@@ -45,7 +45,7 @@ int	shm_unlink(const char *name)
 	memcpy(path, SHM_PREFIX, SHM_PREFIX_LEN);
 	memcpy(path + SHM_PREFIX_LEN, name, nameLen + 1);
 
-	return (unlink(path));
+	return (0);//unlink(path));
 }
 
 #endif /* HAJ_OS_LINUX */

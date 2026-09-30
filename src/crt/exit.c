@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file exit.c
  * @brief Implementation of exit().
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 18:26:35 by Moutig
+ * @Updated: 2026/09/30 09:31:21 by Moutig
  *
  * exit() terminates the process after running all functions
  * registered with atexit(). It is called by the C runtime after
@@ -43,13 +43,18 @@ void exit(int status)
 	 */
 	__haj_run_cxa_atexit();
 
+	/*
+	 * Step 3: run .fini_array destructors.
+	 */
+	__haj_run_dtors();
+
 	/**
-	 * @TODO: Step 3: flush stdio buffers.
+	 * @TODO: Step 4: flush stdio buffers.
 	 * Not implemented yet.
 	 */
 
 	/*
-	 * Step 4: terminate.
+	 * Step 5: terminate.
 	 */
 	_exit(status);
 }

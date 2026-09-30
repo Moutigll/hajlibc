@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file cpuFeatures.c
  * @brief CPU feature detection for x86 and aarch64.
  * @Created: 2026/09/25 01:28:27 by Moutig
- * @Updated: 2026/09/25 02:19:07 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This file implements functions to detect CPU features on x86/x86_64 and aarch64 architectures.
  * It defines functions to check for the presence of various SIMD instruction sets and other CPU capabilities.

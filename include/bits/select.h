@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file select.h
  * @brief fd_set and FD_* macros, centralized.
  * @Created: 2026/09/28 06:54:44 by Moutig
- * @Updated: 2026/09/28 07:12:00 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This header defines the fd_set type and the FD_* macros for manipulating
  * file descriptor sets. It is included by <sys/select.h> and <sys/time.h>.

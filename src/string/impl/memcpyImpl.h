@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memcpyImpl.h
  * @brief Template for vectorized memcpy and memmove implementations.
  * @Created: 2026/09/25 20:12:09 by Moutig
- * @Updated: 2026/09/25 22:31:40 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * This file is included by memcpy.c and memmove.c with different definitions of
  * HAJ_PREFIX, HAJ_DIRECTION, and HAJ_RESTRICT. It implements vectorized

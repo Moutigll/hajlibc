@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file time.h
  * @brief Types and functions for handling time and date.
  * @Created: 2026/09/28 06:40:49 by Moutig
- * @Updated: 2026/09/28 09:21:55 by Moutig
+ * @Updated: 2026/09/30 09:20:14 by Moutig
  *
  * This header declares the ISO C and POSIX time API: calendar
  * time (struct tm), clocks, POSIX timers, and the functions that

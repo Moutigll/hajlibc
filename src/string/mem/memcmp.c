@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memcmp.c
  * @brief Compare two memory areas.
  * @Created: 2026/09/25 22:14:16 by Moutig
- * @Updated: 2026/09/25 22:31:40 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * This file implements the memcmp function, which compares two memory areas
  * byte by byte. It uses word-sized comparisons for efficiency, and falls back

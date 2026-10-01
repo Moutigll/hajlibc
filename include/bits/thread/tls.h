@@ -10,7 +10,7 @@
  * @file tls.h
  * @brief Thread-Local Storage (TLS) internals.
  * @Created: 2026/09/30 05:17:45 by Moutig
- * @Updated: 2026/09/30 12:30:19 by Moutig
+ * @Updated: 2026/10/01 11:55:35 by Moutig
  *
  * hajlib implements the ELF TLS ABI with the TLS_TCB_AT_TP model:
  * the TCB is placed at the *top* of the thread's TLS block, and
@@ -43,7 +43,7 @@
 # define _BITS_TLS_H
 
 # include <bits/types.h>
-# include <bits/tcb.h>
+# include <bits/thread/tcb.h>
 
 /* ----- Alignment ----- */
 /**

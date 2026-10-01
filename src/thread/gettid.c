@@ -10,7 +10,7 @@
  * @file gettid.c
  * @brief Implementation of __haj_gettid().
  * @Created: 2026/09/30 11:22:15 by Moutig
- * @Updated: 2026/10/01 09:16:41 by Moutig
+ * @Updated: 2026/10/01 12:01:31 by Moutig
  *
  * On Linux, gettid(2) returns the kernel thread ID, which is
  * distinct from the process ID. It is used internally by the
@@ -26,7 +26,7 @@
  * This function is internal and is not part of POSIX.
  */
 
-#include <bits/thread.h>
+#include <bits/thread/thread.h>
 #include <bits/syscall.h>
 #include <bits/os.h>
 

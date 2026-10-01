@@ -10,7 +10,7 @@
  * @file types.h
  * @brief Internal fixed-width and POSIX-like types.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 13:25:12 by Moutig
+ * @Updated: 2026/10/01 11:16:38 by Moutig
  *
  * This header defines the real typedefs used across hajlib: the
  * fixed-width integer types, the size-related types, and the
@@ -37,6 +37,7 @@
 # include <bits/arch.h>
 # include <bits/wordsize.h>
 # include <bits/compiler.h>
+# include <bits/thread/pthreadtypes.h>
 
 /* ----- Fixed-width integer types ----- */
 /**
@@ -462,68 +463,5 @@ typedef __haj_u64	rlim_t;
 #  define __rlim64_t_defined
 typedef __haj_u64	rlim64_t;
 # endif
-
-/*
- * Opaque object types. Each is a distinct struct type so that the
- * compiler catches accidental mixing (pthread_attr_t* passed where
- * pthread_mutex_t* is expected). The 64-byte size and long
- * alignment are placeholders; the pthread implementation will fit
- * inside them without changing the public type.
- */
-
-/**
- * @brief Thread attributes.
- *
- * Used by pthread_create() and pthread_attr_init().
- */
-typedef struct { char __data[64]; long __align; } pthread_attr_t;
-/**
- * @brief Barrier object.
- *
- * Used by pthread_barrier_init() and pthread_barrier_wait().
- */
-typedef struct { char __data[64]; long __align; } pthread_barrier_t;
-/**
- * @brief Barrier attributes.
- *
- * Used by pthread_barrierattr_init() and pthread_barrierattr_setpshared().
- */
-typedef struct { char __data[64]; long __align; } pthread_barrierattr_t;
-/**
- * @brief Condition variable.
- *
- * Used by pthread_cond_init() and pthread_cond_wait().
- */
-typedef struct { char __data[64]; long __align; } pthread_cond_t;
-/**
- * @brief Condition variable attributes.
- *
- * Used by pthread_condattr_init() and pthread_condattr_setpshared().
- */
-typedef struct { char __data[64]; long __align; } pthread_condattr_t;
-/**
- * @brief Mutex object.
- *
- * Used by pthread_mutex_init() and pthread_mutex_lock().
- */
-typedef struct { char __data[64]; long __align; } pthread_mutex_t;
-/**
- * @brief Mutex attributes.
- *
- * Used by pthread_mutexattr_init() and pthread_mutexattr_settype().
- */
-typedef struct { char __data[64]; long __align; } pthread_mutexattr_t;
-/**
- * @brief Read-write lock object.
- *
- * Used by pthread_rwlock_init() and pthread_rwlock_rdlock().
- */
-typedef struct { char __data[64]; long __align; } pthread_rwlock_t;
-/**
- * @brief Read-write lock attributes.
- *
- * Used by pthread_rwlockattr_init() and pthread_rwlockattr_setpshared().
- */
-typedef struct { char __data[64]; long __align; } pthread_rwlockattr_t;
 
 #endif /* _BITS_TYPES_H */

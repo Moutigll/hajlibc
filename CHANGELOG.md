@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/thread/stack.c`: `__haj_threadAllocStack` / `__haj_threadFreeStack` with guard page
 - `Makefile`, `mk/sources.mk`: `THREAD_SRCS`, `THREAD_BASE_SRCS`
 - `mk/targets.mk`: per-arch clone source selection
+- Threading internals reorganized under `bits/thread/`: `pthreadtypes.h`, `pthread.h`, `clone.h`, `futex.h`, `tcb.h`, `stack.h`, `thread.h`, `tls.h`
+- `src/thread/clone_x86_64.S`, `clone_aarch64.S`: `__haj_clone3Raw` and `__haj_cloneLegacyRaw` wrappers (child stack setup, `fn(arg)`, `SYS_exit`); libgcc atomic fallbacks on aarch64
+- `src/thread/list.c`: global thread list + spinlock
+- `src/thread/stack.c`: bounded stack cache (`HAJ_STACK_CACHE_MAX`, `__haj_stackCacheFlush`)
+- `src/thread/start.c`: `__haj_threadStart` / `__haj_threadExit`
+- `src/thread/tcb.c`: `__haj_tcbCreate`
+- `Makefile`, `mk/sources.mk`, `mk/targets.mk`: `THREAD_SRCS`, `THREAD_BASE_SRCS`, per-arch clone selection
 
 ### Changed
 
@@ -50,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mk/cross.mk`: `CC` now uses `?=` so the user can override the compiler
 - `mk/build.mk`: `.c` and `.S` compile rules include `$(COV_CFLAGS)`
 - `tests/main.c` now runs the test framework instead of printing a version
+- Opaque pthread types are now defined in `bits/thread/pthreadtypes.h` with size/alignment `_Static_assert` checks
+- `bits/types.h` includes `bits/thread/pthreadtypes.h` (removed inline pthread typedef placeholders)
 
 ### Fixed
 

@@ -10,7 +10,7 @@
  * @file futex.c
  * @brief futex(2) wrapper and common operations.
  * @Created: 2026/09/30 07:04:18 by Moutig
- * @Updated: 2026/10/01 09:23:31 by Moutig
+ * @Updated: 2026/10/01 12:01:12 by Moutig
  *
  * The futex syscall is the primitive on which all POSIX
  * synchronization is built. This file provides:
@@ -25,10 +25,9 @@
  * process-local, not shared between processes.
  */
 
+ #include <bits/thread/thread.h>
+ #include <bits/syscall.h>
 #include <stddef.h>
-#include <bits/syscall.h>
-#include <bits/futex.h>
-#include <bits/thread.h>
 #include <errno.h>
 
 long __haj_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3)

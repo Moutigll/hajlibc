@@ -10,7 +10,7 @@
  * @file times.c
  * @brief Implementation of the times() function.
  * @Created: 2026/09/28 06:51:16 by Moutig
- * @Updated: 2026/09/30 09:20:15 by Moutig
+ * @Updated: 2026/09/30 13:43:43 by Moutig
  *
  * Fills a struct tms with the CPU time consumed by the process
  * and by its terminated children, and returns the elapsed wall
@@ -27,7 +27,7 @@
 
 #include "bits/syscall.h"
 #include <sys/times.h>
-//#include <sys/resource.h>
+#include <sys/resource.h>
 #include <time.h>
 #include <errno.h>
 #include <bits/os.h>

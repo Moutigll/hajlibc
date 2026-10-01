@@ -35,12 +35,15 @@ ifeq ($(TARGET_OS),Linux)
     SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
 						   src/setjmp/x86_64/longjmp.S
     CPU_SRCS			:= src/cpu/x86/cpuFeatures.c
+	THREAD_BASE_SRCS	:= src/thread/clone_x86_64.S
+
 
   else ifeq ($(TARGET_ARCH),aarch64)
     CRT_START_SRCS		:= src/crt/linux/aarch64/start.S
     SYSCALL_BASE_SRCS	:= src/syscall/linux/aarch64/
     SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
 						   src/setjmp/aarch64/longjmp.S
+	THREAD_BASE_SRCS	:= src/thread/clone_aarch64.S
 
   else
     $(error targets.mk: unsupported Linux arch '$(TARGET_ARCH)')

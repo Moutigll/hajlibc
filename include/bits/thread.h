@@ -10,7 +10,7 @@
  * @file thread.h
  * @brief Threading internals.
  * @Created: 2026/09/30 05:18:03 by Moutig
- * @Updated: 2026/09/30 12:32:59 by Moutig
+ * @Updated: 2026/10/01 09:10:41 by Moutig
  *
  * These are the low-level pieces that <pthread.h> builds on top
  * of. They are not part of the public API.
@@ -72,6 +72,14 @@ static __HAJ_INLINE void __haj_cpuRelax(void)
 	/* Nothing. */
 # endif
 }
+
+/**
+ * @brief Clone a new thread.
+ *
+ * This is a wrapper around the system call that creates a new
+ * thread. It sets up the stack and TCB for the new thread.
+ */
+long __haj_clone(int (*fn)(void *), void *child_stack, int flags, void *arg, int *ptid, void *tls, int *ctid);
 
 /* ----- Kernel TID ----- */
 

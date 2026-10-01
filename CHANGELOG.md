@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bits/resource.h`: per-OS `RLIMIT_*`, `RLIM_INFINITY`, `RLIM_SAVED_*`, `RUSAGE_*`
 - `rlim_t` / `rlim64_t` in `bits/types.h` (32-bit `rlim_t` only when `__HAJ_USE_32_OFFSET_BITS`)
 - `SYS_getrlimit`, `SYS_setrlimit`, `SYS_getrusage`, `SYS_prlimit64` in Linux x86_64/aarch64 syscall tables
+- `unistd.h` with POSIX minimums, feature flags, and declarations
+- `bits/sysconf.h`: unified `_SC_*` constants
+- `bits/limits.h`: full per-OS runtime limits (Linux / FreeBSD / Darwin / fallback)
+- `limits.h`: exposes all POSIX limits via `HAJ_*`
+- `unistd`: `sysconf`, `getpagesize`, `read`, `write`, `close`, `fork`, `getpid`
+- `bits/random.h`: per-OS `GRND_*`; `_getrandom` internal, `getrandom` public
+- Threading primitives:
+  - `src/thread/clone_x86_64.S`, `clone_aarch64.S`: `__haj_clone` wrapper (child stack setup + `fn(arg)` + `SYS_exit`)
+  - `src/thread/futex.c`: `__haj_futex*` wrappers (PRIVATE variants)
+  - `src/thread/gettid.c`: `__haj_gettid` per OS
+  - `src/thread/stack.c`: `__haj_threadAllocStack` / `__haj_threadFreeStack` with guard page
+- `Makefile`, `mk/sources.mk`: `THREAD_SRCS`, `THREAD_BASE_SRCS`
+- `mk/targets.mk`: per-arch clone source selection
 
 ### Changed
 

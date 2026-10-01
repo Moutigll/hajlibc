@@ -10,7 +10,7 @@
  * @file getpagesize.c
  * @brief BSD getpagesize() implementation.
  * @Created: 2026/09/30 13:02:47 by Moutig
- * @Updated: 2026/09/30 13:03:02 by Moutig
+ * @Updated: 2026/10/01 08:59:10 by Moutig
  *
  * getpagesize() is not POSIX. It is a BSD extension kept for
  * compatibility with legacy code. Modern code should call
@@ -22,7 +22,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#if defined(__HAJ_SOURCE)
+#if __HAJ_SOURCE
 
 int getpagesize(void)
 {

@@ -58,6 +58,8 @@ ALL_SRCS := \
 	$(STDLIB_SRCS) \
 	$(STDIO_SRCS) \
 	$(MATH_SRCS) \
+	$(THREAD_SRCS) \
+	$(THREAD_BASE_SRCS) \
 	$(TIME_SRCS) \
 	$(SIGNAL_SRCS) \
 	$(UNISTD_SRCS) \

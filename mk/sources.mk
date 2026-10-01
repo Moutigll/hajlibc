@@ -33,6 +33,7 @@ STDIO_DIR		:= $(SRC_DIR)/stdio
 STDLIB_DIR		:= $(SRC_DIR)/stdlib
 STRING_DIR		:= $(SRC_DIR)/string
 SYS_DIR			:= $(SRC_DIR)/sys
+THREAD_DIR		:= $(SRC_DIR)/thread
 TIME_DIR		:= $(SRC_DIR)/time
 UNISTD_DIR		:= $(SRC_DIR)/unistd
 
@@ -149,10 +150,18 @@ STRING_SRCS := \
 	str/strsep.c
 
 SYS_SRCS := \
+	resource/getrusage.c \
+	resource/priority.c \
+	resource/rlimit.c \
 	auxv.c \
 	getentropy.c \
 	getrandom.c \
 	times.c
+
+THREAD_SRCS := \
+	futex.c \
+	gettid.c \
+	stack.c
 
 # time
 TIME_SRCS := \
@@ -166,7 +175,12 @@ TIME_SRCS := \
 
 # unistd-
 UNISTD_SRCS := \
+	close.c \
+	fork.c \
+	getpagesize.c \
 	getpid.c \
+	read.c \
+	sysconf.c \
 	write.c
 
 # Prefix each section with its directory.
@@ -188,5 +202,6 @@ STDIO_SRCS		:= $(addprefix $(STDIO_DIR)/,$(STDIO_SRCS))
 STDLIB_SRCS		:= $(addprefix $(STDLIB_DIR)/,$(STDLIB_SRCS))
 STRING_SRCS		:= $(addprefix $(STRING_DIR)/,$(STRING_SRCS))
 SYS_SRCS		:= $(addprefix $(SYS_DIR)/,$(SYS_SRCS))
+THREAD_SRCS		:= $(addprefix $(THREAD_DIR)/,$(THREAD_SRCS))
 TIME_SRCS		:= $(addprefix $(TIME_DIR)/,$(TIME_SRCS))
 UNISTD_SRCS		:= $(addprefix $(UNISTD_DIR)/,$(UNISTD_SRCS))

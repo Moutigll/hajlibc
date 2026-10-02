@@ -10,7 +10,7 @@
  * @file tcb.h
  * @brief Thread Control Block (TCB).
  * @Created: 2026/09/30 05:17:29 by Moutig
- * @Updated: 2026/10/02 09:02:52 by Moutig
+ * @Updated: 2026/10/02 11:54:40 by Moutig
  *
  * The TCB holds all per-thread data the runtime needs: identity,
  * stack bounds, join state, TSD slots, cancellation state, and
@@ -54,14 +54,6 @@ typedef struct {
 } cpu_set_t;
 
 /* ----- Constants ----- */
-
-# ifndef HAJ_PTHREAD_KEYS_MAX
-#  define HAJ_PTHREAD_KEYS_MAX 128
-# endif
-
-# ifndef HAJ_PTHREAD_DESTRUCTOR_ITERATIONS
-#  define HAJ_PTHREAD_DESTRUCTOR_ITERATIONS 4
-# endif
 
 # ifndef HAJ_PTHREAD_STACK_SIZE_DEFAULT
 #  define HAJ_PTHREAD_STACK_SIZE_DEFAULT	(8 * 1024 * 1024)
@@ -128,7 +120,7 @@ struct __haj_tcb {
 	int						cancelState;	/* ENABLE / DISABLE */
 	int						cancelType;		/* DEFERRED / ASYNCHRONOUS */
 	int						cancelPending;	/* non-zero if requested */
-	unsigned int			specificSeq;	/* TSD destructor iteration */
+	unsigned int			specificUsed;	/* non-zero once pthread_setspecific has run */
 
 	/* ---- Affinity ---- */
 	cpu_set_t				*affinityMask;
@@ -137,7 +129,7 @@ struct __haj_tcb {
 	__haj_uintptr			stackCanary;
 
 	/* ---- TSD slots ---- */
-	void					*specific[HAJ_PTHREAD_KEYS_MAX];
+	void					*specific[PTHREAD_KEYS_MAX];
 };
 
 /* ----- Globals ----- */

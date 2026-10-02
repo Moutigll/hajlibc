@@ -10,7 +10,7 @@
  * @file pthreadtypes.h
  * @brief Opaque pthread types, sizes and alignments.
  * @Created: 2026/10/01 10:53:08 by Moutig
- * @Updated: 2026/10/01 11:49:22 by Moutig
+ * @Updated: 2026/10/02 13:08:30 by Moutig
  *
  * All POSIX thread objects are opaque: user code only ever
  * manipulates pointers to them. This header defines:
@@ -49,6 +49,77 @@
 
 # include <bits/wordsize.h>
 
+/* ----- Limits ----- */
+
+/*
+ * Minimum stack size that pthread_create will accept. POSIX
+ * requires that this be at least the size needed to run a
+ * thread; on Linux glibc uses 16 KiB (or 2 KiB on some
+ * systems), musl uses 2 KiB. We use 16 KiB to have room for
+ * the TCB (about 1.2 KiB) plus normal stack usage.
+ */
+# ifndef PTHREAD_STACK_MIN
+#  define PTHREAD_STACK_MIN 16384
+# endif
+
+/*
+ * Number of times to iterate through the TSD destructors.
+ * This is the number of times the destructors will be called
+ * for each thread before it is considered fully cleaned up.
+ */
+# ifndef PTHREAD_DESTRUCTOR_ITERATIONS
+#  define PTHREAD_DESTRUCTOR_ITERATIONS 4
+# endif
+
+/*
+ * Maximum number of thread-specific data keys. This is the
+ * maximum number of pthread_key_create calls that can be made.
+ */
+# ifndef PTHREAD_KEYS_MAX
+#  define PTHREAD_KEYS_MAX 128
+# endif
+
+/* ----- Mutex types ----- */
+
+/*
+ * POSIX defines four mutex types with different behaviours:
+ *
+ *   NORMAL      fast path, no error checking, undefined on
+ *               relock by the same thread or on unlock by a
+ *               non-owner. This is the default.
+ *
+ *   RECURSIVE   the same thread may lock the mutex multiple
+ *               times; it must unlock exactly as many times
+ *               before the mutex becomes free.
+ *
+ *   ERRORCHECK  non-recursive, but returns EDEADLK if the
+ *               same thread relocks, and EPERM if a non-owner
+ *               unlocks.
+ *
+ *   DEFAULT     equivalent to NORMAL in hajlibc, as allowed
+ *               by POSIX.
+ */
+# define PTHREAD_MUTEX_NORMAL		0
+# define PTHREAD_MUTEX_RECURSIVE	1
+# define PTHREAD_MUTEX_ERRORCHECK	2
+# define PTHREAD_MUTEX_DEFAULT		PTHREAD_MUTEX_NORMAL
+
+/* ----- Robustness ----- */
+
+# define PTHREAD_MUTEX_STALLED		0
+# define PTHREAD_MUTEX_ROBUST		1
+
+/* ----- Process sharing ----- */
+
+# define PTHREAD_PROCESS_PRIVATE	0
+# define PTHREAD_PROCESS_SHARED		1
+
+/* ----- Priority protocols (recognised, not implemented) ----- */
+
+# define PTHREAD_PRIO_NONE		0
+# define PTHREAD_PRIO_INHERIT	1
+# define PTHREAD_PRIO_PROTECT	2
+
 /* ----- Sizes (bytes) -----
  *
  * Every value must be >= sizeof(long). On LP64 that means >= 8.
@@ -59,13 +130,13 @@
  */
 
 # define __SIZEOF_PTHREAD_ATTR_T			48
-# define __SIZEOF_PTHREAD_MUTEX_T			32
-# define __SIZEOF_PTHREAD_MUTEXATTR_T		16
-# define __SIZEOF_PTHREAD_COND_T			32
+# define __SIZEOF_PTHREAD_MUTEX_T			24
+# define __SIZEOF_PTHREAD_MUTEXATTR_T		24
+# define __SIZEOF_PTHREAD_COND_T			24
 # define __SIZEOF_PTHREAD_CONDATTR_T		8
-# define __SIZEOF_PTHREAD_RWLOCK_T			40
+# define __SIZEOF_PTHREAD_RWLOCK_T			24
 # define __SIZEOF_PTHREAD_RWLOCKATTR_T		8
-# define __SIZEOF_PTHREAD_BARRIER_T			32
+# define __SIZEOF_PTHREAD_BARRIER_T			24
 # define __SIZEOF_PTHREAD_BARRIERATTR_T		8
 
 /* ----- Alignment -----

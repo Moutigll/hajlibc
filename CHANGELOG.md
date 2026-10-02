@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/thread/atomics_aarch64.S`: out-of-line atomics helpers with LSE / LL-SC runtime selection
 - `pthread_once` and TSD (`pthread_key_create` / `_delete` / `_setspecific` / `_getspecific`)
 - TSD destructors run at thread exit
+- `pthread_mutex_*` and `pthread_mutexattr_*` (NORMAL / RECURSIVE / ERRORCHECK, `timedlock`, robust, pshared, protocol, prioceiling)
 
 ### Changed
 

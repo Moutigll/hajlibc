@@ -10,7 +10,7 @@
  * @file pthread.h
  * @brief POSIX threads API.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/02 11:47:33 by Moutig
+ * @Updated: 2026/10/02 14:15:54 by Moutig
  *
  * The pthread types (pthread_t, pthread_attr_t, ...) are
  * defined in <bits/thread/pthreadtypes.h>, pulled in
@@ -22,6 +22,7 @@
 # define _PTHREAD_H
 
 # include <stddef.h>
+# include <time.h>
 # include <bits/types.h>			/* pulls in pthreadtypes.h */
 # include <bits/compiler.h>
 
@@ -44,6 +45,46 @@ extern "C" {
 # define PTHREAD_CANCEL_DISABLE			1
 # define PTHREAD_CANCEL_DEFERRED		0
 # define PTHREAD_CANCEL_ASYNCHRONOUS	1
+
+/* ----- Mutex types ----- */
+# ifndef PTHREAD_MUTEX_NORMAL
+#  define PTHREAD_MUTEX_NORMAL		0
+# endif
+# ifndef PTHREAD_MUTEX_RECURSIVE
+#  define PTHREAD_MUTEX_RECURSIVE	1
+# endif
+# ifndef PTHREAD_MUTEX_ERRORCHECK
+#  define PTHREAD_MUTEX_ERRORCHECK	2
+# endif
+# ifndef PTHREAD_MUTEX_DEFAULT
+#  define PTHREAD_MUTEX_DEFAULT		PTHREAD_MUTEX_NORMAL
+# endif
+
+# ifndef PTHREAD_MUTEX_STALLED
+#  define PTHREAD_MUTEX_STALLED		0
+# endif
+# ifndef PTHREAD_MUTEX_ROBUST
+#  define PTHREAD_MUTEX_ROBUST		1
+# endif
+
+/* ----- Process sharing ----- */
+# ifndef PTHREAD_PROCESS_PRIVATE
+#  define PTHREAD_PROCESS_PRIVATE	0
+# endif
+# ifndef PTHREAD_PROCESS_SHARED
+#  define PTHREAD_PROCESS_SHARED	1
+# endif
+
+/* ----- Priority protocols ----- */
+# ifndef PTHREAD_PRIO_NONE
+#  define PTHREAD_PRIO_NONE		0
+# endif
+# ifndef PTHREAD_PRIO_INHERIT
+#  define PTHREAD_PRIO_INHERIT		1
+# endif
+# ifndef PTHREAD_PRIO_PROTECT
+#  define PTHREAD_PRIO_PROTECT		2
+# endif
 
 /**
  * @brief Initialiser for a pthread_once_t.
@@ -154,6 +195,10 @@ int			pthread_equal(pthread_t t1, pthread_t t2);
  */
 int pthread_once(pthread_once_t *once_control, void (*init_routine)(void));
 
+
+
+
+
 /* ----- Thread-specific data (TSD) ----- */
 
 /**
@@ -207,6 +252,87 @@ int pthread_setspecific(pthread_key_t key, const void *value);
  * @return The value associated with the key, or NULL if no value is associated.
  */
 void *pthread_getspecific(pthread_key_t key);
+
+
+
+
+
+/* ----- Mutexes ----- */
+
+/**
+ * @brief Initialize a mutex.
+ *
+ * Initializes the mutex pointed to by mutex with the attributes
+ * specified by attr. If attr is NULL, default attributes are used.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to initialize.
+ * @param attr Pointer to a pthread_mutexattr_t specifying mutex attributes, or NULL for defaults.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr);
+
+/**
+ * @brief Destroy a mutex.
+ *
+ * Destroys the mutex pointed to by mutex, freeing any resources
+ * it may hold. The mutex should not be used after this call.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_destroy(pthread_mutex_t *mutex);
+
+/**
+ * @brief Lock a mutex.
+ *
+ * Locks the mutex pointed to by mutex. If the mutex is already
+ * locked, the calling thread blocks until the mutex becomes
+ * available.
+ * If the mutex is recursive and the calling thread already owns it, the lock count is incremented.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to lock.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_lock(pthread_mutex_t *mutex);
+
+/**
+ * @brief Try to lock a mutex.
+ *
+ * Attempts to lock the mutex pointed to by mutex. If the mutex is already
+ * locked, the function returns immediately with an error.
+ * If the mutex is recursive and the calling thread already owns it, the lock count is incremented.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to try to lock.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_trylock(pthread_mutex_t *mutex);
+
+/**
+ * @brief Lock a mutex with a timeout.
+ *
+ * Locks the mutex pointed to by mutex. If the mutex is already
+ * locked, the calling thread blocks until the mutex becomes
+ * available or the absolute timeout specified by abstime is
+ * reached.
+ *
+ * @param mutex   Pointer to a pthread_mutex_t to lock.
+ * @param abstime Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error
+ *         number on failure.
+ */
+int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *abstime);
+
+/**
+ * @brief Unlock a mutex.
+ *
+ * Unlocks the mutex pointed to by mutex. If the mutex is recursive and
+ * the calling thread owns it, the lock count is decremented. If the lock
+ * count reaches zero, the mutex is released.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to unlock.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_unlock(pthread_mutex_t *mutex);
 
 
 
@@ -430,6 +556,143 @@ int pthread_attr_getscope(const pthread_attr_t *attr, int *scope);
 
 
 
+
+
+/* ----- Mutex attributes ----- */
+
+/**
+ * @brief Initialize a mutex attributes object.
+ *
+ * Initializes the mutex attributes object pointed to by attr
+ * with default values. The object can then be modified using
+ * other pthread_mutexattr_* functions.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to initialize.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_init(pthread_mutexattr_t *attr);
+
+/**
+ * @brief Destroy a mutex attributes object.
+ *
+ * Destroys the mutex attributes object pointed to by attr,
+ * freeing any resources it may hold. The object should not be
+ * used after this call.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_destroy(pthread_mutexattr_t *attr);
+
+/**
+ * @brief Set the type of a mutex attributes object.
+ *
+ * Sets the type of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to modify.
+ * @param type The new mutex type.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_settype(pthread_mutexattr_t *attr, int type);
+
+/**
+ * @brief Get the type of a mutex attributes object.
+ *
+ * Retrieves the type of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to query.
+ * @param type Pointer to an int to store the mutex type.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_gettype(const pthread_mutexattr_t *attr, int *type);
+
+/**
+ * @brief Set the process-shared attribute of a mutex attributes object.
+ *
+ * Sets the process-shared attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to modify.
+ * @param pshared The new process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_setpshared(pthread_mutexattr_t *attr, int pshared);
+
+/**
+ * @brief Get the process-shared attribute of a mutex attributes object.
+ *
+ * Retrieves the process-shared attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to query.
+ * @param pshared Pointer to an int to store the process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_getpshared(const pthread_mutexattr_t *attr, int *pshared);
+
+/**
+ * @brief Set the robustness attribute of a mutex attributes object.
+ *
+ * Sets the robustness attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to modify.
+ * @param robust The new robustness attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_setrobust(pthread_mutexattr_t *attr, int robust);
+
+/**
+ * @brief Get the robustness attribute of a mutex attributes object.
+ *
+ * Retrieves the robustness attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to query.
+ * @param robust Pointer to an int to store the robustness attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_getrobust(const pthread_mutexattr_t *attr, int *robust);
+
+/**
+ * @brief Set the protocol attribute of a mutex attributes object.
+ *
+ * Sets the protocol attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to modify.
+ * @param protocol The new protocol attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_setprotocol(pthread_mutexattr_t *attr, int protocol);
+
+/**
+ * @brief Get the protocol attribute of a mutex attributes object.
+ *
+ * Retrieves the protocol attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to query.
+ * @param protocol Pointer to an int to store the protocol attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_getprotocol(const pthread_mutexattr_t *attr, int *protocol);
+
+/**
+ * @brief Set the prioceiling attribute of a mutex attributes object.
+ *
+ * Sets the prioceiling attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to modify.
+ * @param prioceiling The new prioceiling attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_setprioceiling(pthread_mutexattr_t *attr, int prioceiling);
+
+/**
+ * @brief Get the prioceiling attribute of a mutex attributes object.
+ *
+ * Retrieves the prioceiling attribute of the mutex attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_mutexattr_t to query.
+ * @param prioceiling Pointer to an int to store the prioceiling attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutexattr_getprioceiling(const pthread_mutexattr_t *attr, int *prioceiling);
 
 
 /* ----- Initializers ----- */

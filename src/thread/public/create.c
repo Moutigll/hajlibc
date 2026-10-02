@@ -10,7 +10,7 @@
  * @file create.c
  * @brief Implementation of pthread_create().
  * @Created: 2026/10/01 10:27:30 by Moutig
- * @Updated: 2026/10/01 14:38:25 by Moutig
+ * @Updated: 2026/10/02 13:22:47 by Moutig
  *
  * pthread_create allocates a stack from the reuse pool, places
  * a TCB at the top of it, initializes the TCB with the start
@@ -63,7 +63,7 @@ static void hajRegisterFlush(void)
 
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg)
 {
-	const struct haj_attr_internal	*a;
+	const struct _hajThreadAttr	*a;
 	struct __haj_tcb	*tcb;
 	int			detachstate;
 	size_t		stacksize;
@@ -129,6 +129,14 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 	tcb->detachState	= detachstate;
 
 	/*
+	 * Publish the TCB in the global thread list. If the child
+	 * died in the meantime and was detached, it already
+	 * called __haj_threadListRemove on a TCB that was not
+	 * listed; that function is idempotent and does nothing.
+	 */
+	__haj_threadListAdd(tcb);
+
+	/*
 	 * Create the thread. __haj_clone dispatches between
 	 * clone3(2) and clone(2) and caches the choice.
 	 *
@@ -149,14 +157,6 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 		__haj_threadFreeStack(base, effSize, effGuard);
 		return ((int)-r);
 	}
-
-	/*
-	 * Publish the TCB in the global thread list. If the child
-	 * died in the meantime and was detached, it already
-	 * called __haj_threadListRemove on a TCB that was not
-	 * listed; that function is idempotent and does nothing.
-	 */
-	__haj_threadListAdd(tcb);
 
 	/*
 	 * Register the cache flush handler on first success. We

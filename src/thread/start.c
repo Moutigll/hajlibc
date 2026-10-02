@@ -10,7 +10,7 @@
  * @file start.c
  * @brief Thread entry trampoline and exit.
  * @Created: 2026/10/01 10:24:39 by Moutig
- * @Updated: 2026/10/02 11:19:28 by Moutig
+ * @Updated: 2026/10/02 13:25:28 by Moutig
  *
  * __haj_threadStart is the function the clone wrapper invokes
  * in the child. It reads startRoutine/startArg from the TCB,
@@ -46,13 +46,6 @@ void __haj_threadExit(void *retval)
 	 * valid until the joiner is done.
 	 */
 	__haj_threadListRemove(tcb);
-
-	/*
-	 * Wake any thread waiting in pthread_join. Do this AFTER
-	 * removing from the list, so the joiner never observes a
-	 * TCB that is still linked into the list.
-	 */
-	__haj_futexWake(&tcb->joinFutex, 0x7fffffff);
 
 	if (detached) {
 		/*

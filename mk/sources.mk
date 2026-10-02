@@ -176,6 +176,8 @@ THREAD_SRCS := \
 	public/join.c \
 	public/self.c \
 	public/key.c \
+	public/mutex.c \
+	public/mutexattr.c \
 	public/once.c \
 	public/attr.c \
 

@@ -10,10 +10,10 @@
  * @file attr.c
  * @brief Implementation of pthread_attr_*() functions.
  * @Created: 2026/10/01 10:28:49 by Moutig
- * @Updated: 2026/10/02 07:24:43 by Moutig
+ * @Updated: 2026/10/02 12:26:31 by Moutig
  *
  * The public pthread_attr_t is an opaque 48-byte union. Its
- * internal layout is struct haj_attr_internal (see
+ * internal layout is struct _hajThreadAttr (see
  * bits/thread/pthread_attr.h). All accesses go through the
  * HAJ_ATTR / HAJ_ATTR_CONST macros.
  */
@@ -28,7 +28,7 @@
 
 int pthread_attr_init(pthread_attr_t *attr)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -58,7 +58,7 @@ int pthread_attr_destroy(pthread_attr_t *attr)
 
 int pthread_attr_setdetachstate(pthread_attr_t *attr, int state)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -72,7 +72,7 @@ int pthread_attr_setdetachstate(pthread_attr_t *attr, int state)
 
 int pthread_attr_getdetachstate(const pthread_attr_t *attr, int *state)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || state == NULL)
 		return (EINVAL);
@@ -86,7 +86,7 @@ int pthread_attr_getdetachstate(const pthread_attr_t *attr, int *state)
 
 int pthread_attr_setstacksize(pthread_attr_t *attr, size_t size)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -100,7 +100,7 @@ int pthread_attr_setstacksize(pthread_attr_t *attr, size_t size)
 
 int pthread_attr_getstacksize(const pthread_attr_t *attr, size_t *size)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || size == NULL)
 		return (EINVAL);
@@ -114,7 +114,7 @@ int pthread_attr_getstacksize(const pthread_attr_t *attr, size_t *size)
 
 int pthread_attr_setguardsize(pthread_attr_t *attr, size_t size)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -126,7 +126,7 @@ int pthread_attr_setguardsize(pthread_attr_t *attr, size_t size)
 
 int pthread_attr_getguardsize(const pthread_attr_t *attr, size_t *size)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || size == NULL)
 		return (EINVAL);
@@ -140,7 +140,7 @@ int pthread_attr_getguardsize(const pthread_attr_t *attr, size_t *size)
 
 int pthread_attr_setstack(pthread_attr_t *attr, void *stackaddr, size_t stacksize)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -155,7 +155,7 @@ int pthread_attr_setstack(pthread_attr_t *attr, void *stackaddr, size_t stacksiz
 
 int pthread_attr_getstack(const pthread_attr_t *attr, void **stackaddr, size_t *stacksize)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || stackaddr == NULL || stacksize == NULL)
 		return (EINVAL);
@@ -170,7 +170,7 @@ int pthread_attr_getstack(const pthread_attr_t *attr, void **stackaddr, size_t *
 
 int pthread_attr_setschedpolicy(pthread_attr_t *attr, int policy)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -186,7 +186,7 @@ int pthread_attr_setschedpolicy(pthread_attr_t *attr, int policy)
 
 int pthread_attr_getschedpolicy(const pthread_attr_t *attr, int *policy)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || policy == NULL)
 		return (EINVAL);
@@ -200,7 +200,7 @@ int pthread_attr_getschedpolicy(const pthread_attr_t *attr, int *policy)
 
 int pthread_attr_setschedparam(pthread_attr_t *attr, const struct sched_param *param)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL || param == NULL)
 		return (EINVAL);
@@ -212,7 +212,7 @@ int pthread_attr_setschedparam(pthread_attr_t *attr, const struct sched_param *p
 
 int pthread_attr_getschedparam(const pthread_attr_t *attr, struct sched_param *param)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || param == NULL)
 		return (EINVAL);
@@ -226,7 +226,7 @@ int pthread_attr_getschedparam(const pthread_attr_t *attr, struct sched_param *p
 
 int pthread_attr_setinheritsched(pthread_attr_t *attr, int inherit)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -240,7 +240,7 @@ int pthread_attr_setinheritsched(pthread_attr_t *attr, int inherit)
 
 int pthread_attr_getinheritsched(const pthread_attr_t *attr, int *inherit)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || inherit == NULL)
 		return (EINVAL);
@@ -254,7 +254,7 @@ int pthread_attr_getinheritsched(const pthread_attr_t *attr, int *inherit)
 
 int pthread_attr_setscope(pthread_attr_t *attr, int scope)
 {
-	struct haj_attr_internal *a;
+	struct _hajThreadAttr *a;
 
 	if (attr == NULL)
 		return (EINVAL);
@@ -268,7 +268,7 @@ int pthread_attr_setscope(pthread_attr_t *attr, int scope)
 
 int pthread_attr_getscope(const pthread_attr_t *attr, int *scope)
 {
-	const struct haj_attr_internal *a;
+	const struct _hajThreadAttr *a;
 
 	if (attr == NULL || scope == NULL)
 		return (EINVAL);

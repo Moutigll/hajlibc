@@ -163,23 +163,25 @@ SYS_SRCS := \
 	times.c
 
 THREAD_SRCS := \
-	clone.c \
-	futex.c \
-	gettid.c \
-	list.c \
-	stack.c \
-	start.c \
-	tcb.c \
-	public/create.c \
-	public/detach.c \
-	public/exit.c \
-	public/join.c \
-	public/self.c \
-	public/key.c \
-	public/mutex.c \
-	public/mutexattr.c \
-	public/once.c \
-	public/attr.c \
+	internal/clone.c \
+	internal/futex.c \
+	internal/gettid.c \
+	internal/list.c \
+	internal/stack.c \
+	internal/start.c \
+	internal/tcb.c \
+	attr.c \
+	cond.c \
+	condattr.c \
+	create.c \
+	detach.c \
+	exit.c \
+	join.c \
+	key.c \
+	mutex.c \
+	mutexattr.c \
+	once.c \
+	self.c \
 
 # time
 TIME_SRCS := \
@@ -199,6 +201,8 @@ UNISTD_SRCS := \
 	getpid.c \
 	read.c \
 	sysconf.c \
+	unlink.c \
+	usleep.c \
 	write.c
 
 # Prefix each section with its directory.

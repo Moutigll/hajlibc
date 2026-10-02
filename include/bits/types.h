@@ -10,7 +10,7 @@
  * @file types.h
  * @brief Internal fixed-width and POSIX-like types.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/01 11:16:38 by Moutig
+ * @Updated: 2026/10/02 14:55:55 by Moutig
  *
  * This header defines the real typedefs used across hajlib: the
  * fixed-width integer types, the size-related types, and the
@@ -377,6 +377,15 @@ typedef __haj_i64		time_t;
  * Used by struct timeval.
  */
 typedef long			suseconds_t;
+# endif
+
+/*
+ * useconds_t: unsigned integer type used by usleep() and
+ * ualarm(). At least 32 bits.
+ */
+# ifndef __useconds_t_defined
+#  define __useconds_t_defined
+typedef unsigned int	useconds_t;
 # endif
 
 # ifndef __clock_t_defined

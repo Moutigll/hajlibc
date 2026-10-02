@@ -10,7 +10,7 @@
  * @file mutex.c
  * @brief POSIX mutex implementation.
  * @Created: 2026/10/02 12:11:16 by Moutig
- * @Updated: 2026/10/02 14:09:46 by Moutig
+ * @Updated: 2026/10/02 15:20:22 by Moutig
  *
  * The mutex is a single futex word (the `lock` field) plus a
  * few bookkeeping fields (owner TID, count, type).

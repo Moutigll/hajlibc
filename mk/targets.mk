@@ -34,7 +34,7 @@ ifeq ($(TARGET_OS),Linux)
     SYSCALL_BASE_SRCS	:= src/syscall/linux/x86_64/
     SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
 						   src/setjmp/x86_64/longjmp.S
-	THREAD_BASE_SRCS	:= src/thread/clone_x86_64.S
+	THREAD_BASE_SRCS	:= src/thread/internal/clone_x86_64.S
 
 
   else ifeq ($(TARGET_ARCH),aarch64)
@@ -42,8 +42,8 @@ ifeq ($(TARGET_OS),Linux)
     SYSCALL_BASE_SRCS	:= src/syscall/linux/aarch64/
     SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
 						   src/setjmp/aarch64/longjmp.S
-	THREAD_BASE_SRCS	:= src/thread/clone_aarch64.S \
-						   src/thread/atomics_aarch64.S
+	THREAD_BASE_SRCS	:= src/thread/internal/clone_aarch64.S \
+						   src/thread/internal/atomics_aarch64.S
 
   else
     $(error targets.mk: unsupported Linux arch '$(TARGET_ARCH)')

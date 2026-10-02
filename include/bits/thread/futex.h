@@ -10,7 +10,7 @@
  * @file futex.h
  * @brief futex(2) constants and helpers.
  * @Created: 2026/09/30 05:12:37 by Moutig
- * @Updated: 2026/10/01 14:18:26 by Moutig
+ * @Updated: 2026/10/02 14:49:20 by Moutig
  *
  * A futex (fast userspace mutex) is a 32-bit integer in user
  * memory that the kernel can block and wake on. It is the
@@ -91,7 +91,7 @@
  */
 long __haj_futex(int *uaddr, int op, int val,
 				 const struct timespec *timeout,
-				 int *uaddr2, int val3);
+				 int *uaddr2, unsigned int val3);
 
 /**
  * @brief futex(2) wait operation wrapper.

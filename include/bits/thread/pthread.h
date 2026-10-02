@@ -10,7 +10,7 @@
  * @file pthread_attr.h
  * @brief Internal layout of pthread_attr_t.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/02 12:20:39 by Moutig
+ * @Updated: 2026/10/02 14:36:24 by Moutig
  *
  * PRIVATE header. Included only by pthread_attr.c and
  * pthread_create.c.
@@ -75,6 +75,13 @@ _Static_assert(_Alignof(struct _hajThreadAttr) <= _Alignof(pthread_attr_t),
 
 /* ----- Mutex internal ----- */
 
+/**
+ * @brief Internal representation of pthread_mutex_t.
+ *
+ * This struct represents the internal layout of a pthread
+ * mutex object. It contains fields for the lock state, mutex
+ * type, owner thread ID, recursive lock count, and robustness.
+ */
 struct _hajThreadMutex {
 	int	lock;	/* futex word: 0 = free, 1 = locked, 2 = contended */
 	int	type;	/* HAJ_MUTEX_NORMAL / RECURSIVE / ERRORCHECK */
@@ -97,6 +104,13 @@ _Static_assert(_Alignof(struct _hajThreadMutex) <= _Alignof(pthread_mutex_t),
 
 /* ----- Mutex attributes ----- */
 
+/**
+ * @brief Internal representation of pthread_mutexattr_t.
+ *
+ * This struct represents the internal layout of a pthread
+ * mutex attributes object. It contains fields for mutex type,
+ * process sharing, robustness, protocol, and priority ceiling.
+ */
 struct _hajThreadMutexAttr {
 	int	type;
 	int	pshared;
@@ -116,5 +130,57 @@ _Static_assert(_Alignof(struct _hajThreadMutexAttr) <= _Alignof(pthread_mutexatt
 	((struct _hajThreadMutexAttr *)(void *)(p))
 # define HAJ_MUTEXATTR_CONST(p) \
 	((const struct _hajThreadMutexAttr *)(const void *)(p))
+
+/* ----- Condition variables ----- */
+
+/**
+ * @brief Internal representation of pthread_cond_t.
+ *
+ * This struct represents the internal layout of a pthread condition
+ * variable object. It contains fields for a generation counter and
+ * the clock type used for timed waits.
+ */
+struct _hajThreadCond {
+	int	seq;	/* futex word: generation counter */
+	int	clock;	/* CLOCK_REALTIME or CLOCK_MONOTONIC */
+} __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
+
+_Static_assert(sizeof(struct _hajThreadCond) == sizeof(pthread_cond_t),
+			   "_hajThreadCond does not fit in pthread_cond_t "
+			   "(bump __SIZEOF_PTHREAD_COND_T)");
+_Static_assert(_Alignof(struct _hajThreadCond) <= _Alignof(pthread_cond_t),
+			   "_hajThreadCond alignment exceeds pthread_cond_t "
+			   "(bump __ALIGNOF_PTHREAD_T)");
+
+# define HAJ_COND(p) \
+	((struct _hajThreadCond *)(void *)(p))
+# define HAJ_COND_CONST(p) \
+	((const struct _hajThreadCond *)(const void *)(p))
+
+/* ----- Condition variable attributes ----- */
+
+/*
+ * The attr holds:
+ *   - clock: which clock to use for timedwait (REALTIME or MONOTONIC)
+ *   - pshared: process sharing (accepted, not used)
+ *
+ * Two ints = 8 bytes, which is exactly the public size.
+ */
+struct _hajThreadCondAttr {
+	int	clock;
+	int	pshared;
+} __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
+
+_Static_assert(sizeof(struct _hajThreadCondAttr) == sizeof(pthread_condattr_t),
+			   "_hajThreadCondAttr does not fit in pthread_condattr_t "
+			   "(bump __SIZEOF_PTHREAD_CONDATTR_T)");
+_Static_assert(_Alignof(struct _hajThreadCondAttr) <= _Alignof(pthread_condattr_t),
+			   "_hajThreadCondAttr alignment exceeds pthread_condattr_t "
+			   "(bump __ALIGNOF_PTHREAD_T)");
+
+# define HAJ_CONDATTR(p) \
+	((struct _hajThreadCondAttr *)(void *)(p))
+# define HAJ_CONDATTR_CONST(p) \
+	((const struct _hajThreadCondAttr *)(const void *)(p))
 
 #endif /* _BITS_THREAD_PTHREAD_ATTR_H */

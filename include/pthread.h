@@ -10,7 +10,7 @@
  * @file pthread.h
  * @brief POSIX threads API.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/02 14:15:54 by Moutig
+ * @Updated: 2026/10/02 14:53:10 by Moutig
  *
  * The pthread types (pthread_t, pthread_attr_t, ...) are
  * defined in <bits/thread/pthreadtypes.h>, pulled in
@@ -333,6 +333,109 @@ int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *absti
  * @return 0 on success, or an error number on failure.
  */
 int pthread_mutex_unlock(pthread_mutex_t *mutex);
+
+
+
+
+
+/* ----- Condition variables ----- */
+
+/**
+ * @brief Initialize a condition variable.
+ *
+ * Initializes the condition variable pointed to by cond with the attributes
+ * specified by attr. If attr is NULL, default attributes are used.
+ *
+ * @param cond Pointer to a pthread_cond_t to initialize.
+ * @param attr Pointer to a pthread_condattr_t specifying condition variable attributes, or NULL for defaults.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr);
+
+/**
+ * @brief Destroy a condition variable.
+ *
+ * Destroys the condition variable pointed to by cond, freeing any resources
+ * it may hold. The condition variable should not be used after this call.
+ *
+ * @param cond Pointer to a pthread_cond_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_cond_destroy(pthread_cond_t *cond);
+
+/**
+ * @brief Wait on a condition variable.
+ *
+ * Atomically unlocks the mutex and waits for the condition variable to be
+ * signaled. When the condition variable is signaled, the mutex is re-acquired
+ * before returning. The mutex must be locked by the calling thread before
+ * calling this function.
+ *
+ * @param cond  Pointer to a pthread_cond_t to wait on.
+ * @param mutex Pointer to a pthread_mutex_t that is locked by the calling thread.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+
+/**
+ * @brief Wait on a condition variable with a timeout.
+ *
+ * Atomically unlocks the mutex and waits for the condition variable to be
+ * signaled or for the absolute timeout specified by abstime to be reached.
+ * When the condition variable is signaled or the timeout expires, the mutex
+ * is re-acquired before returning. The mutex must be locked by the calling
+ * thread before calling this function.
+ *
+ * @param cond     Pointer to a pthread_cond_t to wait on.
+ * @param mutex    Pointer to a pthread_mutex_t that is locked by the calling thread.
+ * @param abstime  Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error number on failure.
+ */
+int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex, const struct timespec *abstime);
+
+/**
+ * @brief Wait on a condition variable with a specified clock.
+ *
+ * Atomically unlocks the mutex and waits for the condition variable to be
+ * signaled or for the absolute timeout specified by abstime to be reached,
+ * using the specified clock. When the condition variable is signaled or the
+ * timeout expires, the mutex is re-acquired before returning. The mutex must
+ * be locked by the calling thread before calling this function.
+ *
+ * @param cond     Pointer to a pthread_cond_t to wait on.
+ * @param mutex    Pointer to a pthread_mutex_t that is locked by the calling thread.
+ * @param clockid  Clock ID (CLOCK_REALTIME or CLOCK_MONOTONIC) to use for the timeout.
+ * @param abstime  Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error number on failure.
+ */
+int pthread_cond_clockwait(pthread_cond_t *cond, pthread_mutex_t *mutex, clockid_t clockid, const struct timespec *abstime);
+
+/**
+ * @brief Signal a condition variable.
+ *
+ * Signals the condition variable pointed to by cond, waking up one waiting thread.
+ * If no threads are waiting, the signal is lost.
+ *
+ * @param cond Pointer to a pthread_cond_t to signal.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_cond_signal(pthread_cond_t *cond);
+
+/**
+ * @brief Broadcast a condition variable.
+ *
+ * Broadcasts the condition variable pointed to by cond, waking up all waiting threads.
+ * If no threads are waiting, the broadcast is lost.
+ *
+ * @param cond Pointer to a pthread_cond_t to broadcast.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_cond_broadcast(pthread_cond_t *cond);
+
+
+
+
+
 
 
 
@@ -693,6 +796,79 @@ int pthread_mutexattr_setprioceiling(pthread_mutexattr_t *attr, int prioceiling)
  * @return 0 on success, or an error number on failure.
  */
 int pthread_mutexattr_getprioceiling(const pthread_mutexattr_t *attr, int *prioceiling);
+
+
+
+
+
+/* ---- Condition variable attributes ----- */
+/**
+ * @brief Initialize a condition variable attributes object.
+ *
+ * Initializes the condition variable attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_condattr_t to initialize.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_condattr_init(pthread_condattr_t *attr);
+
+/**
+ * @brief Destroy a condition variable attributes object.
+ *
+ * Destroys the condition variable attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_condattr_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_condattr_destroy(pthread_condattr_t *attr);
+
+/**
+ * @brief Set the process-shared attribute of a condition variable attributes object.
+ *
+ * Sets the process-shared attribute of the condition variable attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_condattr_t to modify.
+ * @param pshared The new process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_condattr_setpshared(pthread_condattr_t *attr, int pshared);
+
+/**
+ * @brief Get the process-shared attribute of a condition variable attributes object.
+ *
+ * Retrieves the process-shared attribute of the condition variable attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_condattr_t to query.
+ * @param pshared Pointer to an int to store the process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_condattr_getpshared(const pthread_condattr_t *attr, int *pshared);
+
+/**
+ * @brief Set the clock attribute of a condition variable attributes object.
+ *
+ * Sets the clock attribute of the condition variable attributes object pointed to by attr.
+ * The clock attribute determines which clock is used for timed waits on the condition variable.
+ *
+ * @param attr Pointer to a pthread_condattr_t to modify.
+ * @param clockid The new clock ID (e.g., CLOCK_REALTIME or CLOCK_MONOTONIC).
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_condattr_setclock(pthread_condattr_t *attr, clockid_t clockid);
+
+/**
+ * @brief Get the clock attribute of a condition variable attributes object.
+ *
+ * Retrieves the clock attribute of the condition variable attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_condattr_t to query.
+ * @param clockid Pointer to a clockid_t to store the clock ID.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_condattr_getclock(const pthread_condattr_t *attr, clockid_t *clockid);
+
+
+
 
 
 /* ----- Initializers ----- */

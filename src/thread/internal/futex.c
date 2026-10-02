@@ -10,7 +10,7 @@
  * @file futex.c
  * @brief futex(2) wrapper and common operations.
  * @Created: 2026/09/30 07:04:18 by Moutig
- * @Updated: 2026/10/01 12:01:12 by Moutig
+ * @Updated: 2026/10/02 14:50:34 by Moutig
  *
  * The futex syscall is the primitive on which all POSIX
  * synchronization is built. This file provides:
@@ -30,7 +30,7 @@
 #include <stddef.h>
 #include <errno.h>
 
-long __haj_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, int val3)
+long __haj_futex(int *uaddr, int op, int val, const struct timespec *timeout, int *uaddr2, unsigned int val3)
 {
 	long r = __haj_syscall6(SYS_futex,
 						(long)uaddr, op, val,
@@ -59,13 +59,13 @@ int __haj_futexWake(int *uaddr, int n)
 int __haj_futexWaitBitset(int *uaddr, int expected, const struct timespec *timeout, unsigned int bitset)
 {
 	long r = __haj_futex(uaddr, FUTEX_WAIT_BITSET_PRIVATE,
-						 expected, timeout, NULL, (int)bitset);
+						 expected, timeout, NULL, bitset);
 	return ((r == -1) ? -1 : 0);
 }
 
 int __haj_futexWakeBitset(int *uaddr, int n, unsigned int bitset)
 {
 	long r = __haj_futex(uaddr, FUTEX_WAKE_BITSET_PRIVATE, n,
-						 NULL, NULL, (int)bitset);
+						 NULL, NULL, bitset);
 	return ((r == -1) ? -1 : (int)r);
 }

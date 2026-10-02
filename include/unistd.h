@@ -10,7 +10,7 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/10/01 08:46:31 by Moutig
+ * @Updated: 2026/10/02 14:59:49 by Moutig
  *
  * @TODO: Add a description of the file.
  */
@@ -205,6 +205,27 @@ int		getpagesize(void);
  * @return 0 on success, or -1 on error.
  */
 int getentropy(void *buf, size_t buflen);
+
+/**
+ * @brief Suspend execution for a specified number of microseconds.
+ *
+ * This function suspends the execution of the calling thread for at least
+ * the specified number of microseconds.
+ *
+ * @param usec The number of microseconds to sleep.
+ * @return 0 on success, or -1 on error.
+ */
+int usleep(useconds_t usec);
+
+/**
+ * @brief Unlink a file or directory.
+ *
+ * This function removes a name from the filesystem. If that name was the
+ * last link to the file, and no process has the file open, its storage is freed and the file is gone.
+ * @param path The pathname of the file or directory to unlink.
+ * @return 0 on success, or -1 on error.
+ */
+int unlink(const char *path);
 
 /**
  * @brief Terminate the calling process immediately.

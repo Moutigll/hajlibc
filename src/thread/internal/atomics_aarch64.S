@@ -107,9 +107,9 @@ __aarch64_cas4_acq_rel:
 	ldr	w4, [x4]
 	cbz	w4, .Lcas4_llsc
 
-	/* LSE: cas w0, w1, [x2] — compares [x2] to w0, if equal
+	/* LSE: casal w0, w1, [x2] — compares [x2] to w0, if equal
 	 * stores w1, always puts the previous value in w0. */
-	cas	w0, w1, [x2]
+	casal	w0, w1, [x2]
 	ret
 
 .Lcas4_llsc:
@@ -184,8 +184,8 @@ __aarch64_ldadd4_acq_rel:
 	/* LSE: ldaddal ws, wt, [xn] — computes [xn] = [xn] + wt
 	 * and returns the old value in ws. w2 receives the old
 	 * value, then we move it to w0 for the return. */
-	ldaddal	w0, w2, [x1]
-	mov	w0, w2
+	mov		w2, w0
+	ldaddal w2, w0, [x1]
 	ret
 
 .Lldadd4_llsc:

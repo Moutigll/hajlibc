@@ -10,7 +10,7 @@
  * @file start.c
  * @brief Thread entry trampoline and exit.
  * @Created: 2026/10/01 10:24:39 by Moutig
- * @Updated: 2026/10/01 14:16:51 by Moutig
+ * @Updated: 2026/10/01 14:36:10 by Moutig
  *
  * __haj_threadStart is the function the clone wrapper invokes
  * in the child. It reads startRoutine/startArg from the TCB,
@@ -67,10 +67,21 @@ void __haj_threadExit(void *retval)
 	__haj_syscall1(SYS_exit, (long)retval);
 	__builtin_unreachable();
 }
+
 void __haj_threadStart(struct __haj_tcb *tcb)
 {
 	void *retval;
 
 	retval = tcb->startRoutine(tcb->startArg);
 	__haj_threadExit(retval);
+}
+
+int __haj_threadTrampoline(void *arg)
+{
+	struct __haj_tcb *tcb = (struct __haj_tcb *)arg;
+
+	__haj_threadStart(tcb);
+
+	/* Not reached: __haj_threadStart does not return. */
+	__builtin_unreachable();
 }

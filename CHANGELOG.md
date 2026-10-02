@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - aarch64: `hajCpuHasLse()`, `hajCpuHasNeon()`, `__haj_cpuHasLse` for atomics selection
 - C-side CRT startup: `__hajlibcStartMain` (parses initial stack, sets up globals, CPU detection, TCB, ctors, calls main)
 - `src/crt/start/tcb.c`: `__hajSetThreadRegister` installs the main thread TCB
+- `pthread.h`: POSIX threads API (`pthread_create`/`join`/`detach`/`self`/`exit`/`equal`, full `pthread_attr_*`)
+- `src/thread/public/`: public pthread implementations
+- `src/thread/clone.c`: `__haj_clone` dispatch (clone3 with clone fallback)
+- `src/thread/atomics_aarch64.S`: out-of-line atomics helpers with LSE / LL-SC runtime selection
 
 ### Changed
 
@@ -70,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_start` is now a thin asm stub passing `sp` and `&main` to `__hajlibcStartMain`
 - `__dso_handle` moved to `src/crt/start/start.c`
 - `mk/targets.mk`: `CRT_START_SRCS` paths updated (`src/crt/start/<os>/...`)
+
 
 ### Fixed
 

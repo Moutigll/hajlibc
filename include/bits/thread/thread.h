@@ -10,7 +10,7 @@
  * @file thread.h
  * @brief Threading internals (central header).
  * @Created: 2026/09/30 05:18:03 by Moutig
- * @Updated: 2026/10/01 12:40:37 by Moutig
+ * @Updated: 2026/10/01 14:36:34 by Moutig
  *
  * Central internal header for threading. It pulls in every
  * other internal thread header and declares the primitives that
@@ -142,6 +142,18 @@ void __haj_threadListRemove(struct __haj_tcb *tcb);
  * @param tcb Pointer to the TCB of the new thread.
  */
 void __haj_threadStart(struct __haj_tcb *tcb) __HAJ_NORETURN;
+
+/**
+ * @brief Trampoline for the thread entry point.
+ *
+ * This function is used as a trampoline to call __haj_threadStart
+ * with the correct argument type. It is called by the clone wrapper
+ * after the new thread is created.
+ *
+ * @param arg Pointer to the TCB of the new thread.
+ * @return The return value of __haj_threadStart (never returns).
+ */
+int __haj_threadTrampoline(void *arg);
 
 /* ----- Cancellation ----- */
 

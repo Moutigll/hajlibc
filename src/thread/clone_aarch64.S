@@ -200,39 +200,4 @@ __haj_cloneLegacyRaw:
 	ret
 
 .size	__haj_cloneLegacyRaw, .-__haj_cloneLegacyRaw
-
-/* -----
- * Libgcc out-of-line atomics fallbacks
- * -----
- *
- * GCC with -moutline-atomics (default on modern toolchains)
- * emits calls to these helpers for atomic ops. In a
- * freestanding libc without libgcc, we provide them.
- */
-
-.global __aarch64_ldadd4_acq_rel
-.hidden __aarch64_ldadd4_acq_rel
-.type   __aarch64_ldadd4_acq_rel, %function
-__aarch64_ldadd4_acq_rel:
-1:	ldaxr	w2, [x1]
-	add	w3, w2, w0
-	stlxr	w4, w3, [x1]
-	cbnz	w4, 1b
-	mov	w0, w2
-	ret
-.size	__aarch64_ldadd4_acq_rel, .-__aarch64_ldadd4_acq_rel
-
-.global __aarch64_cas4_acq_rel
-.hidden __aarch64_cas4_acq_rel
-.type   __aarch64_cas4_acq_rel, %function
-__aarch64_cas4_acq_rel:
-1:	ldaxr	w3, [x2]
-	cmp	w3, w0
-	b.ne	2f
-	stlxr	w4, w1, [x2]
-	cbnz	w4, 1b
-2:	mov	w0, w3
-	ret
-.size	__aarch64_cas4_acq_rel, .-__aarch64_cas4_acq_rel
-
 .section .note.GNU-stack,"",@progbits

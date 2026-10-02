@@ -10,7 +10,7 @@
  * @file clone.h
  * @brief clone(2) flags and helpers.
  * @Created: 2026/09/30 05:11:04 by Moutig
- * @Updated: 2026/10/01 13:49:46 by Moutig
+ * @Updated: 2026/10/01 14:32:29 by Moutig
  *
  * clone(2) is Linux-specific. It creates a new process,
  * optionally sharing parts of the execution context with the
@@ -177,6 +177,18 @@ long __haj_clone3Raw(int	(*fn)(void *),	void	*stack,	int		flags,
  */
 long __haj_cloneLegacyRaw(int	(*fn)(void *),	void	*stack,	int		flags,
 						  void	*arg,			int		*ptid,	void	*tls, int *ctid);
+
+/**
+ * @brief Create a new thread.
+ *
+ * Dispatches between clone3(2) and clone(2). The first call
+ * tries clone3; if the kernel returns ENOSYS, subsequent calls
+ * use clone(2) and the choice is cached for the process
+ * lifetime.
+ *
+ * Same signature and return value as the raw wrappers.
+ */
+long __haj_clone(int (*fn)(void *), void *stack, int flags, void *arg, int *ptid, void *tls, int *ctid);
 
 # endif /* HAJ_OS_LINUX */
 

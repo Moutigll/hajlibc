@@ -42,19 +42,23 @@ ASSERT_SRCS := \
 	assert.c
 
 # cpu (portable C parts)
-CPU_SRCS :=
+CPU_SRCS := \
+	detect.c \
+	features_aarch64.c \
+	features_x86_64.c \
 
 # crt (portable C parts)
 CRT_SRCS := \
-	_exit.c \
-	atexit.c \
-	ctors.c \
-	cxa_atexit.c \
-	cxa_finalize.c \
-	dso_handle.c \
-	dtors.c \
-	exit.c \
-	start.c
+	exit/_exit.c \
+	exit/abort.c \
+	exit/atexit.c \
+	exit/cxa_atexit.c \
+	exit/cxa_finalize.c \
+	exit/dtors.c \
+	exit/exit.c \
+	start/ctors.c \
+	start/start.c \
+	start/tcb.c
 
 # ctype
 CTYPE_SRCS := \
@@ -159,9 +163,19 @@ SYS_SRCS := \
 	times.c
 
 THREAD_SRCS := \
+	clone.c \
 	futex.c \
 	gettid.c \
-	stack.c
+	list.c \
+	stack.c \
+	start.c \
+	tcb.c \
+	public/create.c \
+	public/detach.c \
+	public/exit.c \
+	public/join.c \
+	public/self.c \
+	public/attr.c \
 
 # time
 TIME_SRCS := \

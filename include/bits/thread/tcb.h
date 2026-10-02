@@ -10,7 +10,7 @@
  * @file tcb.h
  * @brief Thread Control Block (TCB).
  * @Created: 2026/09/30 05:17:29 by Moutig
- * @Updated: 2026/10/01 11:59:19 by Moutig
+ * @Updated: 2026/10/02 09:02:52 by Moutig
  *
  * The TCB holds all per-thread data the runtime needs: identity,
  * stack bounds, join state, TSD slots, cancellation state, and
@@ -142,8 +142,24 @@ struct __haj_tcb {
 
 /* ----- Globals ----- */
 
+/**
+ * @brief The list of all threads.
+ */
 extern struct __haj_tcb	*__haj_threadList;
+
+/**
+ * @brief Lock for the thread list.
+ */
 extern int				__haj_threadListLock;
+
+/**
+ * @brief The main thread's TCB.
+ *
+ * It is declared here so that the linker sees a single definition;
+ * the symbol __haj_main_tcb is exported through <bits/thread/tcb.h>
+ * so both the startup and other internals (e.g. pthread_self) can find it.
+ */
+extern struct __haj_tcb	__haj_main_tcb;
 
 /* ----- Helpers ----- */
 

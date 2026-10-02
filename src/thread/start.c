@@ -10,7 +10,7 @@
  * @file start.c
  * @brief Thread entry trampoline and exit.
  * @Created: 2026/10/01 10:24:39 by Moutig
- * @Updated: 2026/10/01 14:36:10 by Moutig
+ * @Updated: 2026/10/02 11:19:28 by Moutig
  *
  * __haj_threadStart is the function the clone wrapper invokes
  * in the child. It reads startRoutine/startArg from the TCB,
@@ -29,6 +29,12 @@ void __haj_threadExit(void *retval)
 	size_t	stackGuard	= tcb->guardSize;
 	int		detached	= (tcb->detachState == PTHREAD_CREATE_DETACHED);
 
+	/*
+	 * Run all TSD destructors for this thread. This is done
+	 * before removing the TCB from the live list, so that
+	 * destructors can still call pthread_getspecific().
+	 */
+	__haj_runTlsDestructors(tcb);
 	tcb->retval	= retval;
 	tcb->state	= HAJ_THREAD_EXITED;
 

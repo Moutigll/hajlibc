@@ -10,7 +10,7 @@
  * @file thread.h
  * @brief Threading internals (central header).
  * @Created: 2026/09/30 05:18:03 by Moutig
- * @Updated: 2026/10/01 14:36:34 by Moutig
+ * @Updated: 2026/10/02 11:16:28 by Moutig
  *
  * Central internal header for threading. It pulls in every
  * other internal thread header and declares the primitives that
@@ -97,6 +97,18 @@ int __haj_gettid(void);
 struct __haj_tcb *__haj_tcbCreate(void *stackBase, size_t stackSize,
 								  size_t guardSize, void *stackTop,
 								  void **childStack);
+
+/**
+ * @brief Run all TSD destructors for a thread.
+ *
+ * Called by __haj_threadExit. Iterates over all keys with a
+ * destructor, calls it with the thread's non-NULL value, and
+ * clears the slot. Up to HAJ_PTHREAD_DESTRUCTOR_ITERATIONS
+ * passes are made, in case a destructor re-sets a value.
+ *
+ * @param tcb The TCB of the exiting thread.
+ */
+void __haj_runTlsDestructors(struct __haj_tcb *tcb);
 
 /**
  * @brief Free a TCB and its associated stack.

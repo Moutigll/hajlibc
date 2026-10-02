@@ -10,7 +10,7 @@
  * @file cpu.h
  * @brief CPU feature detection for x86 and aarch64.
  * @Created: 2026/09/25 02:08:12 by Moutig
- * @Updated: 2026/10/02 10:37:40 by Moutig
+ * @Updated: 2026/10/02 11:35:46 by Moutig
  *
  * This header provides functions to detect CPU features on x86/x86_64 and aarch64 architectures.
  * It defines functions to check for the presence of various SIMD instruction sets and other CPU capabilities.
@@ -257,7 +257,7 @@ int hajCpuHasErms(void);
  * Written exactly once, by __haj_cpuDetect_aarch64. After
  * that it is read-only.
  */
-int __haj_cpuHasLse;
+extern int __haj_cpuHasLse;
 
 /**
  * @brief Detect CPU features and populate the __haj_cpu cache for aarch64.

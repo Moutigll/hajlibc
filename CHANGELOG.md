@@ -56,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/thread/public/`: public pthread implementations
 - `src/thread/clone.c`: `__haj_clone` dispatch (clone3 with clone fallback)
 - `src/thread/atomics_aarch64.S`: out-of-line atomics helpers with LSE / LL-SC runtime selection
+- `pthread_once` and TSD (`pthread_key_create` / `_delete` / `_setspecific` / `_getspecific`)
+- TSD destructors run at thread exit
 
 ### Changed
 

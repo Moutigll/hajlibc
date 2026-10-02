@@ -10,7 +10,7 @@
  * @file pthread.h
  * @brief POSIX threads API.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/02 10:57:56 by Moutig
+ * @Updated: 2026/10/02 11:47:33 by Moutig
  *
  * The pthread types (pthread_t, pthread_attr_t, ...) are
  * defined in <bits/thread/pthreadtypes.h>, pulled in
@@ -45,18 +45,13 @@ extern "C" {
 # define PTHREAD_CANCEL_DEFERRED		0
 # define PTHREAD_CANCEL_ASYNCHRONOUS	1
 
-/* ----- Limits ----- */
-
-/*
- * Minimum stack size that pthread_create will accept. POSIX
- * requires that this be at least the size needed to run a
- * thread; on Linux glibc uses 16 KiB (or 2 KiB on some
- * systems), musl uses 2 KiB. We use 16 KiB to have room for
- * the TCB (about 1.2 KiB) plus normal stack usage.
+/**
+ * @brief Initialiser for a pthread_once_t.
+ *
+ * A pthread_once_t must be initialised with this macro before
+ * being passed to pthread_once.
  */
-# ifndef PTHREAD_STACK_MIN
-#  define PTHREAD_STACK_MIN 16384
-# endif
+# define PTHREAD_ONCE_INIT	0
 
 /**
  * @brief Scheduling parameters.
@@ -145,6 +140,73 @@ pthread_t	pthread_self(void);
  * @return Non-zero if t1 and t2 are equal, 0 otherwise.
  */
 int			pthread_equal(pthread_t t1, pthread_t t2);
+
+/**
+ * @brief Execute a function once.
+ *
+ * Ensures that the function pointed to by init_routine is executed
+ * exactly once, regardless of how many threads call pthread_once
+ * with the same once_control.
+ *
+ * @param once_control Pointer to a pthread_once_t control variable.
+ * @param init_routine Function to execute once.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_once(pthread_once_t *once_control, void (*init_routine)(void));
+
+/* ----- Thread-specific data (TSD) ----- */
+
+/**
+ * @brief Create a thread-specific data key.
+ *
+ * Creates a new thread-specific data key visible to all threads.
+ * The key can be used to store and retrieve per-thread values.
+ * If destructor is not NULL, it is called with the value associated
+ * with the key when a thread exits, if that value is non-NULL.
+ *
+ * @param key Pointer to a pthread_key_t to receive the new key.
+ * @param destructor Optional destructor function for the key's values.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_key_create(pthread_key_t *key, void (*destructor)(void *));
+
+/**
+ * @brief Delete a thread-specific data key.
+ *
+ * Deletes the thread-specific data key specified by key. After
+ * deletion, the key is no longer valid and cannot be used to
+ * access thread-specific data. Any values associated with the
+ * key in existing threads are not affected.
+ *
+ * @param key The pthread_key_t to delete.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_key_delete(pthread_key_t key);
+
+/**
+ * @brief Set the value of a thread-specific data key.
+ *
+ * Sets the value of the thread-specific data key specified by key
+ * to the value pointed to by value. If a value is already associated
+ * with the key in the calling thread, it is replaced.
+ *
+ * @param key The pthread_key_t to set.
+ * @param value The value to set.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_setspecific(pthread_key_t key, const void *value);
+
+/**
+ * @brief Get the value of a thread-specific data key.
+ *
+ * Retrieves the value of the thread-specific data key specified by key
+ * in the calling thread. If no value is associated with the key in the
+ * calling thread, NULL is returned.
+ *
+ * @param key The pthread_key_t to get.
+ * @return The value associated with the key, or NULL if no value is associated.
+ */
+void *pthread_getspecific(pthread_key_t key);
 
 
 

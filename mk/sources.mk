@@ -175,6 +175,8 @@ THREAD_SRCS := \
 	public/exit.c \
 	public/join.c \
 	public/self.c \
+	public/key.c \
+	public/once.c \
 	public/attr.c \
 
 # time

@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/thread/start.c`: `__haj_threadStart` / `__haj_threadExit`
 - `src/thread/tcb.c`: `__haj_tcbCreate`
 - `Makefile`, `mk/sources.mk`, `mk/targets.mk`: `THREAD_SRCS`, `THREAD_BASE_SRCS`, per-arch clone selection
+- CPU detection split per-arch: `src/cpu/detect.c`, `features_x86_64.c`, `features_aarch64.c`
+- `struct hajCpuCache` now per-arch; `__haj_cpu` exported, filled once by `hajCpuDetect()`
+- aarch64: `hajCpuHasLse()`, `hajCpuHasNeon()`, `__haj_cpuHasLse` for atomics selection
 
 ### Changed
 
@@ -59,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tests/main.c` now runs the test framework instead of printing a version
 - Opaque pthread types are now defined in `bits/thread/pthreadtypes.h` with size/alignment `_Static_assert` checks
 - `bits/types.h` includes `bits/thread/pthreadtypes.h` (removed inline pthread typedef placeholders)
+- Renamed `src/cpu/x86/cpuFeatures.c` to `src/cpu/features_x86_64.c`
+- `hajCpuHas*()` accessors no longer call detection lazily; detection runs once at startup from `hajCpuDetect()`
 
 ### Fixed
 

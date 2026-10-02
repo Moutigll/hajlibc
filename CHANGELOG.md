@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CPU detection split per-arch: `src/cpu/detect.c`, `features_x86_64.c`, `features_aarch64.c`
 - `struct hajCpuCache` now per-arch; `__haj_cpu` exported, filled once by `hajCpuDetect()`
 - aarch64: `hajCpuHasLse()`, `hajCpuHasNeon()`, `__haj_cpuHasLse` for atomics selection
+- C-side CRT startup: `__hajlibcStartMain` (parses initial stack, sets up globals, CPU detection, TCB, ctors, calls main)
+- `src/crt/start/tcb.c`: `__hajSetThreadRegister` installs the main thread TCB
 
 ### Changed
 
@@ -64,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bits/types.h` includes `bits/thread/pthreadtypes.h` (removed inline pthread typedef placeholders)
 - Renamed `src/cpu/x86/cpuFeatures.c` to `src/cpu/features_x86_64.c`
 - `hajCpuHas*()` accessors no longer call detection lazily; detection runs once at startup from `hajCpuDetect()`
+- `src/crt/` split into `start/` (per-OS entry + C startup) and `exit/` (`exit`, `_exit`, `abort`, `atexit`, `cxa_*`)
+- `_start` is now a thin asm stub passing `sp` and `&main` to `__hajlibcStartMain`
+- `__dso_handle` moved to `src/crt/start/start.c`
+- `mk/targets.mk`: `CRT_START_SRCS` paths updated (`src/crt/start/<os>/...`)
 
 ### Fixed
 

@@ -10,7 +10,7 @@
  * @file crt.h
  * @brief Internal C runtime declarations.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:15 by Moutig
+ * @Updated: 2026/10/02 10:44:32 by Moutig
  *
  * This header declares symbols that are internal to the C runtime.
  * They are used by the startup code, by exit(), and by code
@@ -23,8 +23,7 @@
 #ifndef _BITS_CRT_H
 # define _BITS_CRT_H
 
-# include <bits/os.h>
-# include <bits/arch.h>
+# include <bits/compiler.h>
 
 # if defined(__cplusplus)
 extern "C" {
@@ -40,6 +39,22 @@ extern "C" {
  * This is the BSD convention, also used by musl and macOS.
  */
 extern const char	*__progname;
+
+/**
+ * @brief The argument count (argc).
+ *
+ * Initialized to 0 by the C runtime. The startup code
+ * overwrites it with the real argc before calling main().
+ */
+extern int		__haj_argc;
+
+/**
+ * @brief The environment pointer (envp).
+ *
+ * Initialized to NULL by the C runtime. The startup code
+ * overwrites it with the real envp before calling main().
+ */
+extern char		**environ;
 
 /**
  * @brief Run all atexit handlers.
@@ -112,6 +127,32 @@ void __haj_run_ctors(void);
  * This function is called by exit() before _exit().
  */
 void __haj_run_dtors(void);
+
+/**
+ * @brief C-level program entry.
+ *
+ * @param sp    The stack pointer at process entry, as set by
+ *              the kernel. The stack layout is the Linux
+ *              initial stack: [argc][argv...][NULL][envp...]
+ *              [NULL][auxv...][NULL].
+ * @param main  The address of the program's main function.
+ *
+ * This function never returns. It sets up TLS, initializes
+ * the C runtime state (environ, __progname, auxv), runs
+ * constructors, calls main, and exits with main's return
+ * value.
+ */
+void __hajlibcStartMain(void *sp, int (*main)(int, char **, char **)) __HAJ_NORETURN;
+
+/**
+ * @brief Set the thread register (TPIDR_EL0 on AArch64, FS/GS on x86).
+ *
+ * This function is called by the startup code to set the thread
+ * register to point to the main thread's TCB. After this call,
+ * pthread_self() and any TCB access work.
+ */
+void __hajSetThreadRegister(void);
+
 
 # if defined(__cplusplus)
 }

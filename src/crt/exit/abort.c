@@ -10,7 +10,7 @@
  * @file abort.c
  * @brief Implementation of abort().
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:15 by Moutig
+ * @Updated: 2026/10/02 08:47:25 by Moutig
  *
  * abort() raises SIGABRT and terminates the process. We do not
  * have signal support yet, so we do the syscall directly with
@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <bits/syscall.h>
+#include <bits/compiler.h>
 
 __HAJ_NORETURN
 void	abort(void)

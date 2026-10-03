@@ -10,7 +10,7 @@
  * @file pthreadtypes.h
  * @brief Opaque pthread types, sizes and alignments.
  * @Created: 2026/10/01 10:53:08 by Moutig
- * @Updated: 2026/10/02 14:25:00 by Moutig
+ * @Updated: 2026/10/03 12:04:15 by Moutig
  *
  * All POSIX thread objects are opaque: user code only ever
  * manipulates pointers to them. This header defines:
@@ -48,6 +48,30 @@
 # define _BITS_THREAD_PTHREADTYPES_H
 
 # include <bits/wordsize.h>
+
+/*
+ * HAJ_PTHREAD_PROCESS_SHARED
+ *
+ * If defined to 1 at compile time, hajlibc threads objects
+ * (mutex, cond, rwlock, barrier) can be created with the
+ * PTHREAD_PROCESS_SHARED attribute and used between processes
+ * that map the same shared memory region.
+ * Since a robust mutex is irrelevant in a single process,
+ * robust mutexes are also only supported when HAJ_PTHREAD_PROCESS_SHARED is defined.
+ *
+ * This enlarges every thread object by one int (4 bytes) to
+ * store the pshared flag, and changes the futex operations
+ * from the fast PRIVATE variants to the slower (but
+ * cross-process) non-private variants when the object is
+ * shared.
+ *
+ * A program that does not need process sharing should leave
+ * this undefined (the default), which gives the smallest and
+ * fastest objects.
+ */
+# ifndef HAJ_PTHREAD_PROCESS_SHARED
+#  define HAJ_PTHREAD_PROCESS_SHARED 0
+# endif
 
 /* ----- Limits ----- */
 
@@ -129,15 +153,21 @@
  * typedef would not match.
  */
 
-# define __SIZEOF_PTHREAD_ATTR_T			48
-# define __SIZEOF_PTHREAD_MUTEX_T			24
-# define __SIZEOF_PTHREAD_MUTEXATTR_T		24
-# define __SIZEOF_PTHREAD_COND_T			8
-# define __SIZEOF_PTHREAD_CONDATTR_T		8
-# define __SIZEOF_PTHREAD_RWLOCK_T			24
-# define __SIZEOF_PTHREAD_RWLOCKATTR_T		8
-# define __SIZEOF_PTHREAD_BARRIER_T			24
-# define __SIZEOF_PTHREAD_BARRIERATTR_T		8
+# define __SIZEOF_PTHREAD_ATTR_T		48
+# define __SIZEOF_PTHREAD_MUTEXATTR_T	24
+# define __SIZEOF_PTHREAD_CONDATTR_T	8
+# define __SIZEOF_PTHREAD_RWLOCK_T		16
+# define __SIZEOF_PTHREAD_RWLOCKATTR_T	8
+# define __SIZEOF_PTHREAD_BARRIER_T		16
+# define __SIZEOF_PTHREAD_BARRIERATTR_T	8
+
+#if !HAJ_PTHREAD_PROCESS_SHARED
+# define __SIZEOF_PTHREAD_MUTEX_T		24
+# define __SIZEOF_PTHREAD_COND_T		8
+#else
+# define __SIZEOF_PTHREAD_MUTEX_T		32
+# define __SIZEOF_PTHREAD_COND_T		16 /* +8 bytes, +4 data and +4 padding */
+#endif
 
 /* ----- Alignment -----
  *

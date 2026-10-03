@@ -98,9 +98,15 @@ CFLAGS		:= \
 	-Wextra \
 	-Werror \
 	-Wpedantic \
-	-O2
+	-O2 -g
 LDFLAGS		:= $(HAJ_LDFLAGS)
 LDLIBS		:= $(HAJ_LIBS)
+
+ifeq ($(HAJ_PTHREAD_PROCESS_SHARED),1)
+# If HAJ_PTHREAD_PROCESS_SHARED is set, we compile with -DHAJ_PTHREAD_PROCESS_SHARED to enable the process-shared
+CFLAGS		+= -DHAJ_PTHREAD_PROCESS_SHARED
+HAJ_CFLAGS	+= -DHAJ_PTHREAD_PROCESS_SHARED
+endif
 
 # Export for sub-makefiles
 export CC

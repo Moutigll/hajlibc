@@ -10,7 +10,7 @@
  * @file pthread_attr.h
  * @brief Internal layout of pthread_attr_t.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/02 14:36:24 by Moutig
+ * @Updated: 2026/10/03 11:18:02 by Moutig
  *
  * PRIVATE header. Included only by pthread_attr.c and
  * pthread_create.c.
@@ -58,7 +58,7 @@ struct _hajThreadAttr {
 _Static_assert(sizeof(struct _hajThreadAttr) == sizeof(pthread_attr_t),
 			   "_hajThreadAttr does not fit in pthread_attr_t "
 			   "(bump __SIZEOF_PTHREAD_ATTR_T)");
-_Static_assert(_Alignof(struct _hajThreadAttr) <= _Alignof(pthread_attr_t),
+_Static_assert(_Alignof(struct _hajThreadAttr) == _Alignof(pthread_attr_t),
 			   "_hajThreadAttr alignment exceeds pthread_attr_t "
 			   "(bump __ALIGNOF_PTHREAD_T)");
 
@@ -88,12 +88,16 @@ struct _hajThreadMutex {
 	int	owner;	/* TID of the owning thread */
 	int	count;	/* recursive lock count */
 	int	robust;	/* non-zero if robust */
+#if HAJ_PTHREAD_PROCESS_SHARED
+	int	pshared;	/* non-zero if process-shared */
+	struct _hajRobustNode	robustNext;	/* next node in the robust mutex list */
+#endif
 } __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
 
 _Static_assert(sizeof(struct _hajThreadMutex) == sizeof(pthread_mutex_t),
 			   "_hajThreadMutex does not fit in pthread_mutex_t "
 			   "(bump __SIZEOF_PTHREAD_MUTEX_T)");
-_Static_assert(_Alignof(struct _hajThreadMutex) <= _Alignof(pthread_mutex_t),
+_Static_assert(_Alignof(struct _hajThreadMutex) == _Alignof(pthread_mutex_t),
 			   "_hajThreadMutex alignment exceeds pthread_mutex_t "
 			   "(bump __ALIGNOF_PTHREAD_MUTEX_T)");
 
@@ -101,6 +105,12 @@ _Static_assert(_Alignof(struct _hajThreadMutex) <= _Alignof(pthread_mutex_t),
 	((struct _hajThreadMutex *)(void *)(p))
 # define HAJ_MUTEX_CONST(p) \
 	((const struct _hajThreadMutex *)(const void *)(p))
+
+# if HAJ_PTHREAD_PROCESS_SHARED
+#  define HAJ_MUTEX_IS_SHARED(m)	((m)->pshared == PTHREAD_PROCESS_SHARED)
+# else
+#  define HAJ_MUTEX_IS_SHARED(m)	(0)
+# endif
 
 /* ----- Mutex attributes ----- */
 
@@ -122,7 +132,7 @@ struct _hajThreadMutexAttr {
 _Static_assert(sizeof(struct _hajThreadMutexAttr) == sizeof(pthread_mutexattr_t),
 			   "_hajThreadMutexAttr does not fit in pthread_mutexattr_t "
 			   "(bump __SIZEOF_PTHREAD_MUTEXATTR_T)");
-_Static_assert(_Alignof(struct _hajThreadMutexAttr) <= _Alignof(pthread_mutexattr_t),
+_Static_assert(_Alignof(struct _hajThreadMutexAttr) == _Alignof(pthread_mutexattr_t),
 			   "_hajThreadMutexAttr alignment exceeds pthread_mutexattr_t "
 			   "(bump __ALIGNOF_PTHREAD_T)");
 
@@ -143,12 +153,15 @@ _Static_assert(_Alignof(struct _hajThreadMutexAttr) <= _Alignof(pthread_mutexatt
 struct _hajThreadCond {
 	int	seq;	/* futex word: generation counter */
 	int	clock;	/* CLOCK_REALTIME or CLOCK_MONOTONIC */
+#if HAJ_PTHREAD_PROCESS_SHARED
+	int	pshared;	/* non-zero if process-shared */
+#endif
 } __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
 
 _Static_assert(sizeof(struct _hajThreadCond) == sizeof(pthread_cond_t),
 			   "_hajThreadCond does not fit in pthread_cond_t "
 			   "(bump __SIZEOF_PTHREAD_COND_T)");
-_Static_assert(_Alignof(struct _hajThreadCond) <= _Alignof(pthread_cond_t),
+_Static_assert(_Alignof(struct _hajThreadCond) == _Alignof(pthread_cond_t),
 			   "_hajThreadCond alignment exceeds pthread_cond_t "
 			   "(bump __ALIGNOF_PTHREAD_T)");
 
@@ -156,6 +169,12 @@ _Static_assert(_Alignof(struct _hajThreadCond) <= _Alignof(pthread_cond_t),
 	((struct _hajThreadCond *)(void *)(p))
 # define HAJ_COND_CONST(p) \
 	((const struct _hajThreadCond *)(const void *)(p))
+
+# if HAJ_PTHREAD_PROCESS_SHARED
+#  define HAJ_COND_IS_SHARED(c)	((c)->pshared == PTHREAD_PROCESS_SHARED)
+# else
+#  define HAJ_COND_IS_SHARED(c)	(0)
+# endif
 
 /* ----- Condition variable attributes ----- */
 
@@ -174,7 +193,7 @@ struct _hajThreadCondAttr {
 _Static_assert(sizeof(struct _hajThreadCondAttr) == sizeof(pthread_condattr_t),
 			   "_hajThreadCondAttr does not fit in pthread_condattr_t "
 			   "(bump __SIZEOF_PTHREAD_CONDATTR_T)");
-_Static_assert(_Alignof(struct _hajThreadCondAttr) <= _Alignof(pthread_condattr_t),
+_Static_assert(_Alignof(struct _hajThreadCondAttr) == _Alignof(pthread_condattr_t),
 			   "_hajThreadCondAttr alignment exceeds pthread_condattr_t "
 			   "(bump __ALIGNOF_PTHREAD_T)");
 

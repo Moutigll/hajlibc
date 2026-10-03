@@ -10,7 +10,7 @@
  * @file once.c
  * @brief Implementation of pthread_once.
  * @Created: 2026/10/02 11:12:16 by Moutig
- * @Updated: 2026/10/02 11:23:38 by Moutig
+ * @Updated: 2026/10/03 08:56:16 by Moutig
  *
  * pthread_once() guarantees that init_routine is called exactly
  * once, no matter how many threads call pthread_once with the
@@ -60,7 +60,7 @@ int pthread_once(pthread_once_t *once_control, void (*init_routine)(void))
 		 */
 		init_routine();
 		__haj_atomic_store(once_control, HAJ_ONCE_DONE);
-		__haj_futexWake((int *)once_control, 0x7fffffff);
+		__haj_futexWakeOp(once_control, 1, 0);
 		return (0);
 	}
 

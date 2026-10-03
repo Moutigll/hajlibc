@@ -10,7 +10,7 @@
  * @file pthread.h
  * @brief POSIX threads API.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/02 14:53:10 by Moutig
+ * @Updated: 2026/10/03 09:15:21 by Moutig
  *
  * The pthread types (pthread_t, pthread_attr_t, ...) are
  * defined in <bits/thread/pthreadtypes.h>, pulled in
@@ -84,6 +84,14 @@ extern "C" {
 # endif
 # ifndef PTHREAD_PRIO_PROTECT
 #  define PTHREAD_PRIO_PROTECT		2
+# endif
+
+/*
+ * Value returned by exactly one thread from each
+ * pthread_barrier_wait round. The other threads get 0.
+ */
+# ifndef PTHREAD_BARRIER_SERIAL_THREAD
+#  define PTHREAD_BARRIER_SERIAL_THREAD	(-1)
 # endif
 
 /**
@@ -333,6 +341,21 @@ int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *absti
  * @return 0 on success, or an error number on failure.
  */
 int pthread_mutex_unlock(pthread_mutex_t *mutex);
+
+/**
+ * @brief Mark a robust mutex as consistent.
+ *
+ * Marks the robust mutex pointed to by mutex as consistent after
+ * the owning thread has terminated while holding the mutex. This
+ * function should be called by a thread that has acquired a
+ * mutex that was previously held by a terminated thread, to
+ * indicate that the state protected by the mutex is now
+ * consistent.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to mark as consistent.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_consistent(pthread_mutex_t *mutex);
 
 
 
@@ -890,6 +913,15 @@ int pthread_condattr_getclock(const pthread_condattr_t *attr, clockid_t *clockid
  * pthread_cond_t with default attributes.
  */
 # define PTHREAD_COND_INITIALIZER	{ { 0 } }
+
+/**
+ * @brief Initializer for a pthread_rwlock_t.
+ *
+ * This macro can be used to statically initialize a read-write
+ * lock object. It expands to an initializer for a
+ * pthread_rwlock_t with default attributes.
+ */
+# define PTHREAD_RWLOCK_INITIALIZER	{ { 0 } }
 
 # ifdef __cplusplus
 }

@@ -10,7 +10,7 @@
  * @file mutexattr.c
  * @brief Mutex attributes implementation.
  * @Created: 2026/10/02 12:11:54 by Moutig
- * @Updated: 2026/10/02 14:17:15 by Moutig
+ * @Updated: 2026/10/03 10:27:12 by Moutig
  *
  * pthread_mutexattr_t is an opaque 24-byte union. The internal
  * struct has 5 int fields (type, pshared, robust, protocol,
@@ -91,6 +91,15 @@ int pthread_mutexattr_setpshared(pthread_mutexattr_t *attr, int pshared)
 	if (pshared != PTHREAD_PROCESS_PRIVATE && pshared != PTHREAD_PROCESS_SHARED)
 		return (EINVAL);
 
+#if !HAJ_PTHREAD_PROCESS_SHARED
+	/*
+	 * The library was built without process-shared support.
+	 * POSIX explicitly allows returning ENOTSUP in this case.
+	 */
+	if (pshared == PTHREAD_PROCESS_SHARED)
+		return (ENOTSUP);
+#endif
+
 	a = HAJ_MUTEXATTR(attr);
 	a->pshared = pshared;
 	return (0);
@@ -116,6 +125,13 @@ int pthread_mutexattr_setrobust(pthread_mutexattr_t *attr, int robust)
 		return (EINVAL);
 	if (robust != PTHREAD_MUTEX_STALLED && robust != PTHREAD_MUTEX_ROBUST)
 		return (EINVAL);
+#if !HAJ_PTHREAD_PROCESS_SHARED
+	/* The library was built without robust mutex support.
+	 * POSIX explicitly allows returning ENOTSUP in this case.
+	 */
+	if (robust == PTHREAD_MUTEX_ROBUST)
+		return (ENOTSUP);
+#endif
 
 	a = HAJ_MUTEXATTR(attr);
 	a->robust = robust;

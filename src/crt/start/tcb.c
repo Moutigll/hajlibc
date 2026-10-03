@@ -10,7 +10,7 @@
  * @file tcb.c
  * @brief Set the thread register to point to the main thread's TCB.
  * @Created: 2026/10/02 08:53:32 by Moutig
- * @Updated: 2026/10/02 09:26:10 by Moutig
+ * @Updated: 2026/10/03 11:22:33 by Moutig
  *
  * This file contains the code to set the thread register
  * (%fs on x86_64, tpidr_el0 on aarch64) to point to the main thread's TCB.
@@ -42,5 +42,9 @@ void __hajSetThreadRegister(void)
 	__asm__ volatile ("msr tpidr_el0, %0" :: "r" (tcb) : "memory");
 #else
 # error "Unsupported architecture"
+#endif
+
+#if HAJ_PTHREAD_PROCESS_SHARED
+	__haj_robustInit(&tcb->robustList);
 #endif
 }

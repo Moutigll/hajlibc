@@ -10,7 +10,7 @@
  * @file cond.c
  * @brief Implementation of pthread_cond_*().
  * @Created: 2026/10/02 14:29:28 by Moutig
- * @Updated: 2026/10/02 14:46:32 by Moutig
+ * @Updated: 2026/10/03 08:52:10 by Moutig
  *
  * A condition variable is a single futex word: a generation
  * counter (`seq`). Each signal or broadcast increments it and
@@ -77,7 +77,7 @@ static int waitSeq(struct _hajThreadCond *c, int seq, clockid_t clockid, const s
 	int		op;
 	long	r;
 
-	op = FUTEX_WAIT_BITSET | FUTEX_PRIVATE_FLAG;
+	op = HAJ_FUTEX_OP_WAIT_BITSET(HAJ_COND_IS_SHARED(c));
 	if (clockid == CLOCK_REALTIME)
 		op |= FUTEX_CLOCK_REALTIME;
 
@@ -109,6 +109,11 @@ int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
 	c->clock = (attr != NULL)
 		? HAJ_CONDATTR_CONST(attr)->clock
 		: CLOCK_REALTIME;
+#if HAJ_PTHREAD_PROCESS_SHARED
+	c->pshared = (attr != NULL)
+		? HAJ_CONDATTR_CONST(attr)->pshared
+		: PTHREAD_PROCESS_PRIVATE;
+#endif
 
 	return (0);
 }
@@ -231,7 +236,7 @@ int pthread_cond_signal(pthread_cond_t *cond)
 	 * will be woken and re-check.
 	 */
 	__haj_atomic_add_fetch(&c->seq, 1);
-	__haj_futexWake(&c->seq, 1);
+	__haj_futexWakeOp(&c->seq, 1, HAJ_COND_IS_SHARED(c));
 	return (0);
 }
 
@@ -245,6 +250,6 @@ int pthread_cond_broadcast(pthread_cond_t *cond)
 	c = HAJ_COND(cond);
 
 	__haj_atomic_add_fetch(&c->seq, 1);
-	__haj_futexWake(&c->seq, 0x7fffffff);
+	__haj_futexWakeOp(&c->seq, 0x7fffffff, HAJ_COND_IS_SHARED(c));
 	return (0);
 }

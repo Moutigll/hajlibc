@@ -10,7 +10,7 @@
  * @file tcb.h
  * @brief Thread Control Block (TCB).
  * @Created: 2026/09/30 05:17:29 by Moutig
- * @Updated: 2026/10/02 11:54:40 by Moutig
+ * @Updated: 2026/10/03 11:11:08 by Moutig
  *
  * The TCB holds all per-thread data the runtime needs: identity,
  * stack bounds, join state, TSD slots, cancellation state, and
@@ -33,6 +33,7 @@
 # include <bits/types.h>
 # include <bits/os.h>
 # include <bits/thread/pthreadtypes.h>
+# include <stddef.h>
 
 /* ----- cpu_set_t ----- */
 
@@ -52,6 +53,49 @@
 typedef struct {
 	unsigned long __bits[HAJ_NCPUWORDS];
 } cpu_set_t;
+
+/* ----- Robust mutex list ----- */
+
+# if HAJ_PTHREAD_PROCESS_SHARED
+
+/**
+ * @brief Node in a robust mutex list.
+ *
+ * Each thread has a list of all the robust mutexes it owns. The
+ * kernel uses this list to mark them as inconsistent if the
+ * thread dies while holding them.
+ */
+struct _hajRobustNode { struct _hajRobustNode *next; };
+
+/**
+ * @brief Head of a robust mutex list.
+ *
+ * Each thread has a single head, which points to the circular
+ * list of all the robust mutexes it owns. The kernel uses this
+ * list to mark them as inconsistent if the thread dies while
+ * holding them.
+ */
+struct _hajRobustHead {
+	struct _hajRobustNode	list;			/* Circular list of owned mutexes */
+	long					futexOffset;	/* Offset of the futex word in the mutex struct */
+	struct _hajRobustNode	*pending;		/* List of mutexes pending to be added to the list */
+};
+
+_Static_assert(sizeof(struct _hajRobustHead) == 24,
+			   "_hajRobustHead must match kernel ABI (24 bytes)");
+
+_Static_assert(offsetof(struct _hajRobustHead, futexOffset) == 8,
+			   "_hajRobustHead must match kernel ABI (futexOffset at offset 8)");
+_Static_assert(offsetof(struct _hajRobustHead, pending) == 16,
+			   "_hajRobustHead must match kernel ABI (pending at offset 16)");
+
+/**
+ * @brief Initialize a robust mutex list.
+ * @param h The robust mutex list to initialize.
+ */
+void __haj_robustInit(struct _hajRobustHead *h);
+
+# endif /* HAJ_PTHREAD_PROCESS_SHARED */
 
 /* ----- Constants ----- */
 
@@ -110,6 +154,9 @@ struct __haj_tcb {
 
 	/* ---- Cleanup ---- */
 	struct __haj_cleanup	*cleanupStack;
+# if HAJ_PTHREAD_PROCESS_SHARED
+	struct _hajRobustHead	robustList;		/* list of robust mutexes */
+# endif
 
 	/* ---- Attributes (4-byte) ---- */
 	int						detachState;	/* JOINABLE / DETACHED */
@@ -130,7 +177,7 @@ struct __haj_tcb {
 
 	/* ---- TSD slots ---- */
 	void					*specific[PTHREAD_KEYS_MAX];
-};
+} __HAJ_ALIGNED(16);
 
 /* ----- Globals ----- */
 

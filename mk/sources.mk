@@ -160,7 +160,8 @@ SYS_SRCS := \
 	auxv.c \
 	getentropy.c \
 	getrandom.c \
-	times.c
+	times.c \
+	waitpid.c \
 
 THREAD_SRCS := \
 	internal/clone.c \

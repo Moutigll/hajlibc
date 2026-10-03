@@ -10,7 +10,7 @@
  * @file start.c
  * @brief Thread entry trampoline and exit.
  * @Created: 2026/10/01 10:24:39 by Moutig
- * @Updated: 2026/10/02 13:25:28 by Moutig
+ * @Updated: 2026/10/03 11:29:45 by Moutig
  *
  * __haj_threadStart is the function the clone wrapper invokes
  * in the child. It reads startRoutine/startArg from the TCB,
@@ -71,6 +71,15 @@ void __haj_threadStart(struct __haj_tcb *tcb)
 {
 	void *retval;
 
+#if HAJ_PTHREAD_PROCESS_SHARED
+	/*
+	 * If this thread is in a shared memory region, we must
+	 * register its robust mutex list with the kernel. The
+	 * kernel will then mark any robust mutexes it owns as
+	 * inconsistent if it dies, and wake any waiters.
+	 */
+	__haj_robustInit(&tcb->robustList);
+#endif /* HAJ_PTHREAD_PROCESS_SHARED */
 	retval = tcb->startRoutine(tcb->startArg);
 	__haj_threadExit(retval);
 }

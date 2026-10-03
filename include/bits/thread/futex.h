@@ -10,7 +10,7 @@
  * @file futex.h
  * @brief futex(2) constants and helpers.
  * @Created: 2026/09/30 05:12:37 by Moutig
- * @Updated: 2026/10/02 14:49:20 by Moutig
+ * @Updated: 2026/10/03 10:11:11 by Moutig
  *
  * A futex (fast userspace mutex) is a 32-bit integer in user
  * memory that the kernel can block and wake on. It is the
@@ -19,6 +19,28 @@
  * semaphores.
  *
  * The constants come from <linux/futex.h> and are stable ABI.
+ *
+ * TWO FUTEX MODES
+ *
+ *   PRIVATE  the futex is identified by its address alone. Used
+ *            for objects shared between threads of the same
+ *            process. Faster (no inode lookup), but two
+ *            processes mapping the same memory will NOT share
+ *            the futex even if they map it at the same virtual
+ *            address.
+ *
+ *   SHARED   the futex is identified by (address, inode of the
+ *            mapping). Used for objects shared between
+ *            processes. Slightly slower on the slow path
+ *            (contention), but works across processes.
+ *
+ * The choice is per-object, not per-call: a shared mutex uses
+ * SHARED operations for all its waits and wakes, a private
+ * mutex uses PRIVATE operations.
+ *
+ * Every wait/wake wrapper has an "Op" variant that takes a
+ * `shared` flag. The non-Op variants are thin wrappers that
+ * pass `shared = 0`, so existing callers do not change.
  */
 
 #ifndef _BITS_THREAD_FUTEX_H
@@ -74,9 +96,38 @@
 
 /* ----- Bitset ----- */
 
-#  define FUTEX_BITSET_MATCH_ANY 0xFFFFFFFF
+#  define FUTEX_BITSET_MATCH_ANY 0xFFFFFFFFU
+#  define FUTEX_OWNER_DIED 0x40000000
 
-/* ----- Wrappers ----- */
+/* ----- Shared/private op helpers ----- */
+
+/*
+ * These macros select the futex operation code based on a
+ * `shared` flag. They are used by the Op wrappers below. When
+ * shared is non-zero, the PRIVATE_FLAG is not added (or is
+ * explicitly removed), so the kernel uses the (address, inode)
+ * key.
+ *
+ * Note on FUTEX_WAIT_BITSET: FUTEX_CLOCK_REALTIME is a separate
+ * modifier that controls which clock the timeout uses. It is
+ * orthogonal to PRIVATE/SHARED and must be added by the caller
+ * if CLOCK_REALTIME is wanted. The helper here only handles
+ * the PRIVATE flag.
+ */
+
+#  define HAJ_FUTEX_OP_WAIT(shared) \
+	((shared) ? FUTEX_WAIT : FUTEX_WAIT_PRIVATE)
+
+#  define HAJ_FUTEX_OP_WAKE(shared) \
+	((shared) ? FUTEX_WAKE : FUTEX_WAKE_PRIVATE)
+
+#  define HAJ_FUTEX_OP_WAIT_BITSET(shared) \
+	((shared) ? FUTEX_WAIT_BITSET : (FUTEX_WAIT_BITSET | FUTEX_PRIVATE_FLAG))
+
+#  define HAJ_FUTEX_OP_WAKE_BITSET(shared) \
+	((shared) ? FUTEX_WAKE_BITSET : FUTEX_WAKE_BITSET_PRIVATE)
+
+/* ----- Raw syscall ----- */
 
 /**
  * @brief futex(2) syscall wrapper.
@@ -93,62 +144,99 @@ long __haj_futex(int *uaddr, int op, int val,
 				 const struct timespec *timeout,
 				 int *uaddr2, unsigned int val3);
 
+/* ----- Op wrappers (take a `shared` flag) ----- */
+
 /**
- * @brief futex(2) wait operation wrapper.
+ * @brief Wait on a futex, choosing PRIVATE or SHARED.
  *
- * Atomically checks that *uaddr == expected, and if so, sleeps
- * until another thread calls FUTEX_WAKE on the same address (or
- * a spurious wakeup occurs). Returns -EAGAIN immediately if
- * *uaddr != expected.
- *
- * @param uaddr    Address of the futex in user memory.
+ * @param uaddr    Address of the futex.
  * @param expected Value the futex must have to sleep.
+ * @param shared   Non-zero to use the shared (cross-process)
+ *                 variant, 0 for the private (faster) variant.
  * @return 0 on wakeup, -1 on error with errno set.
  */
-int __haj_futexWait(int *uaddr, int expected);
+int __haj_futexWaitOp(int *uaddr, int expected, int shared);
 
 /**
- * @brief futex(2) wake operation wrapper.
+ * @brief Wake waiters on a futex, choosing PRIVATE or SHARED.
  *
- * Wakes up to n threads blocked in FUTEX_WAIT on uaddr. Use
- * INT_MAX (or any value >= number of waiters) to wake all.
- * n = 0 is a no-op.
- *
- * @param uaddr Address of the futex in user memory.
- * @param n     Number of waiters to wake (>= 0; use INT_MAX for all).
- * @return Number of threads woken, or -1 on error with errno set.
+ * @param uaddr  Address of the futex.
+ * @param n      Number of waiters to wake (INT_MAX for all).
+ * @param shared Non-zero for shared, 0 for private.
+ * @return Number of threads woken, or -1 on error.
  */
-int __haj_futexWake(int *uaddr, int n);
+int __haj_futexWakeOp(int *uaddr, int n, int shared);
 
 /**
- * @brief futex(2) wait operation with bitset wrapper.
+ * @brief Wait on a futex with bitset and timeout, PRIVATE or SHARED.
  *
- * Like __haj_futexWait, but the waiter only wakes if its bitset
- * ANDs non-zero with the waker's bitset. FUTEX_BITSET_MATCH_ANY
- * matches any waker.
+ * The caller must set FUTEX_CLOCK_REALTIME in the timeout
+ * semantics if a REALTIME deadline is wanted; this wrapper
+ * does not touch that flag.
  *
- * @param uaddr    Address of the futex in user memory.
+ * @param uaddr    Address of the futex.
  * @param expected Value the futex must have to sleep.
  * @param timeout  Optional absolute timeout (NULL = no timeout).
  * @param bitset   Bitset to match for wakeup events.
+ * @param shared   Non-zero for shared, 0 for private.
  * @return 0 on wakeup, -1 on error with errno set.
  */
-int __haj_futexWaitBitset(int *uaddr, int expected, const struct timespec *timeout, unsigned int bitset);
+int __haj_futexWaitBitsetOp(int *uaddr, int expected,
+							const struct timespec *timeout,
+							unsigned int bitset, int shared);
 
 /**
- * @brief futex(2) wake operation with bitset wrapper.
+ * @brief Wake bitset waiters on a futex, PRIVATE or SHARED.
  *
- * Wakes up to n threads blocked in FUTEX_WAIT_BITSET on uaddr
- * whose bitset ANDs non-zero with the given bitset. Use
- * FUTEX_BITSET_MATCH_ANY to wake regardless of the waiter's
- * bitset, and INT_MAX for n to wake all matching waiters.
- *
- * @param uaddr  Address of the futex in user memory.
- * @param n      Number of waiters to wake (>= 0; INT_MAX for all).
- * @param bitset Bitset to match for wakeup events.
- * @return Number of threads woken, or -1 on error with errno set.
+ * @param uaddr  Address of the futex.
+ * @param n      Number of waiters to wake (INT_MAX for all).
+ * @param bitset Bitset to match.
+ * @param shared Non-zero for shared, 0 for private.
+ * @return Number of threads woken, or -1 on error.
  */
-int __haj_futexWakeBitset(int *uaddr, int n, unsigned int bitset);
+int __haj_futexWakeBitsetOp(int *uaddr, int n, unsigned int bitset, int shared);
+
+
+/* ----- Priority Inheritance (robust mutex) ----- */
+
+/**
+ * @brief Lock a PI futex, blocking.
+ *
+ * Used by PTHREAD_MUTEX_ROBUST mutexes. The kernel encodes the
+ * owner TID (and PID for shared mutexes) in the futex word, so
+ * the caller must not touch it.
+ *
+ * Returns:
+ *   0           the previous owner released the mutex normally
+ *   1           the previous owner died (EOWNERDEAD condition)
+ *  -1           on error with errno set (EDEADLK, EINVAL, ...)
+ */
+int __haj_futexLockPiOp(int *uaddr, int shared);
+
+/**
+ * @brief Unlock a PI futex.
+ *
+ * @param uaddr  Address of the futex.
+ * @param shared Non-zero for cross-process.
+ * @return 0 on success, -1 on error with errno set.
+ */
+int __haj_futexUnlockPiOp(int *uaddr, int shared);
+
+/**
+ * @brief Try to lock a PI futex without blocking.
+ *
+ * @return 0 on success, 1 on EOWNERDEAD, EBUSY if held, -1 on
+ *         other errors.
+ */
+int __haj_futexTryLockPiOp(int *uaddr, int shared);
+
+/**
+ * @brief Lock a PI futex with a timeout.
+ *
+ * Uses CLOCK_REALTIME for the deadline. Returns the same values
+ * as __haj_futexLockPiOp, plus ETIMEDOUT.
+ */
+int __haj_futexLockPiTimedOp(int *uaddr, const struct timespec *abstime, int shared);
 
 # endif /* HAJ_OS_LINUX */
 

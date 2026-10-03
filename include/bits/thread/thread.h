@@ -10,7 +10,7 @@
  * @file thread.h
  * @brief Threading internals (central header).
  * @Created: 2026/09/30 05:18:03 by Moutig
- * @Updated: 2026/10/02 11:16:28 by Moutig
+ * @Updated: 2026/10/03 11:10:20 by Moutig
  *
  * Central internal header for threading. It pulls in every
  * other internal thread header and declares the primitives that
@@ -166,6 +166,22 @@ void __haj_threadStart(struct __haj_tcb *tcb) __HAJ_NORETURN;
  * @return The return value of __haj_threadStart (never returns).
  */
 int __haj_threadTrampoline(void *arg);
+
+/**
+ * @brief Reset the global thread list.
+ *
+ * This function resets the global thread list to its initial state.
+ * It is called during initialization and when the process is reset.
+ *
+ * @param self Pointer to the TCB of the current thread.
+ */
+static __HAJ_INLINE void __haj_threadListReset(struct __haj_tcb *self)
+{
+	__haj_threadListLock = 0;
+	self->next = self;
+	self->prev = self;
+	__haj_threadList = self;
+}
 
 /* ----- Cancellation ----- */
 

@@ -10,7 +10,7 @@
  * @file condattr.c
  * @brief Implementation of pthread_condattr_*().
  * @Created: 2026/10/02 14:32:15 by Moutig
- * @Updated: 2026/10/02 14:52:35 by Moutig
+ * @Updated: 2026/10/03 08:52:34 by Moutig
  *
  * The attribute object has two fields:
  *
@@ -68,6 +68,15 @@ int pthread_condattr_setpshared(pthread_condattr_t *attr, int pshared)
 		return (EINVAL);
 	if (pshared != PTHREAD_PROCESS_PRIVATE && pshared != PTHREAD_PROCESS_SHARED)
 		return (EINVAL);
+
+#if !HAJ_PTHREAD_PROCESS_SHARED
+	/*
+	 * The library was built without process-shared support.
+	 * POSIX explicitly allows returning ENOTSUP in this case.
+	 */
+	if (pshared == PTHREAD_PROCESS_SHARED)
+		return (ENOTSUP);
+#endif
 
 	a = HAJ_CONDATTR(attr);
 	a->pshared = pshared;

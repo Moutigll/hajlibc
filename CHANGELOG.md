@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pthread_once` and TSD (`pthread_key_create` / `_delete` / `_setspecific` / `_getspecific`)
 - TSD destructors run at thread exit
 - `pthread_mutex_*` and `pthread_mutexattr_*` (NORMAL / RECURSIVE / ERRORCHECK, `timedlock`, robust, pshared, protocol, prioceiling)
+- `pthread_cond_*` (wait/timedwait/clockwait/signal/broadcast) and `pthread_condattr_*`
+- `unistd.h`: `usleep`, `unlink`; `stdlib.h`: `atexit`, `exit`
+- `useconds_t` in `bits/types.h`
+- Robust mutexes via kernel PI futexes, `pthread_mutex_consistent`
+- Process-shared pthread objects behind `HAJ_PTHREAD_PROCESS_SHARED`
+- `sys/wait.h` (`wait`, `waitpid`, `W*` macros) and `src/sys/waitpid.c`
 
 ### Changed
 

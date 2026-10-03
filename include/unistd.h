@@ -10,7 +10,7 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/10/02 14:59:49 by Moutig
+ * @Updated: 2026/10/03 16:21:45 by Moutig
  *
  * @TODO: Add a description of the file.
  */
@@ -174,6 +174,35 @@ pid_t	fork(void);
  * @return The process ID of the calling process.
  */
 pid_t	getpid(void);
+
+/**
+ * @brief Get the parent process ID of the calling process.
+ *
+ * @return The parent process ID of the calling process.
+ */
+pid_t	getppid(void);
+
+/**
+ * @brief Get the thread ID of the calling thread.
+ *
+ * @return The thread ID of the calling thread.
+ */
+pid_t	gettid(void);
+
+/**
+ * @brief Get the user ID of the calling process.
+ *
+ * @return The user ID of the calling process.
+ */
+uid_t	getuid(void);
+
+/**
+ * @brief Get the group ID of the calling process.
+ *
+ * @return The group ID of the calling process.
+ */
+gid_t	getgid(void);
+
 
 /**
  * @brief Query system configuration variables at runtime.

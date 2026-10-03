@@ -10,7 +10,7 @@
  * @file signal.h
  * @brief Signal numbers and constants.
  * @Created: 2026/09/30 11:27:57 by Moutig
- * @Updated: 2026/09/30 12:46:16 by Moutig
+ * @Updated: 2026/10/03 16:06:47 by Moutig
  *
  * Defines the POSIX signal numbers with the values used by the
  * target OS. The values are part of the kernel ABI: Linux,
@@ -39,6 +39,169 @@
 # define _BITS_SIGNAL_H
 
 # include <bits/os.h>
+#include <stddef.h>
+
+/*
+ * On Linux, sigset_t is an array of unsigned long, with enough
+ * bits for 64 signals (NSIG = 64). The kernel expects exactly
+ * 8 bytes for rt_sigaction/rt_sigprocmask on 64-bit, and 4 bytes
+ * on 32-bit. We always use 8 bytes so the ABI is stable.
+ *
+ * POSIX does not specify the layout; user code must use the
+ * sigemptyset / sigaddset / ... functions.
+ */
+typedef struct {
+	unsigned long	__bits[1];
+} sigset_t;
+
+/*
+ * Linux kernel layout for rt_sigaction(2). The sa_mask is
+ * transmitted to the kernel as an 8-byte word; the user-mode
+ * sigset_t is larger than that, so we expose only the low word
+ * in the struct and let the wrapper zero-extend.
+ *
+ * The sa_restorer is required on x86_64: the kernel refuses to
+ * install a handler without it if SA_RESTORER is set.
+ */
+struct sigaction {
+	union {
+		void	(*sa_handler)(int);
+		void	(*sa_sigaction)(int, void *, void *);
+	} __sa_handler;
+	unsigned long	sa_flags;
+	void			(*sa_restorer)(void);
+	sigset_t		sa_mask;
+};
+
+
+# define sa_handler	__sa_handler.sa_handler
+# define sa_sigaction	__sa_handler.sa_sigaction
+
+/**
+ * @brief Signal value union.
+ *
+ * Used by sigqueue(3) and sigaction(2) to pass an integer or pointer value with a signal.
+ */
+union sigval {
+	int		sival_int;
+	void	*sival_ptr;
+};
+
+/**
+ * @brief Signal information structure.
+ *
+ * Used by sigaction(2) and sigqueue(3) to provide detailed information about a signal.
+ */
+typedef struct {
+	int	si_signo;
+	int	si_errno;
+	int	si_code;
+	int	__pad0;
+	union {
+		int	__pad[28];
+		struct { int si_pid; unsigned int si_uid; }					__kill;
+		struct { void *si_addr; }									__fault;
+		struct { int si_status; int si_utime; int si_stime; }		__child;
+		struct { union sigval si_value; int si_int; void *si_ptr; }	__rt;
+	} __data;
+# define si_pid		__data.__kill.si_pid
+# define si_uid		__data.__kill.si_uid
+# define si_addr	__data.__fault.si_addr
+# define si_status	__data.__child.si_status
+# define si_value	__data.__rt.si_value
+# define si_int		__data.__rt.si_int
+# define si_ptr		__data.__rt.si_ptr
+} siginfo_t;
+
+/*
+ * stack_t describes an alternate signal stack. The layout
+ * matches the kernel's stack_t (which is what sigaltstack(2)
+ * expects).
+ */
+typedef struct {
+	void	*ss_sp;
+	int		ss_flags;
+	size_t	ss_size;
+} stack_t;
+
+# define SIGEV_SIGNAL	0
+# define SIGEV_NONE		1
+# define SIGEV_THREAD	2
+
+/*
+ * sigevent_t describes how a thread should be notified of an
+ * event. It is used by timer_create(2), mq_notify(3), and
+ * sigqueue(3).
+ */
+typedef struct sigevent {
+	union sigval	sigev_value;
+	int				sigev_notify;
+	int				sigev_signo;
+	void			(*sigev_notify_function)(union sigval);
+	void			*sigev_notify_attributes;
+} sigevent_t;
+
+# if defined(HAJ_ARCH_X86_64)
+/**
+ * @brief Machine context structure for x86_64 architecture.
+ *
+ * This structure describes the CPU registers and state for a thread.
+ * It is used by getcontext(2), setcontext(2), and swapcontext(2).
+ */
+typedef struct {
+	unsigned long	cr2;
+	unsigned long	oldmask;
+	unsigned long	r8, r9, r10, r11, r12, r13, r14, r15;
+	unsigned long	rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp, rip;
+	unsigned long	eflags, cs, gs, fs, ss;
+	unsigned long	err, trapno;
+	unsigned long	fpstate;
+	unsigned long	reserved[8];
+} mcontext_t;
+
+# elif defined(HAJ_ARCH_AARCH64)
+/**
+ * @brief Machine context structure for AArch64 architecture.
+ *
+ * This structure describes the CPU registers and state for a thread.
+ * It is used by getcontext(2), setcontext(2), and swapcontext(2).
+ */
+typedef struct {
+	unsigned long	__regs[31];
+	unsigned long	sp;
+	unsigned long	pc;
+	unsigned long	pstate;
+} mcontext_t;
+
+#endif /* HAJ_ARCH_AARCH64 */
+
+/*
+ * ucontext_t describes the user context of a thread. It is used
+ * by getcontext(2), setcontext(2), and swapcontext(2).
+ */
+typedef struct ucontext_t {
+	unsigned long		uc_flags;
+	struct ucontext_t	*uc_link;
+	stack_t				uc_stack;
+	mcontext_t			uc_mcontext;
+	sigset_t			uc_sigmask;
+} ucontext_t;
+
+typedef int sig_atomic_t;
+
+/* ----- Signal handler special values ----- */
+
+# ifndef SIG_DFL
+#  define SIG_DFL	((void (*)(int))0)
+# endif
+# ifndef SIG_IGN
+#  define SIG_IGN	((void (*)(int))1)
+# endif
+# ifndef SIG_ERR
+#  define SIG_ERR	((void (*)(int))-1)
+# endif
+
+# define HAJ_NSIG	64
 
 /* ----- Windows (separate model) ----- */
 /**
@@ -81,6 +244,9 @@
 #  define SIGPIPE	13	/* Broken pipe. */
 #  define SIGALRM	14	/* Alarm clock. */
 #  define SIGTERM	15	/* Termination. */
+#  if defined(HAJ_OS_LINUX)
+#   define SIGSTKFLT	16	/* Stack fault (Linux only). */
+#endif
 #  define SIGXCPU	24	/* CPU time limit exceeded. */
 #  define SIGXFSZ	25	/* File size limit exceeded. */
 #  define SIGVTALRM	26	/* Virtual timer expired. */
@@ -306,6 +472,17 @@
 
 #  error "hajlibc: no signal definitions for this OS"
 
+# endif
+
+# if defined(__x86_64__)
+/**
+ * @brief Trampoline for returning from a signal handler.
+ *
+ * This function is used as the sa_restorer for signal handlers
+ * that do not provide their own. It performs the necessary
+ * cleanup and returns to the interrupted context.
+ */
+extern void __haj_sigreturn_trampoline(void) __HAJ_NORETURN;
 # endif
 
 #endif /* _BITS_SIGNAL_H */

@@ -30,7 +30,8 @@ ifeq ($(TARGET_OS),Linux)
     MMAN_PLATFORM_SRCS	:= src/sys/mman/linux/shm_open.c \
 						   src/sys/mman/linux/shm_unlink.c
   ifeq ($(TARGET_ARCH),x86_64)
-    CRT_START_SRCS		:= src/crt/start/linux/start_x86_64.S
+    CRT_START_SRCS		:= src/crt/start/linux/start_x86_64.S \
+							src/signal/restorer.S
     SYSCALL_BASE_SRCS	:= src/syscall/linux/x86_64/
     SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
 						   src/setjmp/x86_64/longjmp.S

@@ -10,7 +10,7 @@
  * @file gettid.c
  * @brief Implementation of __haj_gettid().
  * @Created: 2026/09/30 11:22:15 by Moutig
- * @Updated: 2026/10/01 12:01:31 by Moutig
+ * @Updated: 2026/10/03 16:14:59 by Moutig
  *
  * On Linux, gettid(2) returns the kernel thread ID, which is
  * distinct from the process ID. It is used internally by the
@@ -29,6 +29,7 @@
 #include <bits/thread/thread.h>
 #include <bits/syscall.h>
 #include <bits/os.h>
+#include <errno.h>
 
 #if defined(HAJ_OS_LINUX)
 
@@ -59,3 +60,22 @@ int __haj_gettid(void)
 # error "hajlib: __haj_gettid is not implemented for this platform"
 
 #endif
+
+pid_t __haj_gettid_thread(pthread_t thread)
+{
+	struct __haj_tcb	*tcb;
+	int					tid;
+
+	if (thread == (pthread_t)0) {
+		errno = ESRCH;
+		return (-1);
+	}
+
+	tcb = (struct __haj_tcb *)(void *)thread;
+	tid = tcb->tid;
+	if (tid <= 0) {
+		errno = ESRCH;
+		return (-1);
+	}
+	return ((pid_t)tid);
+}

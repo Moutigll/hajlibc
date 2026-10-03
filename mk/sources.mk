@@ -104,7 +104,16 @@ SIGSETJMP_SRCS := \
 	sigsetjmp.c
 
 # signal
-SIGNAL_SRCS :=
+SIGNAL_SRCS := \
+	psignal.c \
+	pthread.c \
+	raise.c \
+	sig2str.c \
+	sigaction.c \
+	sigaltstack.c \
+	sigprocmask.c \
+	sigtimedwait.c \
+	sigset.c
 
 # stack_chk
 STACK_CHK_SRCS := \
@@ -202,8 +211,8 @@ TIME_SRCS := \
 UNISTD_SRCS := \
 	close.c \
 	fork.c \
+	getids.c \
 	getpagesize.c \
-	getpid.c \
 	read.c \
 	sysconf.c \
 	unlink.c \

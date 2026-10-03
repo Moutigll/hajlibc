@@ -10,28 +10,56 @@
  * @file abort.c
  * @brief Implementation of abort().
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/02 08:47:25 by Moutig
+ * @Updated: 2026/10/03 15:37:35 by Moutig
  *
- * abort() raises SIGABRT and terminates the process. We do not
- * have signal support yet, so we do the syscall directly with
- * the exit status 128 + SIGABRT (134).
+ * abort() raises SIGABRT on the calling thread. If the signal
+ * is caught and the handler returns, or if SIGABRT is ignored,
+ * abort() falls back to terminating the process with _exit,
+ * using a non-zero status.
+ *
+ * It never returns to the caller and does not run atexit
+ * handlers, TSD destructors, or flush stdio.
  */
 
-#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
 #include <bits/syscall.h>
-#include <bits/compiler.h>
+#include <bits/thread/thread.h>
 
 __HAJ_NORETURN
-void	abort(void)
+void abort(void)
 {
-	/**
-	 * @TODO: add sigabrt
-	 * In a full implementation, this would raise SIGABRT and
-	 * let the handler (if any) run. Since we do not have
-	 * signals, we just terminate with the status that a shell
-	 * would report for SIGABRT.
+	sigset_t	set;
+
+	/*
+	 * Step 1: unblock SIGABRT. If the caller blocked it, the
+	 * raise below would just queue the signal, and we'd fall
+	 * through to _exit. POSIX requires us to unblock it.
 	 */
-	__haj_syscall1(SYS_exit_group, 134);
-	for (;;) {
-	}
+	sigemptyset(&set);
+	sigaddset(&set, SIGABRT);
+	sigprocmask(SIG_UNBLOCK, &set, NULL);
+
+	/*
+	 * Step 2: raise SIGABRT. In a multithreaded process, this
+	 * must target the calling thread (tgkill), not the whole
+	 * process (kill), otherwise the signal could be delivered
+	 * to another thread. raise() does this for us.
+	 */
+	raise(SIGABRT);
+
+	/*
+	 * Step 3: if we are still here, the handler returned or
+	 * SIGABRT was ignored. Reset SIGABRT to SIG_DFL and raise
+	 * again, so the default action (terminate) takes effect.
+	 */
+	signal(SIGABRT, SIG_DFL);
+	raise(SIGABRT);
+
+	/*
+	 * Step 4: last resort. If the second raise failed (for
+	 * example because the syscall failed), terminate the
+	 * process directly with a non-zero status.
+	 */
+	_exit(127);
 }

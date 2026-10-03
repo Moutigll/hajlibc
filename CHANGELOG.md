@@ -68,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pthread_rwlock_*` / `pthread_rwlockattr_*`
 - `pthread_barrier_*` / `pthread_barrierattr_*`
 - `pthread_spin_*`
+- `signal.h` with the full POSIX signal API (`sigaction`, `signal`, `sigprocmask`, `sigpending`, `sigsuspend`, `sigaltstack`, `sigset_*`)
+- `raise`, `kill`, `tgkill`, `killpg`, `sigqueue`, `sigtimedwait`, `sigwaitinfo`, `sigwait`, `pthread_kill`, `pthread_sigmask`
+- `sig2str` / `str2sig` / `strsignal` / `psignal` / `psiginfo`
+- x86_64 `rt_sigreturn` trampoline (`sa_restorer`)
+- `unistd.h`: `getppid`, `gettid`, `getuid`, `getgid`
 
 ### Changed
 
@@ -86,7 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_start` is now a thin asm stub passing `sp` and `&main` to `__hajlibcStartMain`
 - `__dso_handle` moved to `src/crt/start/start.c`
 - `mk/targets.mk`: `CRT_START_SRCS` paths updated (`src/crt/start/<os>/...`)
-
+- `abort` now uses `raise(SIGABRT)` with proper unblock and reset
+- `src/unistd/getids.c` replaces `getpid.c`
 
 ### Fixed
 

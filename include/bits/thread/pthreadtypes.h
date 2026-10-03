@@ -10,7 +10,7 @@
  * @file pthreadtypes.h
  * @brief Opaque pthread types, sizes and alignments.
  * @Created: 2026/10/01 10:53:08 by Moutig
- * @Updated: 2026/10/03 12:04:15 by Moutig
+ * @Updated: 2026/10/03 14:04:37 by Moutig
  *
  * All POSIX thread objects are opaque: user code only ever
  * manipulates pointers to them. This header defines:
@@ -156,7 +156,7 @@
 # define __SIZEOF_PTHREAD_ATTR_T		48
 # define __SIZEOF_PTHREAD_MUTEXATTR_T	24
 # define __SIZEOF_PTHREAD_CONDATTR_T	8
-# define __SIZEOF_PTHREAD_RWLOCK_T		16
+# define __SIZEOF_PTHREAD_RWLOCK_T		8
 # define __SIZEOF_PTHREAD_RWLOCKATTR_T	8
 # define __SIZEOF_PTHREAD_BARRIER_T		16
 # define __SIZEOF_PTHREAD_BARRIERATTR_T	8

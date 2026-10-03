@@ -10,7 +10,7 @@
  * @file pthread.h
  * @brief POSIX threads API.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/03 09:15:21 by Moutig
+ * @Updated: 2026/10/03 14:09:07 by Moutig
  *
  * The pthread types (pthread_t, pthread_attr_t, ...) are
  * defined in <bits/thread/pthreadtypes.h>, pulled in
@@ -459,6 +459,228 @@ int pthread_cond_broadcast(pthread_cond_t *cond);
 
 
 
+/* ----- Spinlocks ----- */
+
+/**
+ * @brief Initialize a spinlock.
+ *
+ * Initializes the spinlock pointed to by lock. The pshared argument
+ * specifies whether the spinlock is shared between processes or
+ * private to the calling process. Only PTHREAD_PROCESS_PRIVATE is
+ * supported in this implementation.
+ *
+ * @param lock Pointer to a pthread_spinlock_t to initialize.
+ * @param pshared PTHREAD_PROCESS_PRIVATE or PTHREAD_PROCESS_SHARED (not supported).
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_spin_init(pthread_spinlock_t *lock, int pshared);
+
+/**
+ * @brief Destroy a spinlock.
+ *
+ * Destroys the spinlock pointed to by lock. The spinlock should not
+ * be used after this call.
+ *
+ * @param lock Pointer to a pthread_spinlock_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_spin_destroy(pthread_spinlock_t *lock);
+
+/**
+ * @brief Lock a spinlock.
+ *
+ * Locks the spinlock pointed to by lock. If the spinlock is already
+ * locked, the calling thread spins in a loop until the spinlock
+ * becomes available.
+ *
+ * @param lock Pointer to a pthread_spinlock_t to lock.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_spin_lock(pthread_spinlock_t *lock);
+
+/**
+ * @brief Try to lock a spinlock.
+ *
+ * Attempts to lock the spinlock pointed to by lock. If the spinlock
+ * is already locked, the function returns immediately with an error.
+ *
+ * @param lock Pointer to a pthread_spinlock_t to try to lock.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_spin_trylock(pthread_spinlock_t *lock);
+
+/**
+ * @brief Unlock a spinlock.
+ *
+ * Unlocks the spinlock pointed to by lock. If the calling thread does
+ * not own the spinlock, the behavior is undefined.
+ *
+ * @param lock Pointer to a pthread_spinlock_t to unlock.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_spin_unlock(pthread_spinlock_t *lock);
+
+
+
+
+
+/* ----- Read-write locks ----- */
+
+/**
+ * @brief Initialize a read-write lock.
+ *
+ * Initializes the read-write lock pointed to by rwlock with the attributes
+ * specified by attr. If attr is NULL, default attributes are used.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to initialize.
+ * @param attr Pointer to a pthread_rwlockattr_t specifying read-write lock attributes, or NULL for defaults.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr);
+
+/**
+ * @brief Destroy a read-write lock.
+ *
+ * Destroys the read-write lock pointed to by rwlock, freeing any resources
+ * it may hold. The read-write lock should not be used after this call.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlock_destroy(pthread_rwlock_t *rwlock);
+
+/**
+ * @brief Acquire a read lock on a read-write lock.
+ *
+ * Acquires a read lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by a writer, the calling thread blocks until
+ * the lock becomes available.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to acquire a read lock on.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
+
+/**
+ * @brief Try to acquire a read lock on a read-write lock.
+ *
+ * Attempts to acquire a read lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by a writer, the function returns immediately with an error.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to try to acquire a read lock on.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock);
+
+/**
+ * @brief Acquire a write lock on a read-write lock.
+ *
+ * Acquires a write lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by any readers or writers, the calling thread
+ * blocks until the lock becomes available.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to acquire a write lock on.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
+
+/**
+ * @brief Try to acquire a write lock on a read-write lock.
+ *
+ * Attempts to acquire a write lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by any readers or writers, the function returns immediately with an error.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to try to acquire a write lock on.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock);
+
+/**
+ * @brief Acquire a read lock on a read-write lock with a timeout.
+ *
+ * Acquires a read lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by a writer, the calling thread blocks until
+ * the lock becomes available or the absolute timeout specified by
+ * abstime is reached.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to acquire a read lock on.
+ * @param abstime Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error number on failure.
+ */
+int pthread_rwlock_timedrdlock(pthread_rwlock_t *rwlock, const struct timespec *abstime);
+
+/**
+ * @brief Acquire a write lock on a read-write lock with a timeout.
+ *
+ * Acquires a write lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by any readers or writers, the calling thread
+ * blocks until the lock becomes available or the absolute timeout
+ * specified by abstime is reached.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to acquire a write lock on.
+ * @param abstime Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error number on failure.
+ */
+int pthread_rwlock_timedwrlock(pthread_rwlock_t *rwlock, const struct timespec *abstime);
+
+/**
+ * @brief Unlock a read-write lock.
+ *
+ * Unlocks the read-write lock pointed to by rwlock. If the calling
+ * thread holds a read or write lock on the rwlock, it is released.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to unlock.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
+
+/* ---- Barriers ----- */
+
+/**
+ * @brief Initialize a barrier.
+ *
+ * Initializes the barrier pointed to by barrier with the attributes
+ * specified by attr. If attr is NULL, default attributes are used.
+ * The count parameter specifies the number of threads that must call
+ * pthread_barrier_wait before any of them successfully return from the
+ * call.
+ *
+ * @param barrier Pointer to a pthread_barrier_t to initialize.
+ * @param attr Pointer to a pthread_barrierattr_t specifying barrier attributes, or NULL for defaults.
+ * @param count The number of threads required to reach the barrier.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_barrier_init(pthread_barrier_t *barrier, const pthread_barrierattr_t *attr, unsigned count);
+
+/**
+ * @brief Destroy a barrier.
+ *
+ * Destroys the barrier pointed to by barrier, freeing any resources
+ * it may hold. The barrier should not be used after this call.
+ *
+ * @param barrier Pointer to a pthread_barrier_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_barrier_destroy(pthread_barrier_t *barrier);
+
+/**
+ * @brief Wait at a barrier.
+ *
+ * Waits at the barrier pointed to by barrier until the required number
+ * of threads have called pthread_barrier_wait. When the last thread
+ * arrives, all threads are released and one of them returns PTHREAD_BARRIER_SERIAL_THREAD,
+ * while the others return 0.
+ *
+ * @param barrier Pointer to a pthread_barrier_t to wait at.
+ * @return PTHREAD_BARRIER_SERIAL_THREAD for one thread, 0 for others, or an error number on failure.
+ */
+int pthread_barrier_wait(pthread_barrier_t *barrier);
+
+
+
+
+
+
 
 
 
@@ -890,6 +1112,93 @@ int pthread_condattr_setclock(pthread_condattr_t *attr, clockid_t clockid);
  */
 int pthread_condattr_getclock(const pthread_condattr_t *attr, clockid_t *clockid);
 
+/* ----- Read-write lock attributes ----- */
+
+/**
+ * @brief Initialize a read-write lock attributes object.
+ *
+ * Initializes the read-write lock attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_rwlockattr_t to initialize.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlockattr_init(pthread_rwlockattr_t *attr);
+
+/**
+ * @brief Destroy a read-write lock attributes object.
+ *
+ * Destroys the read-write lock attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_rwlockattr_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlockattr_destroy(pthread_rwlockattr_t *attr);
+
+/**
+ * @brief Set the process-shared attribute of a read-write lock attributes object.
+ *
+ * Sets the process-shared attribute of the read-write lock attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_rwlockattr_t to modify.
+ * @param pshared The new process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlockattr_setpshared(pthread_rwlockattr_t *attr, int pshared);
+
+/**
+ * @brief Get the process-shared attribute of a read-write lock attributes object.
+ *
+ * Retrieves the process-shared attribute of the read-write lock attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_rwlockattr_t to query.
+ * @param pshared Pointer to an int to store the process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_rwlockattr_getpshared(const pthread_rwlockattr_t *attr, int *pshared);
+
+/* ----- Barrier attributes ----- */
+
+/**
+ * @brief Initialize a barrier attributes object.
+ *
+ * Initializes the barrier attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_barrierattr_t to initialize.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_barrierattr_init(pthread_barrierattr_t *attr);
+
+/**
+ * @brief Destroy a barrier attributes object.
+ *
+ * Destroys the barrier attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_barrierattr_t to destroy.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_barrierattr_destroy(pthread_barrierattr_t *attr);
+
+/**
+ * @brief Set the process-shared attribute of a barrier attributes object.
+ *
+ * Sets the process-shared attribute of the barrier attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_barrierattr_t to modify.
+ * @param pshared The new process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_barrierattr_setpshared(pthread_barrierattr_t *attr, int pshared);
+
+/**
+ * @brief Get the process-shared attribute of a barrier attributes object.
+ *
+ * Retrieves the process-shared attribute of the barrier attributes object pointed to by attr.
+ *
+ * @param attr Pointer to a pthread_barrierattr_t to query.
+ * @param pshared Pointer to an int to store the process-shared attribute.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_barrierattr_getpshared(const pthread_barrierattr_t *attr, int *pshared);
 
 
 

@@ -10,7 +10,7 @@
  * @file pthread_attr.h
  * @brief Internal layout of pthread_attr_t.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/03 11:18:02 by Moutig
+ * @Updated: 2026/10/03 13:25:37 by Moutig
  *
  * PRIVATE header. Included only by pthread_attr.c and
  * pthread_create.c.
@@ -201,5 +201,121 @@ _Static_assert(_Alignof(struct _hajThreadCondAttr) == _Alignof(pthread_condattr_
 	((struct _hajThreadCondAttr *)(void *)(p))
 # define HAJ_CONDATTR_CONST(p) \
 	((const struct _hajThreadCondAttr *)(const void *)(p))
+
+/* ----- Read-write locks ----- */
+
+/*
+ * The state word encodes:
+ *   0                        free
+ *   N > 0                    N readers active
+ *   HAJ_RWLOCK_WRITER        a writer holds the lock
+ *   HAJ_RWLOCK_WRWAIT        a writer is blocked, gate readers
+ *   bits 0-29                reader count (when WRITER and WRWAIT are clear)
+ *
+ * A writer that cannot acquire sets WRWAIT and blocks. Readers
+ * block while WRWAIT is set, so writers do not starve.
+ */
+# define HAJ_RWLOCK_WRITER	0x40000000u
+# define HAJ_RWLOCK_WRWAIT	0x80000000u
+# define HAJ_RWLOCK_RD_MASK	0x3fffffffu
+
+/*
+ * The rwlock struct holds:
+ *   - state: the futex word (see above)
+ *   - pshared: PTHREAD_PROCESS_SHARED or PRIVATE
+ *   - _pad: padding to make the struct ABI-stable size
+ */
+struct _hajThreadRwlock {
+	unsigned int	state;		/* futex word */
+#if HAJ_PTHREAD_PROCESS_SHARED
+	int				pshared;	/* PTHREAD_PROCESS_SHARED or PRIVATE */
+#endif
+} __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
+
+_Static_assert(sizeof(struct _hajThreadRwlock) == sizeof(pthread_rwlock_t),
+			   "_hajThreadRwlock does not fit in pthread_rwlock_t");
+_Static_assert(_Alignof(struct _hajThreadRwlock) == _Alignof(pthread_rwlock_t),
+			   "_hajThreadRwlock alignment exceeds pthread_rwlock_t");
+
+# define HAJ_RWLOCK(p)				((struct _hajThreadRwlock *)(void *)(p))
+# define HAJ_RWLOCK_CONST(p)		((const struct _hajThreadRwlock *)(const void *)(p))
+
+# if HAJ_PTHREAD_PROCESS_SHARED
+#  define HAJ_RWLOCK_IS_SHARED(r)	((r)->pshared == PTHREAD_PROCESS_SHARED)
+# else
+#  define HAJ_RWLOCK_IS_SHARED(r)	(0)
+# endif
+
+/* ----- Read-write lock attributes ----- */
+
+/*
+ * The rwlock attr holds:
+ *   - pshared: PTHREAD_PROCESS_SHARED or PRIVATE
+ *   - _pad: padding to make the struct ABI-stable size
+ */
+struct _hajThreadRwlockAttr {
+	int	pshared;
+} __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
+
+_Static_assert(sizeof(struct _hajThreadRwlockAttr) == sizeof(pthread_rwlockattr_t),
+			   "_hajThreadRwlockAttr does not fit in pthread_rwlockattr_t");
+_Static_assert(_Alignof(struct _hajThreadRwlockAttr) == _Alignof(pthread_rwlockattr_t),
+			   "_hajThreadRwlockAttr alignment exceeds pthread_rwlockattr_t");
+
+# define HAJ_RWLOCKATTR(p)			((struct _hajThreadRwlockAttr *)(void *)(p))
+# define HAJ_RWLOCKATTR_CONST(p)	((const struct _hajThreadRwlockAttr *)(const void *)(p))
+
+/* ----- Barriers ----- */
+
+/*
+ * total   : number of threads required to cross the barrier
+ * count   : number of threads currently arrived (atomic)
+ * seq     : generation counter, used as the futex word
+ *
+ * The last thread to arrive resets count to 0, bumps seq and
+ * wakes everyone. All waiters block on seq, so the futex word
+ * is seq, not count.
+ */
+struct _hajThreadBarrier {
+	unsigned int	total;
+	int				count;
+	int				seq;
+#if HAJ_PTHREAD_PROCESS_SHARED
+	int				pshared;
+#endif
+} __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
+
+_Static_assert(sizeof(struct _hajThreadBarrier) == sizeof(pthread_barrier_t),
+			   "_hajThreadBarrier does not fit in pthread_barrier_t");
+_Static_assert(_Alignof(struct _hajThreadBarrier) == _Alignof(pthread_barrier_t),
+			   "_hajThreadBarrier alignment exceeds pthread_barrier_t");
+
+# define HAJ_BARRIER(p)				((struct _hajThreadBarrier *)(void *)(p))
+# define HAJ_BARRIER_CONST(p)		((const struct _hajThreadBarrier *)(const void *)(p))
+
+# if HAJ_PTHREAD_PROCESS_SHARED
+#  define HAJ_BARRIER_IS_SHARED(b)	((b)->pshared == PTHREAD_PROCESS_SHARED)
+# else
+#  define HAJ_BARRIER_IS_SHARED(b)	(0)
+# endif
+
+/* ----- Barrier attributes ----- */
+
+/*
+ * The barrier attr holds:
+ *   - pshared: PTHREAD_PROCESS_SHARED or PRIVATE
+ *   - _pad: padding to make the struct ABI-stable size
+ */
+struct _hajThreadBarrierAttr {
+	int	pshared;
+} __HAJ_ALIGNED(__ALIGNOF_PTHREAD_T);
+
+_Static_assert(sizeof(struct _hajThreadBarrierAttr) == sizeof(pthread_barrierattr_t),
+			   "_hajThreadBarrierAttr does not fit in pthread_barrierattr_t");
+_Static_assert(_Alignof(struct _hajThreadBarrierAttr) == _Alignof(pthread_barrierattr_t),
+			   "_hajThreadBarrierAttr alignment exceeds pthread_barrierattr_t");
+
+# define HAJ_BARRIERATTR(p)			((struct _hajThreadBarrierAttr *)(void *)(p))
+# define HAJ_BARRIERATTR_CONST(p)	((const struct _hajThreadBarrierAttr *)(const void *)(p))
 
 #endif /* _BITS_THREAD_PTHREAD_ATTR_H */

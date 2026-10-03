@@ -65,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Robust mutexes via kernel PI futexes, `pthread_mutex_consistent`
 - Process-shared pthread objects behind `HAJ_PTHREAD_PROCESS_SHARED`
 - `sys/wait.h` (`wait`, `waitpid`, `W*` macros) and `src/sys/waitpid.c`
+- `pthread_rwlock_*` / `pthread_rwlockattr_*`
+- `pthread_barrier_*` / `pthread_barrierattr_*`
+- `pthread_spin_*`
 
 ### Changed
 

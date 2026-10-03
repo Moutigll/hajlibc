@@ -172,6 +172,7 @@ THREAD_SRCS := \
 	internal/start.c \
 	internal/tcb.c \
 	attr.c \
+	barrier.c \
 	cond.c \
 	condattr.c \
 	create.c \
@@ -182,7 +183,10 @@ THREAD_SRCS := \
 	mutex.c \
 	mutexattr.c \
 	once.c \
+	rwlock.c \
+	rwlockattr.c \
 	self.c \
+	spin.c
 
 # time
 TIME_SRCS := \

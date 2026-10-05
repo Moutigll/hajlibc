@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file stddef.h
  * @brief Standard type definitions.
  * @Created: 2026/09/24 15:06:43 by Moutig
- * @Updated: 2026/09/24 16:19:38 by Moutig
+ * @Updated: 2026/09/30 09:20:14 by Moutig
  *
  * This header defines size_t, ptrdiff_t, wchar_t, NULL, offsetof,
  * and max_align_t, as specified by the C standard.

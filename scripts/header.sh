@@ -46,7 +46,7 @@ case "$FILE" in
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) $YEAR $AUTHOR_NAME <$AUTHOR_EMAIL>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -68,7 +68,7 @@ EOF
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) $YEAR $AUTHOR_NAME <$AUTHOR_EMAIL>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 

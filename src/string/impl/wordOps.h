@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file wordOps.h
  * @brief Helper functions for word-level operations used in memory functions.
  * @Created: 2026/09/25 22:36:12 by Moutig
- * @Updated: 2026/09/26 01:38:12 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * This header provides inline functions for word-level operations, such as
  * splatting a byte across a word and checking for zero bytes in a word. These

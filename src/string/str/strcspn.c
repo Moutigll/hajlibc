@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strcspn.c
  * @brief Implementation of the strcspn function.
  * @Created: 2026/09/26 02:21:57 by Moutig
- * @Updated: 2026/09/26 02:25:58 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Implements strcspn using a lookup table for the reject characters.
  * The function calculates the length of the initial segment of str which consists entirely of characters not in reject.

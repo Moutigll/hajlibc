@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file madvise.c
  * @brief POSIX madvise implementation.
  * @Created: 2026/09/26 05:25:20 by Moutig
- * @Updated: 2026/09/26 07:32:12 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * This file implements the madvise function, which provides advice about the expected usage of a mapped region.
  */

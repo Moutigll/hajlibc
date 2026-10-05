@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file types.h
  * @brief Internal fixed-width and POSIX-like types.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/28 09:25:05 by Moutig
+ * @Updated: 2026/10/02 14:55:55 by Moutig
  *
  * This header defines the real typedefs used across hajlib: the
  * fixed-width integer types, the size-related types, and the
@@ -37,6 +37,7 @@
 # include <bits/arch.h>
 # include <bits/wordsize.h>
 # include <bits/compiler.h>
+# include <bits/thread/pthreadtypes.h>
 
 /* ----- Fixed-width integer types ----- */
 /**
@@ -378,6 +379,15 @@ typedef __haj_i64		time_t;
 typedef long			suseconds_t;
 # endif
 
+/*
+ * useconds_t: unsigned integer type used by usleep() and
+ * ualarm(). At least 32 bits.
+ */
+# ifndef __useconds_t_defined
+#  define __useconds_t_defined
+typedef unsigned int	useconds_t;
+# endif
+
 # ifndef __clock_t_defined
 #  define __clock_t_defined
 /**
@@ -438,67 +448,29 @@ typedef int				pthread_once_t;
 typedef int				pthread_spinlock_t;
 # endif
 
+/* ----- Resource limits ----- */
+
 /*
- * Opaque object types. Each is a distinct struct type so that the
- * compiler catches accidental mixing (pthread_attr_t* passed where
- * pthread_mutex_t* is expected). The 64-byte size and long
- * alignment are placeholders; the pthread implementation will fit
- * inside them without changing the public type.
+ * rlim_t is the historical (possibly 32-bit) type used by
+ * getrlimit/setrlimit. rlim64_t is always 64-bit and is used by
+ * getrlimit64/setrlimit64.
+ *
+ * On 64-bit platforms, rlim_t and rlim64_t are both 64-bit and
+ * can be aliased. On 32-bit platforms, they must be distinct.
  */
 
-/**
- * @brief Thread attributes.
- *
- * Used by pthread_create() and pthread_attr_init().
- */
-typedef struct { char __data[64]; long __align; } pthread_attr_t;
-/**
- * @brief Barrier object.
- *
- * Used by pthread_barrier_init() and pthread_barrier_wait().
- */
-typedef struct { char __data[64]; long __align; } pthread_barrier_t;
-/**
- * @brief Barrier attributes.
- *
- * Used by pthread_barrierattr_init() and pthread_barrierattr_setpshared().
- */
-typedef struct { char __data[64]; long __align; } pthread_barrierattr_t;
-/**
- * @brief Condition variable.
- *
- * Used by pthread_cond_init() and pthread_cond_wait().
- */
-typedef struct { char __data[64]; long __align; } pthread_cond_t;
-/**
- * @brief Condition variable attributes.
- *
- * Used by pthread_condattr_init() and pthread_condattr_setpshared().
- */
-typedef struct { char __data[64]; long __align; } pthread_condattr_t;
-/**
- * @brief Mutex object.
- *
- * Used by pthread_mutex_init() and pthread_mutex_lock().
- */
-typedef struct { char __data[64]; long __align; } pthread_mutex_t;
-/**
- * @brief Mutex attributes.
- *
- * Used by pthread_mutexattr_init() and pthread_mutexattr_settype().
- */
-typedef struct { char __data[64]; long __align; } pthread_mutexattr_t;
-/**
- * @brief Read-write lock object.
- *
- * Used by pthread_rwlock_init() and pthread_rwlock_rdlock().
- */
-typedef struct { char __data[64]; long __align; } pthread_rwlock_t;
-/**
- * @brief Read-write lock attributes.
- *
- * Used by pthread_rwlockattr_init() and pthread_rwlockattr_setpshared().
- */
-typedef struct { char __data[64]; long __align; } pthread_rwlockattr_t;
+# ifndef __rlim_t_defined
+#  define __rlim_t_defined
+#  if __HAJ_USE_32_OFFSET_BITS
+typedef __haj_u32	rlim_t;
+#  else
+typedef __haj_u64	rlim_t;
+#  endif
+# endif
+
+# ifndef __rlim64_t_defined
+#  define __rlim64_t_defined
+typedef __haj_u64	rlim64_t;
+# endif
 
 #endif /* _BITS_TYPES_H */

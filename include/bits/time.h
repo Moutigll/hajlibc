@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file time.h
  * @brief Time-related types and constants.
  * @Created: 2026/09/28 06:54:06 by Moutig
- * @Updated: 2026/09/28 08:11:13 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This header defines the CLOCK_* identifiers, CLOCKS_PER_SEC,
  * TIMER_ABSTIME, and TIME_UTC with the values used by the target

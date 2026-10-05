@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strlcpy.c
  * @brief Copy a string to a buffer, ensuring null termination.
  * @Created: 2026/09/26 01:31:34 by Moutig
- * @Updated: 2026/09/26 01:40:59 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Copies a string to a buffer, ensuring that the destination
  * is null-terminated. Returns the length of the source string.

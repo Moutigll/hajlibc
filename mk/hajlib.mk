@@ -39,7 +39,8 @@ HAJ_LDFLAGS := \
 	-nostartfiles \
 	-nodefaultlibs \
 	-static \
-	-Wl,--build-id=none
+	-Wl,--build-id=none \
+	-T $(HAJ_ROOT)/hajlibc.ld
 
 # Libraries.
 HAJ_LIBS := $(HAJ_ROOT)/libhajc.a

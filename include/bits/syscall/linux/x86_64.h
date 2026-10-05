@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file x86_64.h
  * @brief Linux x86_64 syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/28 10:34:28 by Moutig
+ * @Updated: 2026/10/05 11:49:44 by Moutig
  *
  * Source: <asm/unistd_64.h> from the Linux kernel.
  * These numbers are stable for the Linux x86_64 ABI.
@@ -86,6 +86,7 @@
 # define SYS_umask				95
 # define SYS_gettimeofday		96
 # define SYS_getrlimit			97
+# define SYS_setrlimit			160
 # define SYS_getrusage			98
 # define SYS_sysinfo			99
 # define SYS_times				100
@@ -121,6 +122,7 @@
 # define SYS_inotify_init		253
 # define SYS_inotify_add_watch	254
 # define SYS_inotify_rm_watch	255
+#define SYS_prlimit64			302
 
 /* ---- Modern *at variants ---- */
 # define SYS_openat				257
@@ -162,16 +164,19 @@
 # define SYS_tkill				200
 
 /* ---- Threads ---- */
-# define SYS_futex				202
-# define SYS_set_tid_address	218
-# define SYS_set_robust_list	273
-# define SYS_get_robust_list	274
-# define SYS_sched_setaffinity	203
-# define SYS_sched_getaffinity	204
-# define SYS_sched_setparam		142
-# define SYS_sched_getparam		143
-# define SYS_sched_setscheduler	144
-# define SYS_sched_getscheduler	145
+# define SYS_futex					202
+# define SYS_set_tid_address		218
+# define SYS_set_robust_list		273
+# define SYS_get_robust_list		274
+# define SYS_sched_setaffinity		203
+# define SYS_sched_getaffinity		204
+# define SYS_sched_setparam			142
+# define SYS_sched_getparam			143
+# define SYS_sched_setscheduler		144
+# define SYS_sched_getscheduler		145
+# define SYS_sched_rr_get_interval	146
+# define SYS_sched_get_priority_min	147
+# define SYS_sched_get_priority_max	148
 
 /* ---- Time ---- */
 # define SYS_time				201

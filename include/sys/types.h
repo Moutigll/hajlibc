@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file types.h
  * @brief POSIX types.
  * @Created: 2026/09/24 15:06:43 by Moutig
- * @Updated: 2026/09/28 07:34:12 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This header defines the standard POSIX types in the global
  * namespace: size_t, ssize_t, off_t, mode_t, pid_t, uid_t, gid_t,

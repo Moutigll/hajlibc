@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file stack_chk_fail.c
  * @brief Implementation of __stack_chk_fail.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/26 05:06:41 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * WHEN IS THIS FUNCTION CALLED ?
  *

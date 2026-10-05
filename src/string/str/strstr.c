@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strstr.c
  * @brief Implementation of strstr function.
  * @Created: 2026/09/26 03:06:37 by Moutig
- * @Updated: 2026/09/26 03:33:05 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  *
  * Strategy (inspired by glibc):

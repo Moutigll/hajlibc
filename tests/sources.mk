@@ -7,6 +7,15 @@
 #   - Each section lists .c files relative to this directory.
 #   - Use tab indentation, one file per line, with trailing backslash.
 
-# Test programs
-TEST_SRCS := \
-	main.c
+TEST_DIR	:= .
+
+# Framework (always compiled)
+TEST_SRCS	:= \
+	main.c \
+	framework/test.c
+
+# Test cases
+TEST_CASES	:= \
+	cases/ctype.c 
+
+TEST_SRCS	+= $(TEST_CASES)

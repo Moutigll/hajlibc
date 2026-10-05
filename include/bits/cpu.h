@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file cpu.h
  * @brief CPU feature detection for x86 and aarch64.
  * @Created: 2026/09/25 02:08:12 by Moutig
- * @Updated: 2026/09/25 02:15:15 by Moutig
+ * @Updated: 2026/10/02 11:35:46 by Moutig
  *
  * This header provides functions to detect CPU features on x86/x86_64 and aarch64 architectures.
  * It defines functions to check for the presence of various SIMD instruction sets and other CPU capabilities.
@@ -26,10 +26,71 @@
 extern "C" {
 # endif
 
+# if defined(HAJ_ARCH_X86_64) || defined(HAJ_ARCH_I386)
+
+/**
+ * @struct hajCpuCache
+ * @brief Cache structure to store detected CPU features.
+ *
+ * This structure holds flags indicating the presence of various CPU features.
+ * It is initialized on the first call to any feature detection function and cached for subsequent calls.
+ */
+struct hajCpuCache {
+	int	sse2, sse3, ssse3, sse41, sse42;
+	int	avx, avx2, fma;
+	int	avx512f, avx512bw, avx512vl;
+	int	erms;
+};
+
+# elif defined(HAJ_ARCH_AARCH64)
+
+/**
+ * @struct hajCpuCache
+ * @brief Cache structure to store detected CPU features for aarch64.
+ *
+ * This structure holds flags indicating the presence of various CPU features specific to aarch64 architecture.
+ * It is initialized on the first call to any feature detection function and cached for subsequent calls.
+ */
+struct hajCpuCache {
+	int	lse;
+	int	asimd;
+};
+
+# endif
+
+/**
+ * @brief Global CPU feature cache.
+ *
+ * This global variable holds the cached CPU features detected by hajCpuDetect().
+ * It is used by the hajCpuHas*() functions to quickly check for feature support.
+ */
+extern struct hajCpuCache __haj_cpu;
+
+/**
+ * @brief Detect CPU features and fill the internal cache.
+ *
+ * Must be called once at program startup, before any call to
+ * a hajCpuHas*() accessor. __hajlibcStartMain does this.
+ *
+ * Idempotent: calling it more than once is harmless.
+ *
+ * Architecture-dependent. On unknown architectures, it does
+ * nothing and all accessors return 0.
+ */
+void hajCpuDetect(void);
+
 /* ----- x86 / x86_64 ----- */
 
-# if defined(__x86_64__) || defined(__i386__)
+# if defined(HAJ_ARCH_X86_64) || defined(HAJ_ARCH_I386)
 
+/**
+ * @brief Detect CPU features and populate the __haj_cpu cache.
+ *
+ * This function queries the CPU using CPUID and XGETBV instructions to determine
+ * the presence of various SIMD instruction sets and other features. The results
+ * are stored in the __haj_cpu cache for future queries.
+ */
+void __haj_cpuDetect_x86(void);
 
 /*
  * All functions return 1 if the feature is supported by the CPU
@@ -183,6 +244,54 @@ int hajCpuHasAvx512(void);
 int hajCpuHasErms(void);
 
 # endif /* x86 */
+
+/* ----- aarch64 ----- */
+
+# if defined(HAJ_ARCH_AARCH64)
+
+/*
+ * Global flag read by the atomics helpers in atomics.S. Must
+ * be a separate symbol because assembler cannot access a
+ * static variable in another translation unit.
+ *
+ * Written exactly once, by __haj_cpuDetect_aarch64. After
+ * that it is read-only.
+ */
+extern int __haj_cpuHasLse;
+
+/**
+ * @brief Detect CPU features and populate the __haj_cpu cache for aarch64.
+ *
+ * This function queries the CPU to determine the presence of various
+ * features specific to the aarch64 architecture. The results are stored
+ * in the __haj_cpu cache for future queries.
+ */
+void __haj_cpuDetect_aarch64(void);
+
+/**
+ * @brief Detect if the CPU supports the LSE atomic extension.
+ *
+ * LSE (Large System Extensions) is an ARMv8.1 extension that
+ * adds single-instruction atomics (LDADD, CAS, SWP). It is
+ * used by the aarch64 atomics helpers to choose between the
+ * fast LSE path and the slower LL/SC path.
+ *
+ * @return 1 if LSE is supported, 0 otherwise.
+ */
+int hajCpuHasLse(void);
+
+/**
+ * @brief Detect if the CPU supports NEON (Advanced SIMD).
+ *
+ * NEON is mandatory on aarch64, so this always returns 1 on
+ * that architecture. It is only kept for symmetry with the
+ * x86 accessors.
+ *
+ * @return 1.
+ */
+int hajCpuHasNeon(void);
+
+# endif /* aarch64 */
 
 # if defined(__cplusplus)
 }

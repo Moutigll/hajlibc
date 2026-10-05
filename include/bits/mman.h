@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file mman.h
  * @brief Internal definitions of memory mapping constants for each supported OS.
  * @Created: 2026/09/26 04:34:50 by Moutig
- * @Updated: 2026/09/26 06:40:18 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * Internal to hajlib. Defines the values of mmap-related
  * constants for each supported OS. The public <sys/mman.h>

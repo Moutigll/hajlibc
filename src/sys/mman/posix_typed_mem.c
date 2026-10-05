@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file posix_typed_mem.c
  * @brief POSIX typed memory object functions (stub implementations).
  * @Created: 2026/09/26 07:09:06 by Moutig
- * @Updated: 2026/09/26 07:16:02 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * Typed memory objects are a POSIX Realtime feature that is not
  * supported by mainstream kernels (Linux, FreeBSD, Darwin).

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file getentropy.c
  * @brief Get entropy from the system.
  * @Created: 2026/09/28 01:19:01 by Moutig
- * @Updated: 2026/09/28 06:16:38 by Moutig
+ * @Updated: 2026/10/01 07:11:57 by Moutig
  *
  * This file provides the implementation of the getentropy() function,
  * which retrieves random bytes from the system's entropy source.
@@ -18,9 +18,9 @@
  * and directly uses the getentropy() syscall on macOS and iOS.
  */
 
-#include "stddef.h"
 #include <bits/syscall.h>
-#include <sys/random.h>
+#include <bits/random.h>
+#include <unistd.h>
 #include <errno.h>
 
 #if defined (HAJ_OS_LINUX) || defined (HAJ_OS_BSD)
@@ -32,7 +32,7 @@ int getentropy(void *buf, size_t buflen)
 		return (-1);
 	}
 
-	ssize_t ret = getrandom(buf, buflen, 0);
+	ssize_t ret = _getrandom(buf, buflen, 0);
 	if (ret < 0)
 		return (-1);
 	if ((size_t)ret != buflen)

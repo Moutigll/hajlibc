@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file mmap.c
  * @brief Map files or devices into memory, or allocate anonymous memory.
  * @Created: 2026/09/26 04:41:53 by Moutig
- * @Updated: 2026/09/26 04:43:26 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Uses SYS_mmap. The kernel returns -errno in the range
  * [-4095, -1] on error, which is normalized here.

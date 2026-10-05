@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file shm_unlink.c
  * @brief POSIX shared memory object unlink implementation for Darwin.
  * @Created: 2026/09/26 06:41:25 by Moutig
- * @Updated: 2026/09/26 06:43:08 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Darwin does not have a kernel-level shm_unlink. The libc
  * implements it by unlinking a file in /var/tmp/ with a name

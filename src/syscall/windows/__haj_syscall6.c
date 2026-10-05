@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file __haj_syscall6.c
  * @brief Windows fallback for __haj_syscall6.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 18:32:34 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Windows has no stable syscall ABI. The numbers of the NT
  * syscalls change between Windows builds, and Microsoft does not

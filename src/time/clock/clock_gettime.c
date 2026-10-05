@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file clock_gettime.c
  * @brief Implementation of the clock_gettime() function.
  * @Created: 2026/09/28 06:47:11 by Moutig
- * @Updated: 2026/09/28 10:40:37 by Moutig
+ * @Updated: 2026/09/30 09:20:17 by Moutig
  *
  * This file implements the clock_gettime() function, which returns the current
  * calendar time in seconds since the Unix epoch (January 1, 1970).

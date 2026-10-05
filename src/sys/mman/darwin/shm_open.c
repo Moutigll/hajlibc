@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file shm_open.c
  * @brief POSIX shared memory object open implementation for Darwin.
  * @Created: 2026/09/26 06:39:22 by Moutig
- * @Updated: 2026/09/26 06:43:19 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Darwin does not have a kernel-level shm_open. The libc
  * implements it by creating a file in /var/tmp/ with a name

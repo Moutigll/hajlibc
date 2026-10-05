@@ -30,17 +30,21 @@ ifeq ($(TARGET_OS),Linux)
     MMAN_PLATFORM_SRCS	:= src/sys/mman/linux/shm_open.c \
 						   src/sys/mman/linux/shm_unlink.c
   ifeq ($(TARGET_ARCH),x86_64)
-    CRT_START_SRCS		:= src/crt/linux/x86_64/start.S
+    CRT_START_SRCS		:= src/crt/start/linux/start_x86_64.S \
+							src/signal/restorer.S
     SYSCALL_BASE_SRCS	:= src/syscall/linux/x86_64/
     SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
 						   src/setjmp/x86_64/longjmp.S
-    CPU_SRCS			:= src/cpu/x86/cpuFeatures.c
+	THREAD_BASE_SRCS	:= src/thread/internal/clone_x86_64.S
+
 
   else ifeq ($(TARGET_ARCH),aarch64)
-    CRT_START_SRCS		:= src/crt/linux/aarch64/start.S
+    CRT_START_SRCS		:= src/crt/start/linux/start_aarch64.S
     SYSCALL_BASE_SRCS	:= src/syscall/linux/aarch64/
     SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
 						   src/setjmp/aarch64/longjmp.S
+	THREAD_BASE_SRCS	:= src/thread/internal/clone_aarch64.S \
+						   src/thread/internal/atomics_aarch64.S
 
   else
     $(error targets.mk: unsupported Linux arch '$(TARGET_ARCH)')
@@ -52,14 +56,13 @@ else ifeq ($(TARGET_OS),FreeBSD)
     MMAN_PLATFORM_SRCS	:= src/sys/mman/freebsd/shm_open.c \
 						   src/sys/mman/freebsd/shm_unlink.c
   ifeq ($(TARGET_ARCH),x86_64)
-    CRT_START_SRCS		:= src/crt/freebsd/x86_64/start.S
+    CRT_START_SRCS		:= src/crt/start/freebsd/start_x86_64.S
     SYSCALL_BASE_SRCS	:= src/syscall/freebsd/x86_64/
     SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
 						   src/setjmp/x86_64/longjmp.S
-	CPU_SRCS			:= src/cpu/x86/cpuFeatures.c
 
   else ifeq ($(TARGET_ARCH),aarch64)
-    CRT_START_SRCS		:= src/crt/freebsd/aarch64/start.S
+    CRT_START_SRCS		:= src/crt/start/freebsd/start_aarch64.S
     SYSCALL_BASE_SRCS	:= src/syscall/freebsd/aarch64/
     SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
 						   src/setjmp/aarch64/longjmp.S
@@ -74,14 +77,13 @@ else ifeq ($(TARGET_OS),Darwin)
     MMAN_PLATFORM_SRCS	:= src/sys/mman/darwin/shm_open.c \
 						   src/sys/mman/darwin/shm_unlink.c
   ifeq ($(TARGET_ARCH),x86_64)
-    CRT_START_SRCS		:= src/crt/darwin/x86_64/start.S
+    CRT_START_SRCS		:= src/crt/start/darwin/start_x86_64.S
     SYSCALL_BASE_SRCS	:= src/syscall/darwin/x86_64/
     SETJMP_SRCS			:= src/setjmp/x86_64/setjmp.S \
 						   src/setjmp/x86_64/longjmp.S
-	CPU_SRCS			:= src/cpu/x86/cpuFeatures.c
 
   else ifeq ($(TARGET_ARCH),arm64)
-    CRT_START_SRCS		:= src/crt/darwin/arm64/start.S
+    CRT_START_SRCS		:= src/crt/start/darwin/start_arm64.S
     SYSCALL_BASE_SRCS	:= src/syscall/darwin/arm64/
     SETJMP_SRCS			:= src/setjmp/aarch64/setjmp.S \
 						   src/setjmp/aarch64/longjmp.S

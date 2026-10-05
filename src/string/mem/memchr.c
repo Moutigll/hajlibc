@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memchr.c
  * @brief C standard memchr implementation.
  * @Created: 2026/09/25 22:29:01 by Moutig
- * @Updated: 2026/09/26 00:27:02 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Finds the first occurrence of byte `c` in the first `n` bytes
  * of `s`. Uses word-at-a-time scanning with the "has zero byte"

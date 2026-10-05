@@ -10,7 +10,7 @@
  * @file string.h
  * @brief C standard string and memory functions.
  * @Created: 2026/09/24 22:10:46 by Moutig
- * @Updated: 2026/09/30 09:20:14 by Moutig
+ * @Updated: 2026/10/05 15:50:05 by Moutig
  *
  * This header declares the C standard string and memory
  * functions, plus a few POSIX/GNU extensions (memrchr, strdup,
@@ -372,6 +372,29 @@ char	*strtok_r(char *__HAJ_RESTRICT str, const char *__HAJ_RESTRICT delim, char 
  */
 char	*strsep(char **__HAJ_RESTRICT stringp, const char *__HAJ_RESTRICT delim);
 #endif
+
+/**
+ * @brief Translate an error code to a human-readable string.
+ *
+ * This function translates an error code to a human-readable string.
+ * For known codes, it returns a pointer to a static, read-only string.
+ * For unknown codes, it returns a string of the form "Unknown error N".
+ * @param errnum The error code to translate.
+ * @return A pointer to the corresponding error message string.
+ */
+char *strerror(int errnum);
+
+/**
+ * @brief The strerror_r function.
+ *
+ * This function translates an error code to a human-readable string, writing the result into a provided buffer.
+ *
+ * @param errnum The error code to translate.
+ * @param buf The buffer to write the error message into.
+ * @param buflen The size of the buffer.
+ * @return The number of characters written to the buffer, excluding the NUL terminator.
+ */
+int strerror_r(int errnum, char *buf, size_t buflen);
 
 # if defined(__cplusplus)
 }

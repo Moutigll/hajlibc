@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Nothing yet
+- `stdatomic.h` (`memory_order`, `atomic_*` types and operations)
+- `strerror_r`
+- `SYS_getuid` / `SYS_getgid` for Linux aarch64
 
 ### Changed
 
-- Nothing yet
+- `strerror` uses a sparse table; unknown codes go to a thread-local buffer
+- `__HAJ_THREAD_LOCAL` is now always a real TLS qualifier
 
 ### Fixed
 

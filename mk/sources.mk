@@ -67,8 +67,8 @@ CTYPE_SRCS := \
 
 # errno
 ERRNO_SRCS := \
-	errno.c
-#	strerror.c  (needs snprintf, not implemented yet)
+	errno.c \
+	strerror.c
 
 # fcntl
 FCNTL_SRCS := \

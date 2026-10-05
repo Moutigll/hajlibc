@@ -10,7 +10,7 @@
  * @file aarch64.h
  * @brief Syscall numbers for the aarch64 architecture.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/05 11:50:30 by Moutig
+ * @Updated: 2026/10/05 13:44:35 by Moutig
  *
  * Source: <asm-generic/unistd.h> from the Linux kernel.
  * aarch64 uses the generic syscall numbering. Many syscalls
@@ -33,6 +33,8 @@
 # define SYS_getpid				172
 # define SYS_getppid			173
 # define SYS_gettid				178
+# define SYS_getuid				174
+# define SYS_getgid				175
 # define SYS_setpgid			154
 # define SYS_getpgid			155
 # define SYS_setsid				157

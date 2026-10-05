@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pthread_cancel`, `pthread_testcancel`, `pthread_setcancelstate`, `pthread_setcanceltype`
 - `pthread_cleanup_push` / `pthread_cleanup_pop`
 - `PTHREAD_CANCELED`, `PTHREAD_NULL`
+- `sched.h` (`SCHED_*`, `struct sched_param`, `sched_yield`, affinity, priority helpers)
+- `bits/cpuSet.h`: `cpu_set_t` and `CPU_*` macros
+- `pthread_getschedparam`, `pthread_setschedparam`, `pthread_setschedprio`
 
 ### Changed
 

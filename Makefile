@@ -55,6 +55,7 @@ ALL_SRCS := \
 	$(STRING_SRCS) \
 	$(FCNTL_SRCS) \
 	$(CTYPE_SRCS) \
+	$(SCHED_SRCS) \
 	$(STDLIB_SRCS) \
 	$(STDIO_SRCS) \
 	$(MATH_SRCS) \

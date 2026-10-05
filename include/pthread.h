@@ -10,7 +10,7 @@
  * @file pthread.h
  * @brief POSIX threads API.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/05 10:48:45 by Moutig
+ * @Updated: 2026/10/05 13:15:21 by Moutig
  *
  * The pthread types (pthread_t, pthread_attr_t, ...) are
  * defined in <bits/thread/pthreadtypes.h>, pulled in
@@ -23,6 +23,7 @@
 
 # include <stddef.h>
 # include <time.h>
+# include <sched.h>
 # include <bits/types.h>			/* pulls in pthreadtypes.h */
 # include <bits/compiler.h>
 
@@ -117,17 +118,6 @@ extern "C" {
  * being passed to pthread_once.
  */
 # define PTHREAD_ONCE_INIT	0
-
-/**
- * @brief Scheduling parameters.
- *
- * Structure containing the scheduling parameters for a thread.
- *
- * @param sched_priority The priority of the thread.
- */
-struct sched_param {
-	int	sched_priority;
-};
 
 /* ----- Threads ----- */
 
@@ -372,6 +362,47 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex);
  * @return 0 on success, or an error number on failure.
  */
 int pthread_mutex_consistent(pthread_mutex_t *mutex);
+
+/**
+ * @brief Lock a mutex with a specified clock.
+ *
+ * Locks the mutex pointed to by mutex. If the mutex is already
+ * locked, the calling thread blocks until the mutex becomes
+ * available or the absolute timeout specified by abstime is reached, using the specified clock.
+ *
+ * @param mutex   Pointer to a pthread_mutex_t to lock.
+ * @param clockid Clock ID (CLOCK_REALTIME or CLOCK_MONOTONIC) to use for the timeout.
+ * @param abstime Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error number on failure.
+ */
+int pthread_mutex_clocklock(pthread_mutex_t *mutex, clockid_t clockid, const struct timespec *abstime);
+
+/**
+ * @brief Get the priority ceiling of a mutex.
+ *
+ * Retrieves the priority ceiling of the mutex pointed to by mutex.
+ * The priority ceiling is stored in *prioceiling. If the mutex does
+ * not support priority ceilings, an error is returned.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to query.
+ * @param prioceiling Pointer to an int to receive the priority ceiling.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_getprioceiling(const pthread_mutex_t *mutex, int *prioceiling);
+
+/**
+ * @brief Set the priority ceiling of a mutex.
+ *
+ * Sets the priority ceiling of the mutex pointed to by mutex to
+ * prioceiling. The previous priority ceiling is stored in *old_ceiling.
+ * If the mutex does not support priority ceilings, an error is returned.
+ *
+ * @param mutex Pointer to a pthread_mutex_t to modify.
+ * @param prioceiling The new priority ceiling value.
+ * @param old_ceiling Pointer to an int to receive the previous priority ceiling.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_mutex_setprioceiling(pthread_mutex_t *mutex, int prioceiling, int *old_ceiling);
 
 
 
@@ -650,6 +681,36 @@ int pthread_rwlock_timedwrlock(pthread_rwlock_t *rwlock, const struct timespec *
  */
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 
+/**
+ * @brief Acquire a read lock on a read-write lock with a specified clock.
+ *
+ * Acquires a read lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by a writer, the calling thread blocks until
+ * the lock becomes available or the absolute timeout specified by
+ * abstime is reached, using the specified clock.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to acquire a read lock on.
+ * @param clockid Clock ID (CLOCK_REALTIME or CLOCK_MONOTONIC) to use for the timeout.
+ * @param abstime Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error number on failure.
+ */
+int pthread_rwlock_clockrdlock(pthread_rwlock_t *rwlock, clockid_t clockid, const struct timespec *abstime);
+
+/**
+ * @brief Acquire a write lock on a read-write lock with a specified clock.
+ *
+ * Acquires a write lock on the read-write lock pointed to by rwlock.
+ * If the lock is held by any readers or writers, the calling thread
+ * blocks until the lock becomes available or the absolute timeout
+ * specified by abstime is reached, using the specified clock.
+ *
+ * @param rwlock Pointer to a pthread_rwlock_t to acquire a write lock on.
+ * @param clockid Clock ID (CLOCK_REALTIME or CLOCK_MONOTONIC) to use for the timeout.
+ * @param abstime Absolute timeout, or NULL for no timeout.
+ * @return 0 on success, ETIMEDOUT on timeout, or an error number on failure.
+ */
+int pthread_rwlock_clockwrlock(pthread_rwlock_t *rwlock, clockid_t clockid, const struct timespec *abstime);
+
 /* ---- Barriers ----- */
 
 /**
@@ -746,6 +807,104 @@ int pthread_cancel(pthread_t thread);
 
 
 
+/* ----- Atfork ----- */
+
+/**
+ * @brief Register fork handlers.
+ *
+ * Registers handlers to be called before and after a fork() in a multithreaded program.
+ * The prepare handler is called before the fork, the parent handler is called in the
+ * parent process after the fork, and the child handler is called in the child process
+ * after the fork. These handlers can be used to ensure that mutexes and other resources
+ * are in a consistent state across a fork.
+ *
+ * @param prepare Pointer to a function to call before fork(), or NULL.
+ * @param parent Pointer to a function to call in the parent after fork(), or NULL.
+ * @param child Pointer to a function to call in the child after fork(), or NULL.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void));
+
+/* ----- CPU-time clocks ----- */
+
+/**
+ * @brief Get the CPU-time clock ID for a thread.
+ *
+ * Retrieves the clock ID associated with the CPU-time clock of the specified thread.
+ * The clock ID can be used with clock_gettime() and related functions to measure
+ * the CPU time consumed by the thread. If the thread has terminated, this function
+ * returns an error.
+ *
+ * @param thread The ID of the thread whose CPU-time clock ID is requested.
+ * @param clockid Pointer to a clockid_t to store the resulting clock ID.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_getcpuclockid(pthread_t thread, clockid_t *clockid);
+
+/* ----- Scheduling parameters ----- */
+
+/**
+ * @brief Get the scheduling policy and parameters of a thread.
+ *
+ * Retrieves the scheduling policy and parameters of the specified thread.
+ * The policy is stored in *policy, and the parameters are stored in *param.
+ * If the thread has terminated, this function returns an error.
+ *
+ * @param thread The ID of the thread whose scheduling information is requested.
+ * @param policy Pointer to an int to store the scheduling policy.
+ * @param param Pointer to a struct sched_param to store the scheduling parameters.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_getschedparam(pthread_t thread, int *policy, struct sched_param *param);
+
+/**
+ * @brief Set the scheduling policy and parameters of a thread.
+ *
+ * Sets the scheduling policy and parameters of the specified thread.
+ * The policy must be one of SCHED_OTHER, SCHED_FIFO, or SCHED_RR.
+ * The parameters must be valid for the specified policy. If the thread has terminated, this function returns an error.
+ *
+ * @param thread The ID of the thread whose scheduling information is to be set.
+ * @param policy The new scheduling policy.
+ * @param param Pointer to a struct sched_param containing the new scheduling parameters.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_setschedparam(pthread_t thread, int policy, const struct sched_param *param);
+
+/**
+ * @brief Set the scheduling priority of a thread.
+ *
+ * Sets the scheduling priority of the specified thread. The priority must be
+ * within the valid range for the thread's current scheduling policy. If the
+ * thread has terminated, this function returns an error.
+ *
+ * @param thread The ID of the thread whose scheduling priority is to be set.
+ * @param prio The new scheduling priority.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_setschedprio(pthread_t thread, int prio);
+
+# ifdef __HAJ_SOURCE
+/**
+ * @brief Set the CPU affinity mask for a given thread.
+ *
+ * @param thread The ID of the thread for which to set the affinity.
+ * @param cpusetsize The size of the CPU set.
+ * @param cpuset The CPU set to use as the new affinity mask.
+ * @return 0 on success, -1 on error.
+ */
+int pthread_setaffinity_np(pthread_t thread, size_t cpusetsize, const cpu_set_t *cpuset);
+
+/**
+ * @brief Get the CPU affinity mask for a given thread.
+ *
+ * @param thread The ID of the thread for which to get the affinity.
+ * @param cpusetsize The size of the CPU set.
+ * @param cpuset The CPU set to store the current affinity mask.
+ * @return 0 on success, -1 on error.
+ */
+int pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset);
+# endif	/* __HAJ_SOURCE */
 
 
 
@@ -874,12 +1033,13 @@ int pthread_attr_setstack(pthread_attr_t *attr, void *stackaddr, size_t stacksiz
  */
 int pthread_attr_getstack(const pthread_attr_t *attr, void **stackaddr, size_t *stacksize);
 
+
 /* ----- Scheduling policy ----- */
 /**
  * @brief Set the scheduling policy of a thread attributes object.
  *
  * Sets the scheduling policy of the thread attributes object pointed to by attr.
- * The policy must be one of HAJ_SCHED_OTHER, HAJ_SCHED_FIFO, or HAJ_SCHED_RR.
+ * The policy must be one of SCHED_OTHER, SCHED_FIFO, or SCHED_RR.
  *
  * @param attr Pointer to a pthread_attr_t to modify.
  * @param policy The new scheduling policy.

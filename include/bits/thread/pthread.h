@@ -10,7 +10,7 @@
  * @file pthread_attr.h
  * @brief Internal layout of pthread_attr_t.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/03 13:25:37 by Moutig
+ * @Updated: 2026/10/05 13:15:04 by Moutig
  *
  * PRIVATE header. Included only by pthread_attr.c and
  * pthread_create.c.

@@ -10,7 +10,7 @@
  * @file futex.h
  * @brief futex(2) constants and helpers.
  * @Created: 2026/09/30 05:12:37 by Moutig
- * @Updated: 2026/10/03 10:11:11 by Moutig
+ * @Updated: 2026/10/05 12:49:07 by Moutig
  *
  * A futex (fast userspace mutex) is a 32-bit integer in user
  * memory that the kernel can block and wake on. It is the
@@ -179,11 +179,12 @@ int __haj_futexWakeOp(int *uaddr, int n, int shared);
  * @param timeout  Optional absolute timeout (NULL = no timeout).
  * @param bitset   Bitset to match for wakeup events.
  * @param shared   Non-zero for shared, 0 for private.
+ * @param clockid  Clock to use for the timeout (CLOCK_REALTIME or CLOCK_MONOTONIC).
  * @return 0 on wakeup, -1 on error with errno set.
  */
 int __haj_futexWaitBitsetOp(int *uaddr, int expected,
 							const struct timespec *timeout,
-							unsigned int bitset, int shared);
+							unsigned int bitset, int shared, clockid_t clockid);
 
 /**
  * @brief Wake bitset waiters on a futex, PRIVATE or SHARED.

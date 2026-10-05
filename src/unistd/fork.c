@@ -10,7 +10,7 @@
  * @file fork.c
  * @brief Implementation of fork().
  * @Created: 2026/10/01 08:39:40 by Moutig
- * @Updated: 2026/10/03 11:27:48 by Moutig
+ * @Updated: 2026/10/05 11:10:47 by Moutig
  *
  * fork() creates a new process that is a copy of the calling
  * process. The child gets a copy of the address space
@@ -64,30 +64,31 @@ static pid_t hajForkAarch64(void)
 
 pid_t fork(void)
 {
-	pid_t pid;
+	pid_t	pid;
+
+	__haj_atforkPrepare();
+
 #if defined(HAJ_OS_LINUX) && defined(HAJ_ARCH_AARCH64)
 	pid = hajForkAarch64();
-#else /* Linux x86_64, FreeBSD, Darwin, others */
+#else
 	pid = (pid_t)__haj_syscall0(SYS_fork);
 #endif
-	if (pid < 0) {
-		errno = (int)-pid;
-		return (-1);
-	}
 
 	if (pid < 0) {
+		__haj_atforkParent();
 		errno = (int)-pid;
 		return (-1);
 	}
 	if (pid == 0) {
-		/* Child */
 		struct __haj_tcb *tcb = __haj_tcbSelf();
 
 #if HAJ_PTHREAD_PROCESS_SHARED
-		__haj_robustInit(&tcb->robustList); /* re-register robust mutex list after fork() */
+		__haj_robustInit(&tcb->robustList);
 #endif
 		tcb->tid = __haj_gettid();
-		__haj_threadListReset(tcb);	/* The child does not inherit the parent's thread list. */
-	}
+		__haj_threadListReset(tcb);
+		__haj_atforkChild();
+	} else
+		__haj_atforkParent();
 	return (pid);
 }

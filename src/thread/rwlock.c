@@ -10,7 +10,7 @@
  * @file rwlock.c
  * @brief POSIX read-write locks implementation.
  * @Created: 2026/10/03 07:53:43 by Moutig
- * @Updated: 2026/10/03 14:00:09 by Moutig
+ * @Updated: 2026/10/05 12:48:38 by Moutig
  *
  * The rwlock is a single futex word (state) with the encoding
  * documented in <bits/thread/pthread.h>. Readers increment the
@@ -38,10 +38,17 @@
  * with HAJ_PTHREAD_PROCESS_SHARED=1. In non-shared mode the
  * struct is just the state word, and HAJ_RWLOCK_IS_SHARED
  * always evaluates to 0.
+ *
+ * Clock selection:
+ *   pthread_rwlock_timedrdlock / timedwrlock use CLOCK_REALTIME.
+ *   pthread_rwlock_clockrdlock / clockwrlock take the clock as
+ *   an argument and pass FUTEX_CLOCK_REALTIME only for
+ *   CLOCK_REALTIME.
  */
 
 #include <pthread.h>
 #include <errno.h>
+#include <time.h>
 #include <bits/thread/thread.h>
 #include <bits/thread/pthread.h>
 
@@ -49,11 +56,13 @@
  * @brief Wait on a read-write lock.
  * @param r The read-write lock to wait on.
  * @param expected The expected value of the lock's state.
+ * @param clockid Clock to use for the deadline.
  * @param abstime The absolute time to wait until, or NULL.
  * @return 0 on success, or an error code on failure.
  */
 static __HAJ_INLINE int rwlockWait(struct _hajThreadRwlock	*r,
 								   unsigned int				expected,
+								   clockid_t				clockid,
 								   const struct timespec	*abstime)
 {
 	int shared = HAJ_RWLOCK_IS_SHARED(r);
@@ -61,7 +70,8 @@ static __HAJ_INLINE int rwlockWait(struct _hajThreadRwlock	*r,
 
 	if (abstime != NULL) {
 		rc = __haj_futexWaitBitsetOp((int *)&r->state, (int)expected,
-									 abstime, FUTEX_BITSET_MATCH_ANY, shared);
+									 abstime, FUTEX_BITSET_MATCH_ANY,
+									 shared, clockid);
 	} else {
 		rc = __haj_futexWaitOp((int *)&r->state, (int)expected, shared);
 	}
@@ -85,16 +95,17 @@ static __HAJ_INLINE void rwlockWakeAll(struct _hajThreadRwlock *r)
 /**
  * @brief Common implementation for acquiring a read lock.
  * @param r The read-write lock to acquire.
+ * @param clockid Clock to use for the deadline.
  * @param abstime The absolute time to wait until, or NULL.
  * @return 0 on success, or an error code on failure.
  */
-static int rdlockCommon(struct _hajThreadRwlock *r, const struct timespec *abstime)
+static int rdlockCommon(struct _hajThreadRwlock *r, clockid_t clockid, const struct timespec *abstime)
 {
 	for (;;) {
 		unsigned int s = __haj_atomic_load(&r->state);
 
 		if (s & (HAJ_RWLOCK_WRITER | HAJ_RWLOCK_WRWAIT)) {
-			int rc = rwlockWait(r, s, abstime);
+			int rc = rwlockWait(r, s, clockid, abstime);
 			if (rc != 0)
 				return (rc);
 			continue;
@@ -107,10 +118,11 @@ static int rdlockCommon(struct _hajThreadRwlock *r, const struct timespec *absti
 /**
  * @brief Common implementation for acquiring a write lock.
  * @param r The read-write lock to acquire.
+ * @param clockid Clock to use for the deadline.
  * @param abstime The absolute time to wait until, or NULL.
  * @return 0 on success, or an error code on failure.
  */
-static int wrlockCommon(struct _hajThreadRwlock *r, const struct timespec *abstime)
+static int wrlockCommon(struct _hajThreadRwlock *r, clockid_t clockid, const struct timespec *abstime)
 {
 	for (;;) {
 		unsigned int s = __haj_atomic_load(&r->state);
@@ -128,7 +140,7 @@ static int wrlockCommon(struct _hajThreadRwlock *r, const struct timespec *absti
 			s = ns;
 		}
 		{
-			int rc = rwlockWait(r, s, abstime);
+			int rc = rwlockWait(r, s, clockid, abstime);
 
 			if (rc != 0)
 				return (rc);
@@ -169,7 +181,7 @@ int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock)
 {
 	if (rwlock == NULL)
 		return (EINVAL);
-	return (rdlockCommon(HAJ_RWLOCK(rwlock), NULL));
+	return (rdlockCommon(HAJ_RWLOCK(rwlock), CLOCK_REALTIME, NULL));
 }
 
 int pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock)
@@ -193,14 +205,23 @@ int pthread_rwlock_timedrdlock(pthread_rwlock_t *rwlock, const struct timespec *
 {
 	if (rwlock == NULL || abstime == NULL)
 		return (EINVAL);
-	return (rdlockCommon(HAJ_RWLOCK(rwlock), abstime));
+	return (rdlockCommon(HAJ_RWLOCK(rwlock), CLOCK_REALTIME, abstime));
+}
+
+int pthread_rwlock_clockrdlock(pthread_rwlock_t *rwlock, clockid_t clockid, const struct timespec *abstime)
+{
+	if (rwlock == NULL || abstime == NULL)
+		return (EINVAL);
+	if (clockid != CLOCK_REALTIME && clockid != CLOCK_MONOTONIC)
+		return (EINVAL);
+	return (rdlockCommon(HAJ_RWLOCK(rwlock), clockid, abstime));
 }
 
 int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock)
 {
 	if (rwlock == NULL)
 		return (EINVAL);
-	return (wrlockCommon(HAJ_RWLOCK(rwlock), NULL));
+	return (wrlockCommon(HAJ_RWLOCK(rwlock), CLOCK_REALTIME, NULL));
 }
 
 int pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock)
@@ -224,7 +245,16 @@ int pthread_rwlock_timedwrlock(pthread_rwlock_t *rwlock, const struct timespec *
 {
 	if (rwlock == NULL || abstime == NULL)
 		return (EINVAL);
-	return (wrlockCommon(HAJ_RWLOCK(rwlock), abstime));
+	return (wrlockCommon(HAJ_RWLOCK(rwlock), CLOCK_REALTIME, abstime));
+}
+
+int pthread_rwlock_clockwrlock(pthread_rwlock_t *rwlock, clockid_t clockid, const struct timespec *abstime)
+{
+	if (rwlock == NULL || abstime == NULL)
+		return (EINVAL);
+	if (clockid != CLOCK_REALTIME && clockid != CLOCK_MONOTONIC)
+		return (EINVAL);
+	return (wrlockCommon(HAJ_RWLOCK(rwlock), clockid, abstime));
 }
 
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock)

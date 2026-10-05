@@ -10,7 +10,7 @@
  * @file futex.c
  * @brief futex(2) wrapper and common operations.
  * @Created: 2026/09/30 07:04:18 by Moutig
- * @Updated: 2026/10/03 10:03:35 by Moutig
+ * @Updated: 2026/10/05 12:50:28 by Moutig
  *
  * The futex syscall is the primitive on which all POSIX
  * synchronization is built. This file provides:
@@ -68,17 +68,19 @@ int __haj_futexWakeOp(int *uaddr, int n, int shared)
 	return ((r == -1) ? -1 : (int)r);
 }
 
-int __haj_futexWaitBitsetOp(int *uaddr, int expected, const struct timespec *timeout, unsigned int bitset, int shared)
+int __haj_futexWaitBitsetOp(int *uaddr, int expected,
+							const struct timespec *timeout,
+							unsigned int bitset, int shared,
+							clockid_t clockid)
 {
 	long	r;
+	int		op;
 
-	/*
-	 * FUTEX_WAIT_BITSET takes an ABSOLUTE timeout, on
-	 * CLOCK_MONOTONIC by default. FUTEX_CLOCK_REALTIME
-	 * switches it to CLOCK_REALTIME.
-	 */
-	r = __haj_futex(uaddr, HAJ_FUTEX_OP_WAIT_BITSET(shared) | FUTEX_CLOCK_REALTIME,
-			   expected, timeout, NULL, bitset);
+	op = HAJ_FUTEX_OP_WAIT_BITSET(shared);
+	if (clockid == CLOCK_REALTIME)
+		op |= FUTEX_CLOCK_REALTIME;
+
+	r = __haj_futex(uaddr, op, expected, timeout, NULL, bitset);
 	return ((r == -1) ? -1 : 0);
 }
 

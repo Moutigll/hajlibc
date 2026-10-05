@@ -10,7 +10,7 @@
  * @file attr.c
  * @brief Implementation of pthread_attr_*() functions.
  * @Created: 2026/10/01 10:28:49 by Moutig
- * @Updated: 2026/10/02 12:26:31 by Moutig
+ * @Updated: 2026/10/05 13:14:38 by Moutig
  *
  * The public pthread_attr_t is an opaque 48-byte union. Its
  * internal layout is struct _hajThreadAttr (see
@@ -19,6 +19,7 @@
  */
 
 #include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <bits/thread/pthread.h>
@@ -40,7 +41,7 @@ int pthread_attr_init(pthread_attr_t *attr)
 	a->stacksize		= HAJ_PTHREAD_STACK_SIZE_DEFAULT;
 	a->guardsize		= HAJ_PTHREAD_GUARD_SIZE_DEFAULT;
 	a->stackaddr		= NULL;
-	a->schedpolicy		= HAJ_SCHED_OTHER;
+	a->schedpolicy		= SCHED_OTHER;
 	a->schedpriority	= 0;
 	a->inheritsched		= PTHREAD_INHERIT_SCHED;
 	a->scope			= PTHREAD_SCOPE_SYSTEM;
@@ -174,9 +175,9 @@ int pthread_attr_setschedpolicy(pthread_attr_t *attr, int policy)
 
 	if (attr == NULL)
 		return (EINVAL);
-	if (policy != HAJ_SCHED_OTHER
-		&& policy != HAJ_SCHED_FIFO
-		&& policy != HAJ_SCHED_RR)
+	if (policy != SCHED_OTHER
+		&& policy != SCHED_FIFO
+		&& policy != SCHED_RR)
 		return (EINVAL);
 
 	a = HAJ_ATTR(attr);

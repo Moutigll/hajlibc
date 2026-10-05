@@ -10,7 +10,7 @@
  * @file tcb.h
  * @brief Thread Control Block (TCB).
  * @Created: 2026/09/30 05:17:29 by Moutig
- * @Updated: 2026/10/03 14:42:53 by Moutig
+ * @Updated: 2026/10/05 11:39:37 by Moutig
  *
  * The TCB holds all per-thread data the runtime needs: identity,
  * stack bounds, join state, TSD slots, cancellation state, and
@@ -29,30 +29,9 @@
 #ifndef _BITS_THREAD_TCB_H
 # define _BITS_THREAD_TCB_H
 
-# include <bits/compiler.h>
-# include <bits/types.h>
-# include <bits/os.h>
+# include <bits/cpuSet.h>
 # include <bits/thread/pthreadtypes.h>
 # include <stddef.h>
-
-/* ----- cpu_set_t ----- */
-
-# define HAJ_CPU_SETSIZE	1024
-# define HAJ_NCPUBITS		(8 * sizeof(unsigned long))
-# define HAJ_NCPUWORDS		(HAJ_CPU_SETSIZE / HAJ_NCPUBITS)
-
-# define __HAJ_CPU_BIT(n)	(1UL << ((n) % HAJ_NCPUBITS))
-# define __HAJ_CPU_WORD(n)	((n) / HAJ_NCPUBITS)
-
-/**
- * @brief CPU set type.
- *
- * Used by pthread_setaffinity_np / pthread_getaffinity_np and
- * by sched_setaffinity / sched_getaffinity.
- */
-typedef struct {
-	unsigned long __bits[HAJ_NCPUWORDS];
-} cpu_set_t;
 
 /* ----- Robust mutex list ----- */
 

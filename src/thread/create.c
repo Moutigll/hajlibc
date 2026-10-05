@@ -10,7 +10,7 @@
  * @file create.c
  * @brief Implementation of pthread_create().
  * @Created: 2026/10/01 10:27:30 by Moutig
- * @Updated: 2026/10/02 13:22:47 by Moutig
+ * @Updated: 2026/10/05 12:35:56 by Moutig
  *
  * pthread_create allocates a stack from the reuse pool, places
  * a TCB at the top of it, initializes the TCB with the start
@@ -61,8 +61,25 @@ static void hajRegisterFlush(void)
 
 /* ----- pthread_create ----- */
 
+/**
+ * @brief Initialize a thread attribute structure with default values.
+ * @param dst The attribute structure to initialize.
+ */
+static void hajAttrDefaults(struct _hajThreadAttr *dst)
+{
+	dst->stacksize		= HAJ_PTHREAD_STACK_SIZE_DEFAULT;
+	dst->guardsize		= HAJ_PTHREAD_GUARD_SIZE_DEFAULT;
+	dst->stackaddr		= NULL;
+	dst->detachstate	= PTHREAD_CREATE_JOINABLE;
+	dst->schedpolicy	= SCHED_OTHER;
+	dst->schedpriority	= 0;
+	dst->inheritsched	= PTHREAD_INHERIT_SCHED;
+	dst->scope			= PTHREAD_SCOPE_SYSTEM;
+}
+
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg)
 {
+	struct _hajThreadAttr	defaults;
 	const struct _hajThreadAttr	*a;
 	struct __haj_tcb	*tcb;
 	int			detachstate;
@@ -79,22 +96,22 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 		return (EINVAL);
 
 	/*
-	 * Read attributes. A NULL attr means default values. The
-	 * cast is safe because pthread_attr_t is a union of a
-	 * char buffer and this struct (see pthread_attr.h).
+	 * Resolve the attribute source. A NULL attr means default
+	 * values. We always point `a` at a valid struct so the
+	 * rest of the function can dereference it unconditionally.
 	 */
 	if (attr != NULL) {
 		a = HAJ_ATTR_CONST(attr);
-		detachstate	= a->detachstate;
-		stacksize	= a->stacksize;
-		guardsize	= a->guardsize;
 	} else {
-		detachstate	= PTHREAD_CREATE_JOINABLE;
-		stacksize	= HAJ_PTHREAD_STACK_SIZE_DEFAULT;
-		guardsize	= HAJ_PTHREAD_GUARD_SIZE_DEFAULT;
+		hajAttrDefaults(&defaults);
+		a = &defaults;
 	}
 
 	/* Normalize defaults. */
+	detachstate	= a->detachstate;
+	stacksize	= a->stacksize;
+	guardsize	= a->guardsize;
+
 	if (stacksize == 0)
 		stacksize = HAJ_PTHREAD_STACK_SIZE_DEFAULT;
 	if (guardsize == 0)
@@ -127,6 +144,10 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 	tcb->startRoutine	= start_routine;
 	tcb->startArg		= arg;
 	tcb->detachState	= detachstate;
+	tcb->schedPolicy	= a->schedpolicy;
+	tcb->schedPriority	= a->schedpriority;
+	tcb->inheritsched	= a->inheritsched;
+	tcb->scope			= a->scope;
 
 	/*
 	 * Publish the TCB in the global thread list. If the child
@@ -154,6 +175,12 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 				 tcb,					/* tls */
 				 (int *)&tcb->tid);	/* child_tid */
 	if (r < 0) {
+		/*
+		 * The thread was never created: undo the list
+		 * insertion and return the stack to the pool. We
+		 * must not touch the TCB after freeing its stack.
+		 */
+		__haj_threadListRemove(tcb);
 		__haj_threadFreeStack(base, effSize, effGuard);
 		return ((int)-r);
 	}

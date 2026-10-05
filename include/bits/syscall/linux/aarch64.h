@@ -10,7 +10,7 @@
  * @file aarch64.h
  * @brief Syscall numbers for the aarch64 architecture.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 13:21:20 by Moutig
+ * @Updated: 2026/10/05 11:50:30 by Moutig
  *
  * Source: <asm-generic/unistd.h> from the Linux kernel.
  * aarch64 uses the generic syscall numbering. Many syscalls
@@ -49,7 +49,6 @@
 # define SYS_writev				66
 # define SYS_ioctl				29
 # define SYS_poll				7
-# define SYS_select				23
 # define SYS_pselect6			72
 # define SYS_ppoll				73
 # define SYS_dup				23
@@ -120,16 +119,20 @@
 # define SYS_tkill				130
 
 /* ---- Threads ---- */
-# define SYS_futex				98
-# define SYS_set_tid_address	96
-# define SYS_set_robust_list	99
-# define SYS_get_robust_list	100
-# define SYS_sched_setaffinity	122
-# define SYS_sched_getaffinity	123
-# define SYS_sched_setparam		118
-# define SYS_sched_getparam		121
-# define SYS_sched_setscheduler	119
-# define SYS_sched_getscheduler	120
+# define SYS_futex					98
+# define SYS_set_tid_address		96
+# define SYS_set_robust_list		99
+# define SYS_get_robust_list		100
+# define SYS_sched_setaffinity		122
+# define SYS_sched_getaffinity		123
+# define SYS_sched_setparam			118
+# define SYS_sched_getparam			121
+# define SYS_sched_setscheduler		119
+# define SYS_sched_getscheduler		120
+# define SYS_sched_rr_get_interval	127
+# define SYS_sched_get_priority_min	125
+# define SYS_sched_get_priority_max	126
+# define SYS_clone3					435
 
 /* ---- Time ---- */
 # define SYS_time				169

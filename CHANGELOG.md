@@ -79,6 +79,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sched.h` (`SCHED_*`, `struct sched_param`, `sched_yield`, affinity, priority helpers)
 - `bits/cpuSet.h`: `cpu_set_t` and `CPU_*` macros
 - `pthread_getschedparam`, `pthread_setschedparam`, `pthread_setschedprio`
+- C11 `<threads.h>` (thrd/mtx/cnd/tss/once) on top of pthreads
+- `pthread_atfork` and internal atfork handlers
+- `pthread_getcpuclockid`, `pthread_getschedparam`/`setschedparam`/`setschedprio`
+- `pthread_mutex_clocklock`, `pthread_rwlock_clockrdlock`/`clockwrlock`
+- `pthread_attr_setaffinity_np`/`getaffinity_np`, `pthread_setaffinity_np`/`getaffinity_np`
+- `pthread_mutex_getprioceiling`/`setprioceiling` (return `ENOTSUP`)
+- `bits/cpuSet.h` extracted from `tcb.h`
 
 ### Changed
 

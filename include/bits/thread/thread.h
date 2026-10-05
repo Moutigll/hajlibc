@@ -10,7 +10,7 @@
  * @file thread.h
  * @brief Threading internals (central header).
  * @Created: 2026/09/30 05:18:03 by Moutig
- * @Updated: 2026/10/05 10:43:56 by Moutig
+ * @Updated: 2026/10/05 11:43:47 by Moutig
  *
  * Central internal header for threading. It pulls in every
  * other internal thread header and declares the primitives that
@@ -235,6 +235,48 @@ void	__haj_cancelPoint(void);
  */
 void	__haj_runCleanupHandlers(struct __haj_tcb *tcb);
 
+/* ----- At fork ----- */
+
+# ifndef HAJ_ATFORK_MAX
+#  define HAJ_ATFORK_MAX	64
+# endif
+
+/**
+ * @brief An entry in the atfork handler list.
+ *
+ * This structure represents a single atfork handler, containing
+ * pointers to the prepare, parent, and child functions.
+ */
+struct _hajAtforkEntry {
+	void	(*prepare)(void);
+	void	(*parent)(void);
+	void	(*child)(void);
+};
+
+/**
+ * @brief Call the atfork prepare handlers.
+ *
+ * This function is called before a fork() system call to invoke all
+ * registered atfork prepare handlers.
+ */
+void __haj_atforkPrepare(void);
+
+/**
+ * @brief Call the atfork parent handlers.
+ *
+ * This function is called in the parent process after a fork() system
+ * call to invoke all registered atfork parent handlers.
+ */
+void __haj_atforkParent(void);
+
+/**
+ * @brief Call the atfork child handlers.
+ *
+ * This function is called in the child process after a fork() system
+ * call to invoke all registered atfork child handlers.
+ */
+void __haj_atforkChild(void);
+
 /* ----- Cleanup handlers ----- */
 
 /**
@@ -249,11 +291,5 @@ struct __haj_thCleanup {
 	void					(*routine)(void *);
 	void					*arg;
 };
-
-/* ----- Scheduling policies ----- */
-
-# define HAJ_SCHED_OTHER	0
-# define HAJ_SCHED_FIFO		1
-# define HAJ_SCHED_RR		2
 
 #endif /* _BITS_THREAD_THREAD_H */

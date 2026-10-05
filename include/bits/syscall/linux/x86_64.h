@@ -10,7 +10,7 @@
  * @file x86_64.h
  * @brief Linux x86_64 syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 13:21:56 by Moutig
+ * @Updated: 2026/10/05 11:49:44 by Moutig
  *
  * Source: <asm/unistd_64.h> from the Linux kernel.
  * These numbers are stable for the Linux x86_64 ABI.
@@ -164,16 +164,19 @@
 # define SYS_tkill				200
 
 /* ---- Threads ---- */
-# define SYS_futex				202
-# define SYS_set_tid_address	218
-# define SYS_set_robust_list	273
-# define SYS_get_robust_list	274
-# define SYS_sched_setaffinity	203
-# define SYS_sched_getaffinity	204
-# define SYS_sched_setparam		142
-# define SYS_sched_getparam		143
-# define SYS_sched_setscheduler	144
-# define SYS_sched_getscheduler	145
+# define SYS_futex					202
+# define SYS_set_tid_address		218
+# define SYS_set_robust_list		273
+# define SYS_get_robust_list		274
+# define SYS_sched_setaffinity		203
+# define SYS_sched_getaffinity		204
+# define SYS_sched_setparam			142
+# define SYS_sched_getparam			143
+# define SYS_sched_setscheduler		144
+# define SYS_sched_getscheduler		145
+# define SYS_sched_rr_get_interval	146
+# define SYS_sched_get_priority_min	147
+# define SYS_sched_get_priority_max	148
 
 /* ---- Time ---- */
 # define SYS_time				201

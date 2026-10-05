@@ -10,7 +10,7 @@
  * @file mutex.c
  * @brief POSIX mutex implementation.
  * @Created: 2026/10/02 12:11:16 by Moutig
- * @Updated: 2026/10/03 12:03:44 by Moutig
+ * @Updated: 2026/10/05 12:51:14 by Moutig
  *
  * The mutex is a single futex word (the `lock` field) plus a
  * few bookkeeping fields (owner TID, count, type).
@@ -41,12 +41,20 @@
  * it dies while holding a robust mutex, the kernel walks that
  * list and sets FUTEX_OWNER_DIED on the futex word, so the next
  * locker gets EOWNERDEAD.
+ *
+ * Clock selection:
+ *   pthread_mutex_timedlock uses CLOCK_REALTIME.
+ *   pthread_mutex_clocklock takes the clock as an argument and
+ *   passes FUTEX_CLOCK_REALTIME only for CLOCK_REALTIME. The
+ *   kernel's FUTEX_LOCK_PI is always CLOCK_REALTIME, so robust
+ *   mutexes reject CLOCK_MONOTONIC with ENOTSUP.
  */
 
 #include <pthread.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <time.h>
 #include <bits/thread/thread.h>
 #include <bits/thread/pthread.h>
 #include <bits/syscall.h>
@@ -199,10 +207,12 @@ static int tryAcquireContended(struct _hajThreadMutex *m)
  * the callers have just written, and FUTEX_WAIT with any other
  * value would return EAGAIN right away (busy loop).
  * @param m The mutex to wait on.
+ * @param clockid Clock to use for the deadline.
  * @param abstime Absolute timeout, or NULL for infinite wait.
  * @return 0 on success, or an errno value on failure.
  */
-static int waitFutex(struct _hajThreadMutex *m, const struct timespec *abstime)
+static int waitFutex(struct _hajThreadMutex *m, clockid_t clockid,
+					 const struct timespec *abstime)
 {
 	int	expected;
 	int	shared;
@@ -218,7 +228,8 @@ static int waitFutex(struct _hajThreadMutex *m, const struct timespec *abstime)
 										HAJ_MUTEX_CONTENDED,
 										abstime,
 										FUTEX_BITSET_MATCH_ANY,
-										shared);
+										shared,
+										clockid);
 		if (r < 0) {
 			if (errno == EAGAIN || errno == EINTR)
 				return (0);
@@ -243,13 +254,15 @@ static int waitFutex(struct _hajThreadMutex *m, const struct timespec *abstime)
  *
  * A NULL abstime means an infinite wait (pthread_mutex_lock),
  * otherwise the absolute deadline is honored
- * (pthread_mutex_timedlock).
+ * (pthread_mutex_timedlock or pthread_mutex_clocklock).
  * @param m The mutex.
  * @param tid The current thread id.
+ * @param clockid Clock to use for the deadline.
  * @param abstime Absolute deadline, or NULL.
  * @return 0 on success, or an errno value.
  */
-static int lockNormal(struct _hajThreadMutex *m, int tid, const struct timespec *abstime)
+static int lockNormal(struct _hajThreadMutex *m, int tid, clockid_t clockid,
+					  const struct timespec *abstime)
 {
 	int	r;
 
@@ -267,7 +280,7 @@ static int lockNormal(struct _hajThreadMutex *m, int tid, const struct timespec 
 		}
 		if (v == HAJ_MUTEX_LOCKED)
 			(void)__haj_atomic_cas(&m->lock, &v, HAJ_MUTEX_CONTENDED);
-		r = waitFutex(m, abstime);
+		r = waitFutex(m, clockid, abstime);
 		if (r != 0)
 			return (r);
 	}
@@ -449,14 +462,17 @@ static __HAJ_INLINE int robustPendingCommit(struct _hajRobustHead *h, struct _ha
  * @brief Acquire a robust mutex, optionally with a timeout.
  *
  * A NULL abstime means an infinite wait (pthread_mutex_lock),
- * otherwise the absolute deadline is honored
- * (pthread_mutex_timedlock).
+ * otherwise the absolute deadline is honored. The kernel's PI
+ * futex is always CLOCK_REALTIME, so the clockid must be
+ * CLOCK_REALTIME if a deadline is given.
  * @param m The mutex.
  * @param tid The current thread id.
+ * @param clockid Clock to use for the deadline.
  * @param abstime Absolute deadline, or NULL.
  * @return 0, EOWNERDEAD, or an errno value.
  */
-static int lockRobust(struct _hajThreadMutex *m, int tid, const struct timespec *abstime)
+static int lockRobust(struct _hajThreadMutex *m, int tid, clockid_t clockid,
+					  const struct timespec *abstime)
 {
 	struct _hajRobustHead	*h;
 	int	r;
@@ -464,6 +480,14 @@ static int lockRobust(struct _hajThreadMutex *m, int tid, const struct timespec 
 	r = checkReentrant(m, tid);
 	if (r != HAJ_MUTEX_NOT_HANDLED)
 		return (r);
+
+	/*
+	 * FUTEX_LOCK_PI has no clock argument: the kernel always
+	 * uses CLOCK_REALTIME for its timeout. Reject anything
+	 * else before touching the robust list.
+	 */
+	if (abstime != NULL && clockid != CLOCK_REALTIME)
+		return (ENOTSUP);
 
 	h = robustPendingBegin(m);
 
@@ -629,9 +653,9 @@ int pthread_mutex_lock(pthread_mutex_t *mutex)
 
 #if HAJ_PTHREAD_PROCESS_SHARED
 	if (isRobust(m))
-		return (lockRobust(m, tid, NULL));
+		return (lockRobust(m, tid, CLOCK_REALTIME, NULL));
 #endif
-	return (lockNormal(m, tid, NULL));
+	return (lockNormal(m, tid, CLOCK_REALTIME, NULL));
 }
 
 int pthread_mutex_trylock(pthread_mutex_t *mutex)
@@ -671,9 +695,30 @@ int pthread_mutex_timedlock(pthread_mutex_t *mutex,
 
 #if HAJ_PTHREAD_PROCESS_SHARED
 	if (isRobust(m))
-		return (lockRobust(m, tid, abstime));
+		return (lockRobust(m, tid, CLOCK_REALTIME, abstime));
 #endif
-	return (lockNormal(m, tid, abstime));
+	return (lockNormal(m, tid, CLOCK_REALTIME, abstime));
+}
+
+int pthread_mutex_clocklock(pthread_mutex_t *mutex, clockid_t clockid,
+							const struct timespec *abstime)
+{
+	struct _hajThreadMutex	*m;
+	int	tid;
+
+	if (mutex == NULL || abstime == NULL)
+		return (EINVAL);
+	if (clockid != CLOCK_REALTIME && clockid != CLOCK_MONOTONIC)
+		return (EINVAL);
+
+	m = HAJ_MUTEX(mutex);
+	tid = __haj_gettid();
+
+#if HAJ_PTHREAD_PROCESS_SHARED
+	if (isRobust(m))
+		return (lockRobust(m, tid, clockid, abstime));
+#endif
+	return (lockNormal(m, tid, clockid, abstime));
 }
 
 int pthread_mutex_unlock(pthread_mutex_t *mutex)
@@ -717,4 +762,29 @@ int pthread_mutex_consistent(pthread_mutex_t *mutex)
 	 * additional kernel call to make here. We just return 0.
 	 */
 	return (0);
+}
+
+/*
+ * Priority ceiling.
+ *
+ * The Linux kernel does not implement PTHREAD_PRIO_PROTECT:
+ * there is no priority ceiling on mutexes. POSIX requires the
+ * functions to exist and allows ENOTSUP when the feature is
+ * not supported, which is what we return.
+ */
+
+int pthread_mutex_getprioceiling(const pthread_mutex_t *mutex, int *prioceiling)
+{
+	if (mutex == NULL || prioceiling == NULL)
+		return (EINVAL);
+	return (ENOTSUP);
+}
+
+int pthread_mutex_setprioceiling(pthread_mutex_t *mutex, int prioceiling, int *old_ceiling)
+{
+	(void)prioceiling;
+	if (mutex == NULL)
+		return (EINVAL);
+	(void)old_ceiling;
+	return (ENOTSUP);
 }

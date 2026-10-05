@@ -10,7 +10,7 @@
  * @file start.c
  * @brief Thread entry trampoline and exit.
  * @Created: 2026/10/01 10:24:39 by Moutig
- * @Updated: 2026/10/05 10:35:55 by Moutig
+ * @Updated: 2026/10/05 12:33:58 by Moutig
  *
  * __haj_threadStart is the function the clone wrapper invokes
  * in the child. It reads startRoutine/startArg from the TCB,
@@ -94,6 +94,14 @@ void __haj_threadStart(struct __haj_tcb *tcb)
 	tcb->cancelType = PTHREAD_CANCEL_DEFERRED;
 	tcb->cancelPending = 0;
 	tcb->cleanupStack = NULL;
+
+	/* Set the scheduling policy and priority if specified. */
+	if (tcb->inheritsched == PTHREAD_EXPLICIT_SCHED) {
+		struct sched_param	param;
+
+		param.sched_priority = tcb->schedPriority;
+		sched_setscheduler(0, tcb->schedPolicy, &param);
+	}
 
 	retval = tcb->startRoutine(tcb->startArg);
 	__haj_threadExit(retval);

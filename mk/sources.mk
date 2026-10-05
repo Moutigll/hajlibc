@@ -25,6 +25,7 @@ GETOPT_DIR		:= $(SRC_DIR)/getopt
 MATH_DIR		:= $(SRC_DIR)/math
 MMAN_DIR		:= $(SRC_DIR)/sys/mman
 RUNTIME_DIR		:= $(SRC_DIR)/runtime
+SCHED_DIR		:= $(SRC_DIR)/sched
 SETJMP_DIR		:= $(SRC_DIR)/setjmp
 SIGNAL_DIR		:= $(SRC_DIR)/signal
 STACK_CHK_DIR	:= $(SRC_DIR)/stack_chk
@@ -98,6 +99,10 @@ MMAN_SRCS := \
 RUNTIME_SRCS := \
 	div.c \
 	mul.c
+
+SCHED_SRCS := \
+	cpuSet.c \
+	sched.c
 
 # setjmp (portable C parts)
 SIGSETJMP_SRCS := \
@@ -180,6 +185,12 @@ THREAD_SRCS := \
 	internal/stack.c \
 	internal/start.c \
 	internal/tcb.c \
+	threads/cnd.c \
+	threads/mtx.c \
+	threads/once.c \
+	threads/thrd.c \
+	threads/tss.c \
+	atfork.c \
 	attr.c \
 	barrier.c \
 	cancel.c \
@@ -188,6 +199,7 @@ THREAD_SRCS := \
 	create.c \
 	detach.c \
 	exit.c \
+	getcpuclockid.c \
 	join.c \
 	key.c \
 	mutex.c \
@@ -195,6 +207,7 @@ THREAD_SRCS := \
 	once.c \
 	rwlock.c \
 	rwlockattr.c \
+	schedparam.c \
 	self.c \
 	spin.c
 
@@ -231,6 +244,7 @@ GETOPT_SRCS		:= $(addprefix $(GETOPT_DIR)/,$(GETOPT_SRCS))
 MATH_SRCS		:= $(addprefix $(MATH_DIR)/,$(MATH_SRCS))
 MMAN_SRCS		:= $(addprefix $(MMAN_DIR)/,$(MMAN_SRCS))
 RUNTIME_SRCS	:= $(addprefix $(RUNTIME_DIR)/,$(RUNTIME_SRCS))
+SCHED_SRCS		:= $(addprefix $(SCHED_DIR)/,$(SCHED_SRCS))
 SIGSETJMP_SRCS	:= $(addprefix $(SETJMP_DIR)/,$(SIGSETJMP_SRCS))
 SIGNAL_SRCS		:= $(addprefix $(SIGNAL_DIR)/,$(SIGNAL_SRCS))
 STACK_CHK_SRCS	:= $(addprefix $(STACK_CHK_DIR)/,$(STACK_CHK_SRCS))

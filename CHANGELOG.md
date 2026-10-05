@@ -73,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sig2str` / `str2sig` / `strsignal` / `psignal` / `psiginfo`
 - x86_64 `rt_sigreturn` trampoline (`sa_restorer`)
 - `unistd.h`: `getppid`, `gettid`, `getuid`, `getgid`
+- `pthread_cancel`, `pthread_testcancel`, `pthread_setcancelstate`, `pthread_setcanceltype`
+- `pthread_cleanup_push` / `pthread_cleanup_pop`
+- `PTHREAD_CANCELED`, `PTHREAD_NULL`
 
 ### Changed
 

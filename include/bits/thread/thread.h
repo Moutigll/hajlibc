@@ -10,7 +10,7 @@
  * @file thread.h
  * @brief Threading internals (central header).
  * @Created: 2026/09/30 05:18:03 by Moutig
- * @Updated: 2026/10/03 11:10:20 by Moutig
+ * @Updated: 2026/10/05 10:43:56 by Moutig
  *
  * Central internal header for threading. It pulls in every
  * other internal thread header and declares the primitives that
@@ -86,6 +86,18 @@ static __HAJ_INLINE void __haj_cpuRelax(void)
  */
 int __haj_gettid(void);
 
+/**
+ * @brief Get the kernel thread ID of a specific pthread_t.
+ *
+ * This is a thin wrapper around __haj_gettid() and the TCB.
+ * It returns the kernel TID of the thread represented by
+ * the given pthread_t. If the pthread_t is invalid, it
+ * returns -1.
+ *
+ * @param thread The pthread_t of the thread to query.
+ * @return The kernel TID of the thread, or -1 if invalid.
+ */
+pid_t __haj_gettid_thread(pthread_t thread);
 /* ----- Thread creation ----- */
 
 /**
@@ -183,18 +195,57 @@ static __HAJ_INLINE void __haj_threadListReset(struct __haj_tcb *self)
 	__haj_threadList = self;
 }
 
-/* ----- Cancellation ----- */
+/* ----- Cancellation (internal) ----- */
 
-# define HAJ_PTHREAD_CANCEL_ENABLE			0
-# define HAJ_PTHREAD_CANCEL_DISABLE			1
+/**
+ * @brief Check if cancellation is pending for the current thread.
+ *
+ * This function checks if cancellation is pending for the calling
+ * thread. It returns 1 if cancellation is pending, and 0 otherwise.
+ *
+ * @return 1 if cancellation is pending, 0 otherwise.
+ */
+int		__haj_cancelPending(void);
 
-# define HAJ_PTHREAD_CANCEL_DEFERRED		0
-# define HAJ_PTHREAD_CANCEL_ASYNCHRONOUS	1
+/**
+ * @brief Act on a pending cancellation request.
+ *
+ * This function is called when a thread has a pending cancellation
+ * request and is in a cancellation point. It performs the necessary
+ * cleanup and terminates the thread with PTHREAD_CANCELED.
+ */
+void	__haj_cancelAct(void) __HAJ_NORETURN;
+
+/**
+ * @brief Check for cancellation at a cancellation point.
+ *
+ * This function is called at cancellation points to check if
+ * cancellation is pending. If it is, it calls __haj_cancelAct().
+ */
+void	__haj_cancelPoint(void);
+
+/**
+ * @brief Run the cleanup handlers for a thread.
+ *
+ * This function runs all the cleanup handlers for the specified thread,
+ * in the reverse order of their registration.
+ *
+ * @param tcb Pointer to the TCB of the thread whose cleanup handlers
+ *            need to be run.
+ */
+void	__haj_runCleanupHandlers(struct __haj_tcb *tcb);
 
 /* ----- Cleanup handlers ----- */
 
-struct __haj_cleanup {
-	struct __haj_cleanup	*next;
+/**
+ * @brief A cleanup handler for a thread.
+ *
+ * This structure represents a single cleanup handler in the thread's
+ * cleanup stack. It contains a pointer to the previous handler, a
+ * function to call, and an argument to pass to that function.
+ */
+struct __haj_thCleanup {
+	struct __haj_thCleanup	*prev;
 	void					(*routine)(void *);
 	void					*arg;
 };

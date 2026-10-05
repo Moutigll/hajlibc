@@ -10,7 +10,7 @@
  * @file pthread.h
  * @brief POSIX threads API.
  * @Created: 2026/10/01 11:00:00 by Moutig
- * @Updated: 2026/10/03 14:09:07 by Moutig
+ * @Updated: 2026/10/05 10:48:45 by Moutig
  *
  * The pthread types (pthread_t, pthread_attr_t, ...) are
  * defined in <bits/thread/pthreadtypes.h>, pulled in
@@ -45,6 +45,22 @@ extern "C" {
 # define PTHREAD_CANCEL_DISABLE			1
 # define PTHREAD_CANCEL_DEFERRED		0
 # define PTHREAD_CANCEL_ASYNCHRONOUS	1
+
+/**
+ * @brief Value returned to the joiner of a cancelled thread.
+ *
+ * When a thread is cancelled, it terminates as if it had
+ * called pthread_exit(PTHREAD_CANCELED). The value is a
+ * non-NULL pointer distinct from any legitimate return value.
+ */
+# define PTHREAD_CANCELED				((void *)-1)
+
+/**
+ * @brief Null thread ID.
+ *
+ * A null thread ID is used to indicate an invalid or uninitialized thread.
+ */
+#define PTHREAD_NULL	((void *)0)
 
 /* ----- Mutex types ----- */
 # ifndef PTHREAD_MUTEX_NORMAL
@@ -676,6 +692,55 @@ int pthread_barrier_destroy(pthread_barrier_t *barrier);
  */
 int pthread_barrier_wait(pthread_barrier_t *barrier);
 
+/* ----- Cancellation ----- */
+
+/**
+ * @brief Test for cancellation.
+ *
+ * Tests whether the calling thread has been cancelled. If the thread
+ * is cancelled, it terminates as if it had called pthread_exit(PTHREAD_CANCELED).
+ * If the thread is not cancelled, this function returns immediately.
+ */
+void pthread_testcancel(void);
+
+/**
+ * @brief Set the cancellation state of the calling thread.
+ *
+ * Sets the cancellation state of the calling thread to the specified state.
+ * The old cancellation state is stored in *oldstate if oldstate is not NULL.
+ *
+ * @param state The new cancellation state (PTHREAD_CANCEL_ENABLE or PTHREAD_CANCEL_DISABLE).
+ * @param oldstate Pointer to an int to store the old cancellation state, or NULL.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_setcancelstate(int state, int *oldstate);
+
+/**
+ * @brief Set the cancellation type of the calling thread.
+ *
+ * Sets the cancellation type of the calling thread to the specified type.
+ * The old cancellation type is stored in *oldtype if oldtype is not NULL.
+ *
+ * @param type The new cancellation type (PTHREAD_CANCEL_DEFERRED or PTHREAD_CANCEL_ASYNCHRONOUS).
+ * @param oldtype Pointer to an int to store the old cancellation type, or NULL.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_setcanceltype(int type, int *oldtype);
+
+/**
+ * @brief Cancel a thread.
+ *
+ * Sends a cancellation request to the thread specified by thread.
+ * If the target thread has cancellation enabled, it will respond
+ * to the request according to its cancellation type. If the target
+ * thread is already cancelled or has terminated, this function has
+ * no effect.
+ *
+ * @param thread The ID of the thread to cancel.
+ * @return 0 on success, or an error number on failure.
+ */
+int pthread_cancel(pthread_t thread);
+
 
 
 
@@ -1231,6 +1296,29 @@ int pthread_barrierattr_getpshared(const pthread_barrierattr_t *attr, int *pshar
  * pthread_rwlock_t with default attributes.
  */
 # define PTHREAD_RWLOCK_INITIALIZER	{ { 0 } }
+
+
+
+
+
+typedef struct {
+	char	__opaque[3 * sizeof(void *)];
+} __haj_cleanup_frame_t;
+
+void __haj_cleanupPush(__haj_cleanup_frame_t *buf,
+					   void (*routine)(void *),
+					   void *arg);
+void __haj_cleanupPop(int execute);
+
+# define pthread_cleanup_push(routine, arg)						\
+	do {														\
+		__haj_cleanup_frame_t __haj_cleanup_buf;				\
+		__haj_cleanupPush(&__haj_cleanup_buf,					\
+						  (routine), (arg));
+
+# define pthread_cleanup_pop(execute)							\
+		__haj_cleanupPop((execute));							\
+	} while (0)
 
 # ifdef __cplusplus
 }

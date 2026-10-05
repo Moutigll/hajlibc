@@ -10,7 +10,7 @@
  * @file start.c
  * @brief Thread entry trampoline and exit.
  * @Created: 2026/10/01 10:24:39 by Moutig
- * @Updated: 2026/10/03 11:29:45 by Moutig
+ * @Updated: 2026/10/05 10:35:55 by Moutig
  *
  * __haj_threadStart is the function the clone wrapper invokes
  * in the child. It reads startRoutine/startArg from the TCB,
@@ -28,6 +28,14 @@ void __haj_threadExit(void *retval)
 	size_t	stackSize	= tcb->stackSize;
 	size_t	stackGuard	= tcb->guardSize;
 	int		detached	= (tcb->detachState == PTHREAD_CREATE_DETACHED);
+
+	/*
+	 * Cleanup handlers run first (LIFO), then the TSD
+	 * destructors. This is also the path taken by
+	 * cancellation: __haj_cancelAct() calls
+	 * __haj_threadExit(PTHREAD_CANCELED), which lands here.
+	 */
+	__haj_runCleanupHandlers(tcb);
 
 	/*
 	 * Run all TSD destructors for this thread. This is done
@@ -80,6 +88,13 @@ void __haj_threadStart(struct __haj_tcb *tcb)
 	 */
 	__haj_robustInit(&tcb->robustList);
 #endif /* HAJ_PTHREAD_PROCESS_SHARED */
+
+	/* Cancelation defaults */
+	tcb->cancelState = PTHREAD_CANCEL_ENABLE;
+	tcb->cancelType = PTHREAD_CANCEL_DEFERRED;
+	tcb->cancelPending = 0;
+	tcb->cleanupStack = NULL;
+
 	retval = tcb->startRoutine(tcb->startArg);
 	__haj_threadExit(retval);
 }

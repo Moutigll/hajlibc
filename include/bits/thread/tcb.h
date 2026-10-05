@@ -10,7 +10,7 @@
  * @file tcb.h
  * @brief Thread Control Block (TCB).
  * @Created: 2026/09/30 05:17:29 by Moutig
- * @Updated: 2026/10/03 11:11:08 by Moutig
+ * @Updated: 2026/10/03 14:42:53 by Moutig
  *
  * The TCB holds all per-thread data the runtime needs: identity,
  * stack bounds, join state, TSD slots, cancellation state, and
@@ -115,7 +115,7 @@ void __haj_robustInit(struct _hajRobustHead *h);
 
 /* ----- Forward declarations ----- */
 
-struct __haj_cleanup;
+struct __haj_thCleanup;
 
 /* ----- TCB ----- */
 
@@ -153,7 +153,7 @@ struct __haj_tcb {
 	void					*startArg;
 
 	/* ---- Cleanup ---- */
-	struct __haj_cleanup	*cleanupStack;
+	struct __haj_thCleanup	*cleanupStack;
 # if HAJ_PTHREAD_PROCESS_SHARED
 	struct _hajRobustHead	robustList;		/* list of robust mutexes */
 # endif

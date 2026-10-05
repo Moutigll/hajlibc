@@ -182,6 +182,7 @@ THREAD_SRCS := \
 	internal/tcb.c \
 	attr.c \
 	barrier.c \
+	cancel.c \
 	cond.c \
 	condattr.c \
 	create.c \

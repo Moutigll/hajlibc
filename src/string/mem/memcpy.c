@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memcpy.c
  * @brief C standard memcpy implementation with vectorization.
  * @Created: 2026/09/24 23:08:35 by Moutig
- * @Updated: 2026/09/25 21:55:38 by Moutig
+ * @Updated: 2026/09/30 10:41:04 by Moutig
  *
  * This file implements the C standard memcpy function, which copies
  * n bytes from the source buffer to the destination buffer. It uses
@@ -37,24 +37,25 @@
 /* ----- Dispatcher ----- */
 
 #if defined(__ELF__) && (defined(__x86_64__) || defined(_M_X64))
+typedef void *(*hajMemcpyFn_t)(void *__HAJ_RESTRICT, const void *__HAJ_RESTRICT, size_t);
 
-static void *memcpySelectImpl(void)
+static hajMemcpyFn_t memcpySelectImpl(void)
 {
 	if (hajCpuHasAvx512())
-		return ((void *)hajMemcpyAvx512);
+		return (hajMemcpyAvx512);
 	if (hajCpuHasAvx2())
-		return ((void *)hajMemcpyAvx2);
-	return ((void *)hajMemcpySse2);
+		return (hajMemcpyAvx2);
+	return (hajMemcpySse2);
 }
 
 void *memcpy(void		*__HAJ_RESTRICT dest,
 			 const void	*__HAJ_RESTRICT src,
 			 size_t		n)
 {
-	static void *(*memcpyFunc)(void *, const void *, size_t) = NULL;
+	static hajMemcpyFn_t memcpyFunc = NULL;
 
 	if (memcpyFunc == NULL)
-		memcpyFunc = (void *(*)(void *, const void *, size_t))memcpySelectImpl();
+		memcpyFunc = memcpySelectImpl();
 	return (memcpyFunc(dest, src, n));
 }
 

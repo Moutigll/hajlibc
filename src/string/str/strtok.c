@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strtok.c
  * @brief Tokenize a string into substrings based on delimiters.
  * @Created: 2026/09/26 04:17:21 by Moutig
- * @Updated: 2026/09/26 04:17:29 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Non-reentrant string tokenizer. Uses a static internal state
  * to remember the position between calls. NOT thread-safe; use

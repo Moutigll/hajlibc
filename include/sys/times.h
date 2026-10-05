@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file times.h
  * @brief Types and functions for process accounting.
  * @Created: 2026/09/28 06:41:25 by Moutig
- * @Updated: 2026/09/28 08:35:10 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This header provides the historical process accounting interface:
  * the struct tms structure and the times() function.

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file shm_open.c
  * @brief POSIX shared memory object open implementation for FreeBSD.
  * @Created: 2026/09/26 06:29:31 by Moutig
- * @Updated: 2026/09/26 06:37:16 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * FreeBSD has a dedicated shm_open syscall. The flags are the
  * same as open() flags (O_CREAT, O_EXCL, O_RDWR, ...), but the

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file time.h
  * @brief Time types and select() for BSD/POSIX compatibility.
  * @Created: 2026/09/28 06:41:17 by Moutig
- * @Updated: 2026/09/28 08:35:44 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This header provides the historical BSD time interface that
  * POSIX kept around for compatibility: struct timeval, the

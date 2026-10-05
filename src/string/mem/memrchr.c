@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file memrchr.c
  * @brief GNU memrchr: find the last occurrence of a byte.
  * @Created: 2026/09/25 22:34:12 by Moutig
- * @Updated: 2026/09/25 22:48:43 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Searches backwards. Word-at-a-time for the aligned middle part.
  */

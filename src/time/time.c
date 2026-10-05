@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file time.c
  * @brief Implementation of the time() function.
  * @Created: 2026/09/28 06:46:33 by Moutig
- * @Updated: 2026/09/28 10:34:04 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Returns the current time in seconds since the Epoch.
  *

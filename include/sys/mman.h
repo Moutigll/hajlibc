@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file mman.h
  * @brief POSIX memory mapping functions and constants.
  * @Created: 2026/09/26 04:37:44 by Moutig
- * @Updated: 2026/09/26 07:20:08 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * Declares mmap, munmap, mprotect, msync, madvise, mlock, and
  * munlock. Constants are defined per OS in <bits/mman.h>.

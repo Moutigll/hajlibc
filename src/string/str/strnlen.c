@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strnlen.c
  * @brief POSIX strnlen implementation.
  * @Created: 2026/09/25 23:19:54 by Moutig
- * @Updated: 2026/09/25 23:24:00 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Returns min(strlen(s), maxlen). Scans at most maxlen bytes.
  * Uses word-at-a-time scanning where possible, falling back to

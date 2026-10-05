@@ -25,6 +25,7 @@ GETOPT_DIR		:= $(SRC_DIR)/getopt
 MATH_DIR		:= $(SRC_DIR)/math
 MMAN_DIR		:= $(SRC_DIR)/sys/mman
 RUNTIME_DIR		:= $(SRC_DIR)/runtime
+SCHED_DIR		:= $(SRC_DIR)/sched
 SETJMP_DIR		:= $(SRC_DIR)/setjmp
 SIGNAL_DIR		:= $(SRC_DIR)/signal
 STACK_CHK_DIR	:= $(SRC_DIR)/stack_chk
@@ -33,6 +34,7 @@ STDIO_DIR		:= $(SRC_DIR)/stdio
 STDLIB_DIR		:= $(SRC_DIR)/stdlib
 STRING_DIR		:= $(SRC_DIR)/string
 SYS_DIR			:= $(SRC_DIR)/sys
+THREAD_DIR		:= $(SRC_DIR)/thread
 TIME_DIR		:= $(SRC_DIR)/time
 UNISTD_DIR		:= $(SRC_DIR)/unistd
 
@@ -41,17 +43,23 @@ ASSERT_SRCS := \
 	assert.c
 
 # cpu (portable C parts)
-CPU_SRCS :=
+CPU_SRCS := \
+	detect.c \
+	features_aarch64.c \
+	features_x86_64.c \
 
 # crt (portable C parts)
 CRT_SRCS := \
-	_exit.c \
-	atexit.c \
-	cxa_atexit.c \
-	cxa_finalize.c \
-	dso_handle.c \
-	exit.c \
-	start.c
+	exit/_exit.c \
+	exit/abort.c \
+	exit/atexit.c \
+	exit/cxa_atexit.c \
+	exit/cxa_finalize.c \
+	exit/dtors.c \
+	exit/exit.c \
+	start/ctors.c \
+	start/start.c \
+	start/tcb.c
 
 # ctype
 CTYPE_SRCS := \
@@ -92,12 +100,25 @@ RUNTIME_SRCS := \
 	div.c \
 	mul.c
 
+SCHED_SRCS := \
+	cpuSet.c \
+	sched.c
+
 # setjmp (portable C parts)
 SIGSETJMP_SRCS := \
 	sigsetjmp.c
 
 # signal
-SIGNAL_SRCS :=
+SIGNAL_SRCS := \
+	psignal.c \
+	pthread.c \
+	raise.c \
+	sig2str.c \
+	sigaction.c \
+	sigaltstack.c \
+	sigprocmask.c \
+	sigtimedwait.c \
+	sigset.c
 
 # stack_chk
 STACK_CHK_SRCS := \
@@ -147,10 +168,48 @@ STRING_SRCS := \
 	str/strsep.c
 
 SYS_SRCS := \
+	resource/getrusage.c \
+	resource/priority.c \
+	resource/rlimit.c \
 	auxv.c \
 	getentropy.c \
 	getrandom.c \
-	times.c
+	times.c \
+	waitpid.c \
+
+THREAD_SRCS := \
+	internal/clone.c \
+	internal/futex.c \
+	internal/gettid.c \
+	internal/list.c \
+	internal/stack.c \
+	internal/start.c \
+	internal/tcb.c \
+	threads/cnd.c \
+	threads/mtx.c \
+	threads/once.c \
+	threads/thrd.c \
+	threads/tss.c \
+	atfork.c \
+	attr.c \
+	barrier.c \
+	cancel.c \
+	cond.c \
+	condattr.c \
+	create.c \
+	detach.c \
+	exit.c \
+	getcpuclockid.c \
+	join.c \
+	key.c \
+	mutex.c \
+	mutexattr.c \
+	once.c \
+	rwlock.c \
+	rwlockattr.c \
+	schedparam.c \
+	self.c \
+	spin.c
 
 # time
 TIME_SRCS := \
@@ -164,7 +223,15 @@ TIME_SRCS := \
 
 # unistd-
 UNISTD_SRCS := \
-	getpid.c
+	close.c \
+	fork.c \
+	getids.c \
+	getpagesize.c \
+	read.c \
+	sysconf.c \
+	unlink.c \
+	usleep.c \
+	write.c
 
 # Prefix each section with its directory.
 ASSERT_SRCS		:= $(addprefix $(ASSERT_DIR)/,$(ASSERT_SRCS))
@@ -177,6 +244,7 @@ GETOPT_SRCS		:= $(addprefix $(GETOPT_DIR)/,$(GETOPT_SRCS))
 MATH_SRCS		:= $(addprefix $(MATH_DIR)/,$(MATH_SRCS))
 MMAN_SRCS		:= $(addprefix $(MMAN_DIR)/,$(MMAN_SRCS))
 RUNTIME_SRCS	:= $(addprefix $(RUNTIME_DIR)/,$(RUNTIME_SRCS))
+SCHED_SRCS		:= $(addprefix $(SCHED_DIR)/,$(SCHED_SRCS))
 SIGSETJMP_SRCS	:= $(addprefix $(SETJMP_DIR)/,$(SIGSETJMP_SRCS))
 SIGNAL_SRCS		:= $(addprefix $(SIGNAL_DIR)/,$(SIGNAL_SRCS))
 STACK_CHK_SRCS	:= $(addprefix $(STACK_CHK_DIR)/,$(STACK_CHK_SRCS))
@@ -185,5 +253,6 @@ STDIO_SRCS		:= $(addprefix $(STDIO_DIR)/,$(STDIO_SRCS))
 STDLIB_SRCS		:= $(addprefix $(STDLIB_DIR)/,$(STDLIB_SRCS))
 STRING_SRCS		:= $(addprefix $(STRING_DIR)/,$(STRING_SRCS))
 SYS_SRCS		:= $(addprefix $(SYS_DIR)/,$(SYS_SRCS))
+THREAD_SRCS		:= $(addprefix $(THREAD_DIR)/,$(THREAD_SRCS))
 TIME_SRCS		:= $(addprefix $(TIME_DIR)/,$(TIME_SRCS))
 UNISTD_SRCS		:= $(addprefix $(UNISTD_DIR)/,$(UNISTD_SRCS))

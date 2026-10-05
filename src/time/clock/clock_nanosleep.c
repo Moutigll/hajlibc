@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file clock_nanosleep.c
  * @brief Implementation of the clock_nanosleep() function.
  * @Created: 2026/09/28 06:48:08 by Moutig
- * @Updated: 2026/09/28 10:09:27 by Moutig
+ * @Updated: 2026/09/30 09:20:17 by Moutig
  *
  * Suspends the calling thread until the given duration (or
  * absolute deadline, if TIMER_ABSTIME is set) has elapsed on the

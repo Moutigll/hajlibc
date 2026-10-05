@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strerror.c
  * @brief Translate an error code to a human-readable string.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 18:28:44 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * This implementation returns a pointer to a static, read-only
  * string. It is therefore safe to call from multiple threads

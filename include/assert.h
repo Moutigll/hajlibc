@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file assert.h
  * @brief Assertions.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 16:14:25 by Moutig
+ * @Updated: 2026/09/30 09:20:14 by Moutig
  *
  * This header defines the assert() macro and the __assert_fail
  * function. When NDEBUG is defined, assert() becomes a no-op.

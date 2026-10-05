@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file auxv.c
  * @brief Implementation of getauxval().
  * @Created: 2026/09/28 11:22:19 by Moutig
- * @Updated: 2026/09/28 11:38:49 by Moutig
+ * @Updated: 2026/10/02 10:44:05 by Moutig
  *
  * The auxiliary vector is captured by _start and stored in
  * __haj_auxv. getauxval() simply walks this array.
@@ -25,11 +25,9 @@
 #include <sys/auxv.h>
 #include <stddef.h>
 #include <bits/os.h>
+#include <bits/crt.h>
 
 #ifdef HAJ_OS_LINUX
-
-extern char **environ;
-extern int __haj_argc;
 
 static const unsigned long *haj_find_auxv(void)
 {

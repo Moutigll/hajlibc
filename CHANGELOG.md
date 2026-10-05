@@ -9,11 +9,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Nothing yet
+- Constructors/destructors: `__haj_run_ctors` / `__haj_run_dtors` (called by `_start` and `exit`)
+- `mk/hajlibc.ld`: minimal linker script exposing `.init_array` / `.fini_array` boundaries
+- `unistd.h`: `write`
+- Test framework in `tests/framework/` (`TEST`, `ASSERT`, `ASSERT_EQ`, `ASSERT_STREQ`, colored report, filter)
+- First test case file: `tests/cases/ctype.c` (14 tests)
+- `make cov-build` / `make cov-clean` in the root Makefile
+- `HAJ_COV=1` support in `mk/config.mk` (adds `--coverage`, `COV_CFLAGS`, `COV_LDLIBS`)
+- Threading internals (headers only):
+- `bits/signal.h`: per-OS signal numbers and `SA_*` flags
+- `bits/clone.h`: Linux `clone()` flags and `HAJ_CLONE_THREAD_FLAGS`
+- `bits/futex.h`: Linux futex operations, modifiers, and `__haj_futex*` wrappers
+- `bits/tcb.h`: Thread Control Block layout and `__haj_tcbSelf`
+- `bits/thread.h`: atomics, CPU relax, `__haj_gettid`, thread list, `cpu_set_t`
+- `bits/tls.h`: TLS block layout, alloc/free, thread-area helpers
+- `sys/resource.h`: `getrlimit`, `setrlimit`, `getrlimit64`, `setrlimit64`, `getrusage`, `getpriority`, `setpriority`
+- `bits/resource.h`: per-OS `RLIMIT_*`, `RLIM_INFINITY`, `RLIM_SAVED_*`, `RUSAGE_*`
+- `rlim_t` / `rlim64_t` in `bits/types.h` (32-bit `rlim_t` only when `__HAJ_USE_32_OFFSET_BITS`)
+- `SYS_getrlimit`, `SYS_setrlimit`, `SYS_getrusage`, `SYS_prlimit64` in Linux x86_64/aarch64 syscall tables
+- `unistd.h` with POSIX minimums, feature flags, and declarations
+- `bits/sysconf.h`: unified `_SC_*` constants
+- `bits/limits.h`: full per-OS runtime limits (Linux / FreeBSD / Darwin / fallback)
+- `limits.h`: exposes all POSIX limits via `HAJ_*`
+- `unistd`: `sysconf`, `getpagesize`, `read`, `write`, `close`, `fork`, `getpid`
+- `bits/random.h`: per-OS `GRND_*`; `_getrandom` internal, `getrandom` public
+- Threading primitives:
+  - `src/thread/clone_x86_64.S`, `clone_aarch64.S`: `__haj_clone` wrapper (child stack setup + `fn(arg)` + `SYS_exit`)
+  - `src/thread/futex.c`: `__haj_futex*` wrappers (PRIVATE variants)
+  - `src/thread/gettid.c`: `__haj_gettid` per OS
+  - `src/thread/stack.c`: `__haj_threadAllocStack` / `__haj_threadFreeStack` with guard page
+- `Makefile`, `mk/sources.mk`: `THREAD_SRCS`, `THREAD_BASE_SRCS`
+- `mk/targets.mk`: per-arch clone source selection
+- Threading internals reorganized under `bits/thread/`: `pthreadtypes.h`, `pthread.h`, `clone.h`, `futex.h`, `tcb.h`, `stack.h`, `thread.h`, `tls.h`
+- `src/thread/clone_x86_64.S`, `clone_aarch64.S`: `__haj_clone3Raw` and `__haj_cloneLegacyRaw` wrappers (child stack setup, `fn(arg)`, `SYS_exit`); libgcc atomic fallbacks on aarch64
+- `src/thread/list.c`: global thread list + spinlock
+- `src/thread/stack.c`: bounded stack cache (`HAJ_STACK_CACHE_MAX`, `__haj_stackCacheFlush`)
+- `src/thread/start.c`: `__haj_threadStart` / `__haj_threadExit`
+- `src/thread/tcb.c`: `__haj_tcbCreate`
+- `Makefile`, `mk/sources.mk`, `mk/targets.mk`: `THREAD_SRCS`, `THREAD_BASE_SRCS`, per-arch clone selection
+- CPU detection split per-arch: `src/cpu/detect.c`, `features_x86_64.c`, `features_aarch64.c`
+- `struct hajCpuCache` now per-arch; `__haj_cpu` exported, filled once by `hajCpuDetect()`
+- aarch64: `hajCpuHasLse()`, `hajCpuHasNeon()`, `__haj_cpuHasLse` for atomics selection
+- C-side CRT startup: `__hajlibcStartMain` (parses initial stack, sets up globals, CPU detection, TCB, ctors, calls main)
+- `src/crt/start/tcb.c`: `__hajSetThreadRegister` installs the main thread TCB
+- `pthread.h`: POSIX threads API (`pthread_create`/`join`/`detach`/`self`/`exit`/`equal`, full `pthread_attr_*`)
+- `src/thread/public/`: public pthread implementations
+- `src/thread/clone.c`: `__haj_clone` dispatch (clone3 with clone fallback)
+- `src/thread/atomics_aarch64.S`: out-of-line atomics helpers with LSE / LL-SC runtime selection
+- `pthread_once` and TSD (`pthread_key_create` / `_delete` / `_setspecific` / `_getspecific`)
+- TSD destructors run at thread exit
+- `pthread_mutex_*` and `pthread_mutexattr_*` (NORMAL / RECURSIVE / ERRORCHECK, `timedlock`, robust, pshared, protocol, prioceiling)
+- `pthread_cond_*` (wait/timedwait/clockwait/signal/broadcast) and `pthread_condattr_*`
+- `unistd.h`: `usleep`, `unlink`; `stdlib.h`: `atexit`, `exit`
+- `useconds_t` in `bits/types.h`
+- Robust mutexes via kernel PI futexes, `pthread_mutex_consistent`
+- Process-shared pthread objects behind `HAJ_PTHREAD_PROCESS_SHARED`
+- `sys/wait.h` (`wait`, `waitpid`, `W*` macros) and `src/sys/waitpid.c`
+- `pthread_rwlock_*` / `pthread_rwlockattr_*`
+- `pthread_barrier_*` / `pthread_barrierattr_*`
+- `pthread_spin_*`
+- `signal.h` with the full POSIX signal API (`sigaction`, `signal`, `sigprocmask`, `sigpending`, `sigsuspend`, `sigaltstack`, `sigset_*`)
+- `raise`, `kill`, `tgkill`, `killpg`, `sigqueue`, `sigtimedwait`, `sigwaitinfo`, `sigwait`, `pthread_kill`, `pthread_sigmask`
+- `sig2str` / `str2sig` / `strsignal` / `psignal` / `psiginfo`
+- x86_64 `rt_sigreturn` trampoline (`sa_restorer`)
+- `unistd.h`: `getppid`, `gettid`, `getuid`, `getgid`
+- `pthread_cancel`, `pthread_testcancel`, `pthread_setcancelstate`, `pthread_setcanceltype`
+- `pthread_cleanup_push` / `pthread_cleanup_pop`
+- `PTHREAD_CANCELED`, `PTHREAD_NULL`
+- `sched.h` (`SCHED_*`, `struct sched_param`, `sched_yield`, affinity, priority helpers)
+- `bits/cpuSet.h`: `cpu_set_t` and `CPU_*` macros
+- `pthread_getschedparam`, `pthread_setschedparam`, `pthread_setschedprio`
+- C11 `<threads.h>` (thrd/mtx/cnd/tss/once) on top of pthreads
+- `pthread_atfork` and internal atfork handlers
+- `pthread_getcpuclockid`, `pthread_getschedparam`/`setschedparam`/`setschedprio`
+- `pthread_mutex_clocklock`, `pthread_rwlock_clockrdlock`/`clockwrlock`
+- `pthread_attr_setaffinity_np`/`getaffinity_np`, `pthread_setaffinity_np`/`getaffinity_np`
+- `pthread_mutex_getprioceiling`/`setprioceiling` (return `ENOTSUP`)
+- `bits/cpuSet.h` extracted from `tcb.h`
 
 ### Changed
 
-- Nothing yet
+- Renamed of hajlib in License header to `hajlibc` to match the library name
+- All `_start` entry points call `__haj_run_ctors()` before `main()`
+- `mk/hajlib.mk`: added `-T $(HAJ_ROOT)/hajlibc.ld`
+- `memcpy` / `memmove` / `memset` dispatchers use typed function pointers instead of `void *`
+- `mk/cross.mk`: `CC` now uses `?=` so the user can override the compiler
+- `mk/build.mk`: `.c` and `.S` compile rules include `$(COV_CFLAGS)`
+- `tests/main.c` now runs the test framework instead of printing a version
+- Opaque pthread types are now defined in `bits/thread/pthreadtypes.h` with size/alignment `_Static_assert` checks
+- `bits/types.h` includes `bits/thread/pthreadtypes.h` (removed inline pthread typedef placeholders)
+- Renamed `src/cpu/x86/cpuFeatures.c` to `src/cpu/features_x86_64.c`
+- `hajCpuHas*()` accessors no longer call detection lazily; detection runs once at startup from `hajCpuDetect()`
+- `src/crt/` split into `start/` (per-OS entry + C startup) and `exit/` (`exit`, `_exit`, `abort`, `atexit`, `cxa_*`)
+- `_start` is now a thin asm stub passing `sp` and `&main` to `__hajlibcStartMain`
+- `__dso_handle` moved to `src/crt/start/start.c`
+- `mk/targets.mk`: `CRT_START_SRCS` paths updated (`src/crt/start/<os>/...`)
+- `abort` now uses `raise(SIGABRT)` with proper unblock and reset
+- `src/unistd/getids.c` replaces `getpid.c`
 
 ### Fixed
 

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file strstok_r.c
  * @brief Tokenize a string into substrings based on delimiters, in a reentrant manner.
  * @Created: 2026/09/26 04:16:19 by Moutig
- * @Updated: 2026/09/26 04:16:42 by Moutig
+ * @Updated: 2026/09/30 09:20:16 by Moutig
  *
  * Splits a string into tokens separated by any byte in `delim`.
  * Delegates to strspn (skip leading delimiters) and strcspn

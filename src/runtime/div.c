@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Moutig <ele-lean@moutig.sh>
  *
- * This file is part of hajlib.
+ * This file is part of hajlibc.
  * See LICENSE for the full license text.
  */
 
@@ -10,7 +10,7 @@
  * @file div.c
  * @brief 64-bit division helpers for the compiler runtime.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/24 18:30:09 by Moutig
+ * @Updated: 2026/09/30 09:20:15 by Moutig
  *
  * On 32-bit architectures (i386, ARM 32-bit, MIPS 32-bit, ...),
  * the CPU cannot divide a 64-bit integer by another in a single

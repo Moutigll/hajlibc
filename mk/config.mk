@@ -71,12 +71,11 @@ HAJ_COMMON_CFLAGS := \
 	-ffreestanding \
 	-fno-builtin \
 	-fno-stack-protector \
-	-fno-asynchronous-unwind-tables \
-	-fno-unwind-tables \
 	-fno-pie \
 	-fno-pic \
 	-U_FORTIFY_SOURCE \
-	-D_FORTIFY_SOURCE=0
+	-D_FORTIFY_SOURCE=0 \
+	-O3
 
 # Public flags (for users of hajlib)
 HAJ_CPPFLAGS	:= -I$(HAJ_INCLUDE)

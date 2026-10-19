@@ -32,6 +32,7 @@ STACK_CHK_DIR	:= $(SRC_DIR)/stack_chk
 STAT_DIR		:= $(SRC_DIR)/stat
 STDIO_DIR		:= $(SRC_DIR)/stdio
 STDLIB_DIR		:= $(SRC_DIR)/stdlib
+MALLOC_DIR		:= $(STDLIB_DIR)/malloc
 STRING_DIR		:= $(SRC_DIR)/string
 SYS_DIR			:= $(SRC_DIR)/sys
 THREAD_DIR		:= $(SRC_DIR)/thread
@@ -132,8 +133,28 @@ STAT_SRCS :=
 STDIO_SRCS :=
 
 # stdlib-
-STDLIB_SRCS :=
+STDLIB_SRCS := \
+	getenv.c \
+	setenv.c \
 
+MALLOC_SRCS := \
+	alloc.c \
+	arena.c \
+	bits.c \
+	block.c \
+	heap.c \
+	init.c \
+	malloc.c \
+	message.c \
+	meta.c \
+	options.c \
+	page.c \
+	profile.c \
+	random.c \
+	show.c \
+	stats.c \
+	theap.c \
+	unix.c
 # string
 STRING_SRCS := \
 	mem/memcpy.c \
@@ -251,6 +272,7 @@ STACK_CHK_SRCS	:= $(addprefix $(STACK_CHK_DIR)/,$(STACK_CHK_SRCS))
 STAT_SRCS		:= $(addprefix $(STAT_DIR)/,$(STAT_SRCS))
 STDIO_SRCS		:= $(addprefix $(STDIO_DIR)/,$(STDIO_SRCS))
 STDLIB_SRCS		:= $(addprefix $(STDLIB_DIR)/,$(STDLIB_SRCS))
+MALLOC_SRCS		:= $(addprefix $(MALLOC_DIR)/,$(MALLOC_SRCS))
 STRING_SRCS		:= $(addprefix $(STRING_DIR)/,$(STRING_SRCS))
 SYS_SRCS		:= $(addprefix $(SYS_DIR)/,$(SYS_SRCS))
 THREAD_SRCS		:= $(addprefix $(THREAD_DIR)/,$(THREAD_SRCS))

@@ -57,6 +57,7 @@ ALL_SRCS := \
 	$(CTYPE_SRCS) \
 	$(SCHED_SRCS) \
 	$(STDLIB_SRCS) \
+	$(MALLOC_SRCS) \
 	$(STDIO_SRCS) \
 	$(MATH_SRCS) \
 	$(THREAD_SRCS) \
@@ -142,5 +143,45 @@ clean:
 
 fclean: clean
 	@rm -f $(NAME)
+	@rm -f $(MALLOC_TARGET) $(MALLOC_LINK)
 
 re: fclean all
+
+# --- Malloc preload library build ---
+
+HOSTTYPE    ?= $(shell uname -m)_$(shell uname -s)
+MALLOC_INC  := -Iinclude/malloc. -I$(MALLOC_DIR)/include
+
+MALLOC_CFLAGS := \
+	-ffreestanding \
+	-fno-builtin \
+	-fno-stack-protector \
+	-fno-asynchronous-unwind-tables \
+	-fno-unwind-tables \
+	-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 \
+	-DHMALLOC_HOSTED \
+	-DHMALLOC_SHARED_LIB \
+	-DHMALLOC_SHARED_LIB_EXPORT \
+	-fPIC \
+	-fvisibility=hidden \
+	-ftls-model=initial-exec \
+	-Wall -Wextra -Werror -Wpedantic \
+	-O3
+
+MALLOC_LDFLAGS := -shared -pthread -Wl,--build-id=none
+
+MALLOC_TARGET := libft_malloc_$(HOSTTYPE).so
+MALLOC_LINK   := libft_malloc.so
+
+$(MALLOC_TARGET): $(MALLOC_SRCS)
+	$(CC) $(MALLOC_CFLAGS) $(MALLOC_INC) -o $@ $^ $(MALLOC_LDFLAGS)
+
+$(MALLOC_LINK): $(MALLOC_TARGET)
+	ln -sf $< $@
+
+malloc: $(MALLOC_LINK)
+
+clean-malloc:
+	rm -f $(MALLOC_TARGET) $(MALLOC_LINK)
+
+.PHONY: malloc clean-malloc

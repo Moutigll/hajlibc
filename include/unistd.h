@@ -10,7 +10,7 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/10/03 16:21:45 by Moutig
+ * @Updated: 2026/10/16 08:20:55 by Moutig
  *
  * @TODO: Add a description of the file.
  */
@@ -19,9 +19,11 @@
 #ifndef _UNISTD_H
 # define _UNISTD_H
 
+#include "stdarg.h"
 # include <stddef.h>
 # include <sys/types.h>
 # include <bits/sysconf.h>
+#include <bits/syscall.h>
 
 # ifdef __cplusplus
 extern "C" {
@@ -127,6 +129,9 @@ extern "C" {
 # define _POSIX_ADVISORY_INFO			1
 # define _POSIX_RAW_SOCKETS				1
 
+
+#define STDOUT_FILENO	1
+#define STDERR_FILENO	2
 
 
 
@@ -268,6 +273,42 @@ int unlink(const char *path);
  */
 __HAJ_NORETURN
 void _exit(int status);
+
+#ifdef __HAJ_SOURCE
+/* syscall */
+/**
+ * @brief Perform a system call with the specified number and arguments.
+ *
+ * This function allows direct interaction with the kernel by invoking
+ * a system call with the specified number and up to six arguments.
+ *
+ * @param num The system call number.
+ * @param arg1 The first argument for the system call.
+ * @param arg2 The second argument for the system call.
+ * @param arg3 The third argument for the system call.
+ * @param arg4 The fourth argument for the system call.
+ * @param arg5 The fifth argument for the system call.
+ * @param arg6 The sixth argument for the system call.
+ * @return The return value of the system call, or -1 on error (with errno set).
+ */
+__HAJ_UNUSED
+static long	syscall(long num, ...) {
+	va_list ap;
+	long arg1, arg2, arg3, arg4, arg5, arg6;
+
+	va_start(ap, num);
+	arg1 = va_arg(ap, long);
+	arg2 = va_arg(ap, long);
+	arg3 = va_arg(ap, long);
+	arg4 = va_arg(ap, long);
+	arg5 = va_arg(ap, long);
+	arg6 = va_arg(ap, long);
+	va_end(ap);
+
+	return (__haj_syscall6(num, arg1, arg2, arg3, arg4, arg5, arg6));
+}
+
+#endif /* __HAJ_SOURCE */
 
 # ifdef __cplusplus
 }

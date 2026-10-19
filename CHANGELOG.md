@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `stdatomic.h` (`memory_order`, `atomic_*` types and operations)
 - `strerror_r`
 - `SYS_getuid` / `SYS_getgid` for Linux aarch64
+- New `<malloc.h>` public header: `malloc`/`free`/`realloc`/`calloc`
+  plus the `h*` extension API (`hmallocAligned`, `husableSize`,
+  `hgoodSize`, `hmStatsGet`, `hmProfilerStart`, `show_alloc_mem`,
+  callbacks, runtime options)
+- `<stdlib.h>` now declares the allocator entry points and the
+  environment API (`getenv`, `setenv`, `unsetenv`, `putenv`)
+- `<unistd.h>` gains `STDOUT_FILENO` / `STDERR_FILENO` and a raw
+  `syscall()` wrapper
+- `<stdatomic.h>` dispatches on the compiler: GCC uses `__atomic_*`,
+  Clang uses `__c11_atomic_*` (its `__atomic_*` reject `_Atomic(T) *`)
+- New `make malloc` target builds `libft_malloc_$(ARCH)_$(OS).so`
+  and its `libft_malloc.so` symlink for `LD_PRELOAD`
+- `.gitignore` now covers allocator test binaries, benchmark output,
+  and root-level scratch files
 
 ### Changed
 

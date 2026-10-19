@@ -10,18 +10,28 @@
  * @file stdatomic.h
  * @brief C11 atomic operations and types.
  * @Created: 2026/10/05 15:35:29 by Moutig
- * @Updated: 2026/10/05 16:13:20 by Moutig
+ * @Updated: 2026/10/05 16:38:02 by Moutig
  *
- * Full C11 <stdatomic.h> implementation on top of the GCC/Clang
- * __atomic builtins. No external function is required: every
- * operation lowers to a compiler builtin, which becomes either
- * a lock-free instruction or a small call to libgcc (for the
- * rare 128-bit cases).
+ * Full C11 <stdatomic.h> implementation on top of the GCC and
+ * Clang atomic builtins. No external function is required:
+ * every operation lowers to a compiler builtin, which becomes
+ * either a lock-free instruction or a small call to libgcc
+ * (for the rare 128-bit cases).
  *
- * The types are declared with the _Atomic qualifier, which the
- * compiler treats as a distinct type in C11 and as a
- * transparent alias in older dialects. The builtins accept
- * pointers to either form.
+ * The two compilers do not expose the same builtins for the
+ * pointer argument:
+ *
+ *   - GCC's __atomic_* accept both `T *` and `_Atomic(T) *`
+ *     and are therefore usable directly.
+ *
+ *   - Clang's __atomic_* are stricter and reject
+ *     `_Atomic(T) *`, so we use Clang's __c11_atomic_*
+ *     builtins, which are exactly what Clang's own
+ *     <stdatomic.h> uses.
+ *
+ * The types are declared with the _Atomic qualifier, which
+ * the compiler treats as a distinct type in C11 and as a
+ * transparent alias in older dialects.
  *
  * Reference: ISO/IEC 9899:2011, section 7.17.
  */
@@ -138,7 +148,93 @@ typedef struct {
  */
 # define ATOMIC_VAR_INIT(value)	(value)
 
-/* ----- Generic operations ----- */
+/* ----- Compiler dispatch ----- */
+
+/*
+ * The two compilers do not agree on whether the __atomic_*
+ * builtins accept `_Atomic(T) *`. GCC does, Clang does not.
+ * Clang provides __c11_atomic_* which are exactly the
+ * builtins used by its own <stdatomic.h>, and which accept
+ * `_Atomic(T) *` by design. We dispatch on the compiler and
+ * define the same public macro names either way.
+ */
+#if defined(__clang__)
+
+/* ----- Clang: __c11_atomic_* ----- */
+
+/**
+ * @brief Initialize an atomic object (non-atomically).
+ *
+ * Must not be called concurrently with any atomic access to
+ * the same object.
+ */
+# define atomic_init(obj, value) \
+	__c11_atomic_init((obj), (value))
+
+/**
+ * @brief Full memory fence for inter-thread ordering.
+ */
+# define atomic_thread_fence(order) \
+	__c11_atomic_thread_fence((order))
+
+/**
+ * @brief Compiler-only fence for signal handlers.
+ */
+# define atomic_signal_fence(order) \
+	__c11_atomic_signal_fence((order))
+
+/**
+ * @brief Return non-zero if the object's operations are lock-free.
+ */
+# define atomic_is_lock_free(obj) \
+	__c11_atomic_is_lock_free(sizeof(*(obj)))
+
+# define atomic_load_explicit(obj, order) \
+	__c11_atomic_load((obj), (order))
+
+# define atomic_store_explicit(obj, val, order) \
+	__c11_atomic_store((obj), (val), (order))
+
+# define atomic_exchange_explicit(obj, val, order) \
+	__c11_atomic_exchange((obj), (val), (order))
+
+# define atomic_compare_exchange_strong_explicit(obj, expected, desired, success, failure) \
+	__c11_atomic_compare_exchange_strong((obj), (expected), (desired), \
+										 (success), (failure))
+
+# define atomic_compare_exchange_weak_explicit(obj, expected, desired, success, failure) \
+	__c11_atomic_compare_exchange_weak((obj), (expected), (desired), \
+									   (success), (failure))
+
+# define atomic_fetch_add_explicit(obj, val, order) \
+	__c11_atomic_fetch_add((obj), (val), (order))
+
+# define atomic_fetch_sub_explicit(obj, val, order) \
+	__c11_atomic_fetch_sub((obj), (val), (order))
+
+# define atomic_fetch_or_explicit(obj, val, order) \
+	__c11_atomic_fetch_or((obj), (val), (order))
+
+# define atomic_fetch_xor_explicit(obj, val, order) \
+	__c11_atomic_fetch_xor((obj), (val), (order))
+
+# define atomic_fetch_and_explicit(obj, val, order) \
+	__c11_atomic_fetch_and((obj), (val), (order))
+
+/*
+ * Clang has no __c11_atomic_test_and_set / clear. We
+ * implement them with an exchange and a store on the inner
+ * _Bool, which is exactly what the flag is.
+ */
+# define atomic_flag_test_and_set_explicit(flag, order) \
+	__c11_atomic_exchange(&(flag)->__val, 1, (order))
+
+# define atomic_flag_clear_explicit(flag, order) \
+	__c11_atomic_store(&(flag)->__val, 0, (order))
+
+#else  /* GCC */
+
+/* ----- GCC: __atomic_* ----- */
 
 /**
  * @brief Initialize an atomic object (non-atomically).
@@ -148,13 +244,6 @@ typedef struct {
  */
 # define atomic_init(obj, value) \
 	__atomic_store_n((obj), (value), __ATOMIC_RELAXED)
-
-/**
- * @brief Tell the compiler that a value carries a data dependency.
- *
- * Purely a hint. Returns its argument unchanged.
- */
-# define kill_dependency(y)	(y)
 
 /**
  * @brief Full memory fence for inter-thread ordering.
@@ -174,22 +263,14 @@ typedef struct {
 # define atomic_is_lock_free(obj) \
 	__atomic_is_lock_free(sizeof(*(obj)), (obj))
 
-/* ----- Load ----- */
-
 # define atomic_load_explicit(obj, order) \
 	__atomic_load_n((obj), (order))
-
-/* ----- Store ----- */
 
 # define atomic_store_explicit(obj, val, order) \
 	__atomic_store_n((obj), (val), (order))
 
-/* ----- Exchange ----- */
-
 # define atomic_exchange_explicit(obj, val, order) \
 	__atomic_exchange_n((obj), (val), (order))
-
-/* ----- Compare and swap ----- */
 
 # define atomic_compare_exchange_strong_explicit(obj, expected, desired, success, failure) \
 	__atomic_compare_exchange_n((obj), (expected), (desired), 0, \
@@ -198,8 +279,6 @@ typedef struct {
 # define atomic_compare_exchange_weak_explicit(obj, expected, desired, success, failure) \
 	__atomic_compare_exchange_n((obj), (expected), (desired), 1, \
 								(success), (failure))
-
-/* ----- Arithmetic ----- */
 
 # define atomic_fetch_add_explicit(obj, val, order) \
 	__atomic_fetch_add((obj), (val), (order))
@@ -215,6 +294,23 @@ typedef struct {
 
 # define atomic_fetch_and_explicit(obj, val, order) \
 	__atomic_fetch_and((obj), (val), (order))
+
+# define atomic_flag_test_and_set_explicit(flag, order) \
+	__atomic_test_and_set(&(flag)->__val, (order))
+
+# define atomic_flag_clear_explicit(flag, order) \
+	__atomic_clear(&(flag)->__val, (order))
+
+#endif  /* __clang__ */
+
+/* ----- kill_dependency ----- */
+
+/**
+ * @brief Tell the compiler that a value carries a data dependency.
+ *
+ * Purely a hint. Returns its argument unchanged.
+ */
+# define kill_dependency(y)	(y)
 
 /* ----- Sequential consistency convenience macros ----- */
 
@@ -251,14 +347,6 @@ typedef struct {
 
 # define atomic_fetch_and(obj, val) \
 	atomic_fetch_and_explicit((obj), (val), memory_order_seq_cst)
-
-/* ----- atomic_flag operations ----- */
-
-# define atomic_flag_test_and_set_explicit(flag, order) \
-	__atomic_test_and_set((flag), (order))
-
-# define atomic_flag_clear_explicit(flag, order) \
-	__atomic_clear((flag), (order))
 
 # define atomic_flag_test_and_set(flag) \
 	atomic_flag_test_and_set_explicit((flag), memory_order_seq_cst)

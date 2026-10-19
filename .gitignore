@@ -6,11 +6,19 @@ objs/
 *.dylib
 *.dll
 *.exe
+*.out
 
 /build/
 test/build/
 test/**/build/
-*.out
+tests/build/
+
+benchmark/malloc/bin/
+benchmark/malloc/results/
+benchmark/malloc/report.html
+benchmark/malloc/scores.json
+
+releases/
 
 .vscode/*
 !.vscode/settings.json
@@ -22,15 +30,12 @@ test/**/build/
 .project
 .settings/
 .cproject
-
-.DS_Store
-Thumbs.db
-desktop.ini
-
+compile_flags.txt
 compile_commands.json
 .cache/
 clangd/
 .clangd/
-compile_flags.txt
-tests/build
-releases
+
+.DS_Store
+Thumbs.db
+desktop.ini

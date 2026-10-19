@@ -26,6 +26,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and its `libft_malloc.so` symlink for `LD_PRELOAD`
 - `.gitignore` now covers allocator test binaries, benchmark output,
   and root-level scratch files
+- **Core allocator** (`src/stdlib/malloc/`): mmap-only, no libc
+  dependency, LD_PRELOAD-ready
+- **Arenas**: 256 MiB aligned, 64 KiB-sliced, 4096 slices per arena,
+  with a two-level binned bitmap (chunkmap + chunkmap_bins) for
+  O(1) slice allocation
+- **Pages**: 3 size classes (64 KiB / 512 KiB / 4 MiB) with lazy
+  free-list extension, per-page owner + cross-thread free-list,
+  cross-thread reclaim via `pages_abandoned[bin]` bitmap and
+  heap-wide `abandonedCountBin[]` counters
+- **Deferred purge**: `madvise(MADV_DONTNEED)` on abandoned arena
+  slices after a TTL (`purgeExpire`), THP-aware (2 MiB-aligned runs)
+- **Aligned allocations**: `hmallocAligned`, `posix_memalign`,
+  `aligned_alloc`, `memalign`, `valloc`, `pvalloc` with interior
+  pointer tracking
+- **C++ interop**: `operator new` / `operator delete` overrides,
+  including C++14 sized and C++17 aligned variants
+- **Fast path**: lock-free for small blocks on the owner thread;
+  no atomics, no locks, no syscalls
+- **Options**: `HMALLOC_*` env vars (SHOW_ERRORS, SHOW_STATS,
+  VERBOSE, PURGE_DELAY, ARENA_RESERVE, PAGE_FULL_RETAIN,
+  GUARDED_SAMPLE_RATE, PERTURB, CHECK, TRACE)
+- **Introspection**: `hmStatsGet`, `hmStatsGetJson`, `hmStatsPrint`,
+  `show_alloc_mem`, `show_alloc_mem_ex`, `hmProcessInfo`
+- **Profiler**: sampling API (`hmProfile`, `hmProfilerStart`,
+  `hmProfilerStop`), opt-in at compile time (`HMALLOC_PROFILE`)
+- **Callbacks**: `hmRegisterOutput`, `hmRegisterError`,
+  `hmRegisterDeferredFree`
 
 ### Changed
 

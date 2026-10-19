@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Memory Allocator Benchmark Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+	:root {
+		--base: {{ palette.base }}; --mantle: {{ palette.mantle }}; --crust: {{ palette.crust }};
+		--surface0: {{ palette.surface0 }}; --surface1: {{ palette.surface1 }}; --surface2: {{ palette.surface2 }};
+		--overlay0: {{ palette.overlay0 }}; --overlay1: {{ palette.overlay1 }};
+		--subtext0: {{ palette.subtext0 }}; --subtext1: {{ palette.subtext1 }}; --text: {{ palette.text }};
+		--lavender: {{ palette.lavender }}; --blue: {{ palette.blue }}; --green: {{ palette.green }};
+		--yellow: {{ palette.yellow }}; --peach: {{ palette.peach }}; --red: {{ palette.red }};
+		--mauve: {{ palette.mauve }}; --teal: {{ palette.teal }}; --pink: {{ palette.pink }};
+		--best:  {{ best_color }};
+		--worst: {{ worst_color }};
+	}
+	* { box-sizing: border-box; }
+	html, body {
+		margin: 0; padding: 0; background: var(--base); color: var(--text);
+		font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+		font-size: 14px; line-height: 1.5;
+	}
+	header {
+		background: var(--mantle); padding: 22px 32px;
+		border-bottom: 1px solid var(--surface0);
+		position: sticky; top: 0; z-index: 100;
+	}
+	header h1 { margin: 0 0 6px 0; font-size: 21px; color: var(--lavender); font-weight: 600; }
+	header .subtitle { color: var(--subtext0); font-size: 13px; }
+	.allocs-badge { display: inline-flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+	.alloc-badge {
+		padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+		border: 1px solid currentColor;
+	}
+	main { max-width: 1500px; margin: 0 auto; padding: 22px 32px 80px; }
+	h2 {
+		color: var(--mauve); font-size: 17px; margin: 34px 0 12px; font-weight: 600;
+		border-left: 3px solid var(--mauve); padding-left: 10px;
+	}
+	.hint { color: var(--subtext0); font-size: 12.5px; margin: 0 0 14px 0; }
+	.warning {
+		background: rgba(249, 226, 175, 0.08);
+		border: 1px solid {{ palette.yellow }};
+		border-left: 4px solid {{ palette.yellow }};
+		padding: 12px 16px; border-radius: 8px; margin: 12px 0 20px;
+		color: {{ palette.yellow }}; font-size: 13px;
+	}
+	.warning code {
+		background: var(--surface0); padding: 2px 6px; border-radius: 4px;
+		color: var(--text); font-size: 11.5px; margin: 0 2px;
+	}
+	.chart-grid {
+		display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+		gap: 18px;
+	}
+	.chart-card {
+		background: var(--mantle); border: 1px solid var(--surface0);
+		border-radius: 10px; padding: 14px 18px 12px;
+		transition: border-color .2s;
+	}
+	.chart-card:hover { border-color: var(--surface2); }
+	.chart-card.full-width { grid-column: 1 / -1; }
+	.chart-card h4 {
+		margin: 0 0 12px 0; font-size: 13px; color: var(--subtext1);
+		font-weight: 600; word-break: break-word;
+	}
+	.chart-container { position: relative; height: 320px; }
+	.chart-container.hbar { height: 220px; }
+	.chart-container.tall { height: 400px; }
+
+	.info-icon {
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 15px; height: 15px; border-radius: 50%;
+		background: var(--surface1); color: var(--subtext1);
+		font-size: 10px; font-weight: 700; cursor: help; position: relative;
+		margin-left: 6px; vertical-align: middle; font-style: normal;
+		transition: background .15s, color .15s; user-select: none;
+	}
+	.info-icon:hover { background: var(--blue); color: var(--crust); }
+	.info-icon::after {
+		content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px);
+		transform: translateX(-50%); background: var(--crust); color: var(--text);
+		padding: 10px 12px; border-radius: 8px; border: 1px solid var(--surface2);
+		white-space: normal; width: 280px; font-size: 11.5px; font-weight: 400;
+		line-height: 1.5; text-align: left; z-index: 1000;
+		opacity: 0; pointer-events: none; transition: opacity .15s;
+		box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+	}
+	.info-icon:hover::after { opacity: 1; }
+
+	.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 14px; }
+	.cat-btn {
+		background: var(--surface0); color: var(--subtext1);
+		border: 1px solid var(--surface1); border-radius: 6px;
+		padding: 6px 12px; font-size: 12px; cursor: pointer;
+		transition: all .15s; font-family: inherit;
+	}
+	.cat-btn:hover { background: var(--surface1); color: var(--text); }
+	.cat-btn.active {
+		background: var(--blue); color: var(--crust);
+		border-color: var(--blue); font-weight: 600;
+	}
+	.cat-btn .count { opacity: 0.7; font-size: 11px; margin-left: 4px; }
+
+	.table-wrap {
+		background: var(--mantle); border-radius: 10px;
+		overflow: auto; max-height: 900px;
+	}
+	table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+	th, td {
+		padding: 9px 12px; text-align: left;
+		border-bottom: 1px solid var(--surface0);
+	}
+	th {
+		background: var(--crust); color: var(--subtext1);
+		font-weight: 600; font-size: 12px;
+		text-transform: uppercase; letter-spacing: 0.04em;
+		position: sticky; top: 0;
+	}
+	tr:last-child td { border-bottom: none; }
+	tr:hover td { background: var(--surface0); }
+	td.test-name {
+		font-family: 'JetBrains Mono', 'Consolas', monospace;
+		color: var(--lavender); font-size: 12px;
+	}
+	td .primary { color: var(--green); font-weight: 600; }
+	td .sub { color: var(--overlay1); font-size: 11px; display: block; }
+	/* --- Summary table: best (dark green) / worst (dark red) --- */
+	td .primary.best  { color: var(--best); }
+	td .primary.worst { color: var(--worst); }
+	td.na { color: var(--overlay0); text-align: center; font-style: italic; }
+	.unmeasurable td.test-name { color: var(--overlay0); }
+	.section-hidden { display: none; }
+
+	footer {
+		text-align: center; color: var(--overlay0); padding: 30px;
+		font-size: 12px; border-top: 1px solid var(--surface0); margin-top: 40px;
+	}
+	footer a { color: var(--blue); text-decoration: none; }
+	@media (max-width: 720px) {
+		.chart-grid { grid-template-columns: 1fr; }
+		main { padding: 16px; }
+		header { padding: 16px; }
+	}
+</style>
+</head>
+<body>
+
+<header>
+	<h1>Memory Allocator Benchmark</h1>
+	<div class="subtitle">Comparative analysis · lower is better for time and memory</div>
+	<div class="allocs-badge">
+		{% for a in allocators %}
+		<span class="alloc-badge" style="color:{{ alloc_colors[a] }}">{{ a }}</span>
+		{% endfor %}
+	</div>
+</header>
+
+<main>
+
+	{% if unmeasurable %}
+	<div class="warning">
+		⚠️ <strong>Sub-nanosecond timing</strong> — for these tests, the mean time per
+		operation is below the resolution of the wall clock. They are still charted,
+		but using throughput (ops/s) instead of ns/op:
+		{% for t in unmeasurable %}<code>{{ t }}</code>{% endfor %}
+	</div>
+	{% endif %}
+
+	<h2>Overview</h2>
+	<p class="hint">
+		Hover the
+		<span class="info-icon" data-tip="An info icon next to any chart title explains what the metric means and how to read it.">i</span>
+		icon on any chart title for an explanation.
+	</p>
+	<div class="chart-grid" id="overview-charts"></div>
+
+	<h2>Per-test comparison</h2>
+	<p class="hint">
+		Each bar is sorted by value. For sub-nanosecond tests, throughput is used
+		instead of ns/op. Logarithmic scale.
+	</p>
+	<div class="filters" id="filters">
+		<button class="cat-btn active" data-cat="all">All</button>
+		{% for cat, tests in tests_by_category.items() %}
+		<button class="cat-btn" data-cat="{{ cat }}" title="{{ cat_descs.get(cat, '') }}">
+			{{ cat_labels.get(cat, cat) }} <span class="count">{{ tests|length }}</span>
+		</button>
+		{% endfor %}
+	</div>
+	<div class="chart-grid" id="category-charts"></div>
+
+	{% if ts_charts %}
+	<h2>Memory over time</h2>
+	<p class="hint">Resident Set Size (RSS) sampled every 4 ms while the test runs.</p>
+	<div class="chart-grid" id="ts-charts"></div>
+	{% endif %}
+
+	<h2>Summary table</h2>
+	<p class="hint">
+		<span style="color:var(--best);font-weight:600">Green</span> = best time on
+		the row, <span style="color:var(--worst);font-weight:600">red</span> = worst time.
+	</p>
+	<div class="table-wrap">
+		<table>
+			<thead>
+				<tr>
+					<th>Test</th>
+					{% for a in allocators %}
+					<th style="color:{{ alloc_colors[a] }}">{{ a }}</th>
+					{% endfor %}
+				</tr>
+			</thead>
+			<tbody>
+				{% for row in table_rows %}
+				<tr class="{{ 'unmeasurable' if row.unmeasurable else '' }}">
+					<td class="test-name">{{ row.test }}</td>
+					{% for cell in row.cells %}
+					{% if cell %}
+					<td>
+						<span class="primary {{ cell.cls }}">{{ cell.time_ns }} ns/op</span>
+						<span class="sub">{{ cell.peak_kb }} KB peak · {{ cell.ops }} ops · {{ cell.ops_per_sec }} ops/s</span>
+					</td>
+					{% else %}
+					<td class="na">—</td>
+					{% endif %}
+					{% endfor %}
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+
+</main>
+
+<footer>
+	Generated by <code>analyze.py</code> · Theme
+	<a href="https://github.com/catppuccin/catppuccin" target="_blank">Catppuccin Mocha</a> · Charts
+	<a href="https://www.chartjs.org/" target="_blank">Chart.js</a>
+</footer>
+
+<script>
+const CHARTS		= {{ charts|tojson }};
+const TS_CHARTS = {{ ts_charts|tojson }};
+const PALETTE	 = {{ palette|tojson }};
+const TERMS		 = {{ terms|tojson }};
+
+Chart.defaults.color = PALETTE.subtext1;
+Chart.defaults.borderColor = PALETTE.surface0;
+Chart.defaults.font.family = "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif";
+Chart.defaults.font.size = 11;
+
+const GRID_COLOR = PALETTE.surface0;
+const TICK_COLOR = PALETTE.overlay1;
+
+/* ---------- Number formatting ---------- */
+function fmtNum(v) {
+	if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '—';
+	const abs = Math.abs(v);
+	if (abs === 0) return '0';
+	if (abs >= 1e9) return (v / 1e9).toFixed(2) + ' G';
+	if (abs >= 1e6) return (v / 1e6).toFixed(2) + ' M';
+	if (abs >= 1e3) return (v / 1e3).toFixed(2) + ' K';
+	if (abs >= 100) return v.toFixed(1);
+	if (abs >= 10)	return v.toFixed(2);
+	if (abs >= 1)	 return v.toFixed(3);
+	if (abs >= 0.1) return v.toFixed(4);
+	if (abs >= 0.01) return v.toFixed(5);
+	if (abs >= 0.001) return v.toFixed(6);
+	return v.toExponential(3);
+}
+
+function fmtAxis(v) {
+	const abs = Math.abs(v);
+	if (abs === 0) return '0';
+	if (abs >= 1e9) return (v / 1e9).toFixed(0) + 'G';
+	if (abs >= 1e6) return (v / 1e6).toFixed(0) + 'M';
+	if (abs >= 1e3) return (v / 1e3).toFixed(0) + 'K';
+	if (abs >= 1)	 return v.toFixed(abs < 10 ? 1 : 0);
+	if (abs >= 0.01) return v.toFixed(3);
+	if (abs >= 0.001) return v.toFixed(4);
+	return v.toExponential(2);
+}
+
+/* ---------- Card builder ---------- */
+function buildCard(cfg) {
+	const card = document.createElement('div');
+	card.className = 'chart-card';
+	card.dataset.cat = cfg.category || '';
+	if (cfg.fullWidth) card.classList.add('full-width');
+
+	const h4 = document.createElement('h4');
+	h4.textContent = cfg.title;
+
+	if (cfg.metric && TERMS[cfg.metric]) {
+		const t = TERMS[cfg.metric];
+		const info = document.createElement('span');
+		info.className = 'info-icon';
+		info.textContent = 'i';
+		info.setAttribute('data-tip', t.title + ' — ' + t.desc);
+		h4.appendChild(info);
+	}
+	card.appendChild(h4);
+
+	const container = document.createElement('div');
+	container.className = 'chart-container';
+	if (cfg.height_px) {
+		container.style.height = cfg.height_px + 'px';
+	} else if (cfg.kind === 'hbar') {
+		container.classList.add('hbar');
+	} else if (cfg.tall) {
+		container.classList.add('tall');
+	}
+	const canvas = document.createElement('canvas');
+	canvas.id = cfg.id;
+	container.appendChild(canvas);
+	card.appendChild(container);
+
+	return card;
+}
+
+/* ---------- Common options ---------- */
+function commonOptions() {
+	return {
+		responsive: true,
+		maintainAspectRatio: false,
+		animation: { duration: 350 },
+		plugins: {
+			legend: {
+				position: 'top',
+				labels: {
+					color: PALETTE.subtext1, boxWidth: 12, boxHeight: 12,
+					padding: 12, font: { size: 11 }
+				}
+			},
+			tooltip: {
+				backgroundColor: PALETTE.crust,
+				titleColor: PALETTE.lavender,
+				bodyColor: PALETTE.text,
+				borderColor: PALETTE.surface1,
+				borderWidth: 1,
+				padding: 10, cornerRadius: 6,
+				titleFont: { size: 12, weight: '600' },
+				bodyFont: { size: 12 },
+			}
+		}
+	};
+}
+
+/* ---------- Horizontal grouped bar (normalized overview) ---------- */
+function renderHBarGrouped(cfg) {
+	const el = document.getElementById(cfg.id);
+	if (!el) return;
+	const opts = commonOptions();
+	opts.indexAxis = 'y';
+	opts.layout = { padding: { right: 24, left: 8 } };
+	opts.interaction = { mode: 'nearest', axis: 'y', intersect: false };
+	opts.scales = {
+		x: {
+			type: cfg.logScale ? 'logarithmic' : 'linear',
+			min: cfg.logScale ? 0.95 : 0,
+			grid: { color: GRID_COLOR, drawBorder: false },
+			ticks: {
+				color: TICK_COLOR, font: { size: 10 },
+				callback: v => {
+					if (v < 1.01) return '1×';
+					if (v < 10) return v.toFixed(1) + '×';
+					return Math.round(v) + '×';
+				}
+			},
+			title: {
+				display: true, text: cfg.xLabel || '',
+				color: PALETTE.subtext0, font: { size: 11 }
+			}
+		},
+		y: {
+			grid: { display: false },
+			ticks: {
+				color: PALETTE.text, font: { size: 10 },
+				autoSkip: false,
+			}
+		}
+	};
+	opts.plugins.datalabels = { display: false };
+	opts.plugins.tooltip.callbacks = {
+		label: (ctx) => {
+			const v = ctx.parsed.x;
+			const alloc = ctx.dataset.label;
+			if (v == null) return null;
+			if (v < 1.01) return `${alloc}: best (1.00×)`;
+			return `${alloc}: ${v.toFixed(2)}× slower`;
+		}
+	};
+
+	new Chart(el, {
+		type: 'bar',
+		data: {
+			labels: cfg.labels,
+			datasets: cfg.datasets.map(d => ({
+				label: d.label,
+				data: d.data,
+				backgroundColor: d.borderColor + 'cc',
+				borderColor: d.borderColor,
+				borderWidth: 1,
+				borderRadius: 3,
+			}))
+		},
+		options: opts,
+	});
+}
+
+/* ---------- Horizontal bar (per-test) ---------- */
+function renderHBar(cfg) {
+	const el = document.getElementById(cfg.id);
+	if (!el) return;
+	const useLog = cfg.logScale !== false;
+	const positive = cfg.values.filter(v => v > 0);
+	const minVal = positive.length ? Math.min(...positive) : 1;
+	const unit = cfg.unit || '';
+
+	const opts = commonOptions();
+	opts.indexAxis = 'y';
+	opts.layout = { padding: { right: 170, left: 8 } };
+	opts.plugins.legend.display = false;
+	opts.plugins.tooltip.callbacks = {
+		label: (ctx) => {
+			const v = ctx.parsed.x;
+			const rel = cfg.relative[ctx.dataIndex];
+			const tag = rel < 1.01 ? '(best)' : `(${rel.toFixed(2)}× slower)`;
+			return `${fmtNum(v)} ${unit} ${tag}`;
+		}
+	};
+	opts.plugins.datalabels = {
+		anchor: 'end', align: 'right', offset: 6, clamp: true,
+		formatter: (v, ctx) => {
+			const rel = cfg.relative[ctx.dataIndex];
+			if (rel < 1.01) return `${fmtNum(v)} ${unit}\t← best`;
+			return `${fmtNum(v)} ${unit}\t(${rel.toFixed(2)}×)`;
+		},
+		color: PALETTE.text, font: { size: 11, weight: '600' },
+	};
+	opts.scales = {
+		x: {
+			type: useLog ? 'logarithmic' : 'linear',
+			min: useLog ? minVal / 2 : 0,
+			grid: { color: GRID_COLOR, drawBorder: false },
+			ticks: { color: TICK_COLOR, callback: v => fmtAxis(v), font: { size: 10 } },
+			title: {
+				display: true, text: cfg.xLabel || '',
+				color: PALETTE.subtext0, font: { size: 11 }
+			}
+		},
+		y: {
+			grid: { display: false },
+			ticks: { color: PALETTE.text, font: { size: 12, weight: '600' } }
+		}
+	};
+
+	new Chart(el, {
+		type: 'bar',
+		data: {
+			labels: cfg.labels,
+			datasets: [{
+				data: cfg.values,
+				backgroundColor: cfg.colors.map(c => c + 'cc'),
+				borderColor: cfg.colors,
+				borderWidth: 1.5,
+				borderRadius: 4,
+			}]
+		},
+		options: opts,
+		plugins: [ChartDataLabels],
+	});
+}
+
+/* ---------- Line (scaling / timeseries) ---------- */
+function renderLine(cfg) {
+	const el = document.getElementById(cfg.id);
+	if (!el) return;
+	const isTs = cfg.kind === 'ts_line';
+	const unit = cfg.unit || '';
+	const opts = commonOptions();
+	opts.interaction = { mode: isTs ? 'nearest' : 'index', intersect: false };
+	opts.scales = {
+		x: {
+			type: isTs ? 'linear' : 'category',
+			grid: { color: GRID_COLOR, drawBorder: false },
+			ticks: { color: TICK_COLOR, font: { size: 10 } },
+			title: {
+				display: !!cfg.xLabel, text: cfg.xLabel || '',
+				color: PALETTE.subtext0, font: { size: 11 }
+			}
+		},
+		y: {
+			type: cfg.logY ? 'logarithmic' : 'linear',
+			grid: { color: GRID_COLOR, drawBorder: false },
+			ticks: { color: TICK_COLOR, callback: v => fmtAxis(v), font: { size: 10 } },
+			title: {
+				display: true, text: cfg.yLabel || '',
+				color: PALETTE.subtext0, font: { size: 11 }
+			}
+		}
+	};
+	opts.plugins.datalabels = { display: false };
+	if (isTs) {
+		opts.plugins.tooltip.callbacks = {
+			title: items => 'Time: ' + fmtNum(items[0].parsed.x) + ' ms',
+			label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y)} KB`
+		};
+	} else {
+		opts.plugins.tooltip.callbacks = {
+			label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y)} ${unit}`
+		};
+	}
+
+	new Chart(el, {
+		type: 'line',
+		data: {
+			labels: cfg.labels || undefined,
+			datasets: cfg.datasets.map(d => ({
+				label: d.label,
+				data: d.data,
+				backgroundColor: isTs ? d.backgroundColor : (d.backgroundColor || d.borderColor + '33'),
+				borderColor: d.borderColor,
+				borderWidth: 2,
+				tension: isTs ? 0.1 : 0.25,
+				fill: false,
+				pointRadius: isTs ? 0 : 4,
+				pointHoverRadius: isTs ? 3 : 6,
+				pointBackgroundColor: d.borderColor,
+				parsing: isTs ? false : true,
+			}))
+		},
+		options: opts,
+	});
+}
+
+/* ---------- Vertical grouped bar (RSS overview) ---------- */
+function renderVBarGrouped(cfg) {
+	const el = document.getElementById(cfg.id);
+	if (!el) return;
+	const opts = commonOptions();
+	opts.interaction = { mode: 'index', intersect: false };
+	opts.scales = {
+		x: {
+			grid: { display: false },
+			ticks: {
+				color: TICK_COLOR,
+				maxRotation: 60,
+				minRotation: 30,
+				autoSkip: true,
+				maxTicksLimit: 25,
+				font: { size: 10 }
+			}
+		},
+		y: {
+			type: cfg.logY ? 'logarithmic' : 'linear',
+			grid: { color: GRID_COLOR, drawBorder: false },
+			ticks: {
+				color: TICK_COLOR,
+				font: { size: 10 },
+				callback: v => fmtAxis(v)
+			},
+			title: {
+				display: true,
+				text: cfg.yLabel || '',
+				color: PALETTE.subtext0,
+				font: { size: 11 }
+			}
+		}
+	};
+	opts.plugins.datalabels = { display: false };
+	opts.plugins.tooltip.callbacks = {
+		label: (ctx) => {
+			const v = ctx.parsed.y;
+			if (v == null) return null;
+			return `${ctx.dataset.label}: ${fmtNum(v)} ${cfg.unit || 'KB'}`;
+		}
+	};
+
+	new Chart(el, {
+		type: 'bar',
+		data: {
+			labels: cfg.labels,
+			datasets: cfg.datasets.map(d => ({
+				label: d.label,
+				data: d.data,
+				backgroundColor: d.backgroundColor,
+				borderColor: d.borderColor,
+				borderWidth: 1,
+				borderRadius: 3,
+			}))
+		},
+		options: opts,
+	});
+}
+
+/* ---------- Dispatch ---------- */
+function renderChart(cfg, target) {
+	const card = buildCard(cfg);
+	target.appendChild(card);
+	if (cfg.kind === 'hbar_grouped')			renderHBarGrouped(cfg);
+	else if (cfg.kind === 'hbar')				 renderHBar(cfg);
+	else if (cfg.kind === 'vbar')				 renderVBarGrouped(cfg);
+	else if (cfg.kind === 'line')				 renderLine(cfg);
+	else if (cfg.kind === 'ts_line')			renderLine(cfg);
+}
+
+/* ---------- Build page ---------- */
+const overviewContainer = document.getElementById('overview-charts');
+const categoryContainer = document.getElementById('category-charts');
+const tsContainer			 = document.getElementById('ts-charts');
+
+CHARTS.forEach(cfg => {
+	const target = cfg.container === 'overview' ? overviewContainer : categoryContainer;
+	if (!target) return;
+	renderChart(cfg, target);
+});
+
+TS_CHARTS.forEach(cfg => {
+	if (!tsContainer) return;
+	renderChart(cfg, tsContainer);
+});
+
+/* ---------- Category filter ---------- */
+document.querySelectorAll('.cat-btn').forEach(btn => {
+	btn.addEventListener('click', () => {
+		document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+		btn.classList.add('active');
+		const cat = btn.dataset.cat;
+		document.querySelectorAll('#category-charts .chart-card').forEach(card => {
+			card.classList.toggle('section-hidden', cat !== 'all' && card.dataset.cat !== cat);
+		});
+	});
+});
+</script>
+</body>
+</html>

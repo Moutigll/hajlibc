@@ -10,28 +10,21 @@
  * @file init.c
  * @brief Initialization functions for the hajlibc allocator.
  * @Created: 2026/10/19 10:45:07 by Moutig
- * @Updated: 2026/10/19 10:45:17 by Moutig
+ * @Updated: 2026/10/20 12:00:13 by Moutig
  *
  * This file implements the initialization functions for the hajlibc allocator.
  * It provides functions for setting up the allocator's internal structures,
  * including thread-local heaps, arenas, and other necessary components.
  */
 
-
-
-
 #include "include/hmPrivate.h"
-#include "include/hmPrimTls.h"
 
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
-
-
-HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE t_hmallocTheap *_hmallocTheapDefault = NULL;
-HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE uintptr_t       _hmallocThreadIdHelper;
-HMALLOC_THREAD_LOCAL t_hmallocTheap	*_hmallocTheapCached = NULL;
+HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	t_hmallocTheap	*_hmallocTheapDefault = NULL;
+HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	uintptr_t		_hmallocThreadIdHelper;
+HMALLOC_THREAD_LOCAL				t_hmallocTheap	*_hmallocTheapCached = NULL;
 
 t_hmallocTs	g_hmallocTs = {
 	.lock = HMALLOC_LOCK_INITIALIZER,
@@ -66,7 +59,6 @@ void	_hmallocOsInit(void)
 		return;
 	hmallocPrimMemInit(&g_hmalloc.memConfig);
 	g_hmalloc.pageSize = g_hmalloc.memConfig.pageSize;
-	g_hmalloc.numaNodeCount = 1;
 	if (g_hmalloc.pageSize == 0)
 		g_hmalloc.pageSize = 4096U;
 	if (g_hmalloc.pageSize > HMALLOC_SLICE_SIZE) {
@@ -97,10 +89,8 @@ void	_hmallocAutoProcessInit(void)
 	memset(&g_hmalloc.heapMain, 0, sizeof(g_hmalloc.heapMain));
 	memset(&g_hmalloc.theapEmpty, 0, sizeof(g_hmalloc.theapEmpty));
 	memset(&g_hmalloc.pageEmpty, 0, sizeof(g_hmalloc.pageEmpty));
-	g_hmalloc.subprocMain.subprocSeq = 1;
 	g_hmalloc.subprocMain.heapMain = &g_hmalloc.heapMain;
 	g_hmalloc.heapMain.subproc = &g_hmalloc.subprocMain;
-	g_hmalloc.heapMain.heapSeq = 1;
 	g_hmalloc.heapMain.theaps = NULL;
 	g_hmalloc.theapEmpty.tld = NULL;
 	g_hmalloc.pageEmpty.free = NULL;
@@ -112,16 +102,6 @@ void	_hmallocAutoProcessInit(void)
 	_hmallocOptionsPostInit();
 	g_hmalloc.initialized = true;
 	hmallocLockRelease(&g_hmallocTs.lock);
-}
-
-void	_hmallocAutoProcessDone(void)
-{
-	(void)g_hmalloc;
-}
-
-bool	_hmallocPreloading(void)
-{
-	return (!g_hmalloc.initialized);
 }
 
 t_hmallocTheap	*_hmallocThreadInit(void)
@@ -146,6 +126,7 @@ t_hmallocTheap	*_hmallocThreadInit(void)
 	hmallocPrimThreadInitAutoDone();
 	return (theap);
 }
+
 void	_hmallocThreadDone(t_hmallocTheap *theap)
 {
 	t_hmallocTld	*tld;
@@ -158,19 +139,12 @@ void	_hmallocThreadDone(t_hmallocTheap *theap)
 	if (tld == NULL)
 		return;
 
-	tld->recurse = true;
 
 	/*
-	 * Itère sur TOUTE la chaîne tnext, et délègue à
-	 * hmallocTheapDestroy() qui :
-	 *   1. retire le theap de tld->theaps (pas de lock, tld local)
-	 *   2. retire le theap de heap->theaps (SOUS theapsLock)
-	 *   3. abandonne les pages restantes
-	 *   4. libère la mémoire du theap
-	 *
-	 * Sans ça, heap->theaps garde des nœuds freed → UAF à la
-	 * prochaine traversée (hmStatsCollectTheaps, hmHeapDestroy,
-	 * hmStatsReset).
+	 * Destroy all theaps associated with this thread-local data.
+	 * This includes the current theap and any other theaps that may have
+	 * been created for this thread. We traverse the linked list of theaps
+	 * and destroy each one, ensuring that all resources are properly released.
 	 */
 	cur = tld->theaps;
 	while (cur != NULL) {

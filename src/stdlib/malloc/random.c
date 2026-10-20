@@ -10,7 +10,7 @@
  * @file random.c
  * @brief Random number generation for hajmalloc.
  * @Created: 2026/10/06 12:37:13 by Moutig
- * @Updated: 2026/10/06 12:40:30 by Moutig
+ * @Updated: 2026/10/19 16:00:48 by Moutig
  *
  * The allocator uses randomness for two things:
  *
@@ -47,7 +47,7 @@
 #include "include/hmBits.h"
 #include "include/hmTypes.h"
 #include "include/hmInternal.h"
-#include "include/hmPrimTls.h"
+
 
 #if defined(__x86_64__) || defined(__i386__)
 # include <x86intrin.h>

@@ -10,7 +10,7 @@
  * @file message.c
  * @brief Message formatting and output for hajmalloc.
  * @Created: 2026/10/06 12:37:31 by Moutig
- * @Updated: 2026/10/15 01:16:57 by Moutig
+ * @Updated: 2026/10/20 12:24:49 by Moutig
  *
  * The allocator must be able to report errors, warnings and
  * verbose information without calling the libc's stdio.
@@ -34,16 +34,10 @@
 #include "include/hmPrim.h"
 #include "../../../include/malloc.h"
 
-#include <stdarg.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
 #include <stdlib.h>
 
 
-size_t	hmallocUtoa(char *buf, size_t cap, uint64_t v,
-				   unsigned base, bool upper)
+size_t	hmallocUtoa(char *buf, size_t cap, uint64_t v, unsigned base, bool upper)
 {
 	static const char	lower[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 	static const char	upperd[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -75,42 +69,6 @@ size_t	hmallocUtoa(char *buf, size_t cap, uint64_t v,
 	return (n);
 }
 
-/* ----- Formatter ----- */
-
-/*
- * The formatter understands the following conversions:
- *
- *   %s   NUL-terminated string
- *   %c   single character
- *   %d   signed int
- *   %u   unsigned int
- *   %zu  size_t
- *   %lu  unsigned long
- *   %ld  signed long
- *   %x   lowercase hexadecimal, unsigned int
- *   %lX  uppercase hexadecimal, unsigned long
- *   %p   pointer, printed as 0x followed by uppercase hex
- *   %%   literal percent
- *
- * Width and precision are not supported. Long and long long
- * modifiers are only supported as part of the conversions
- * listed above.
- */
-
-/**
- * @brief Advance the destination pointer and update the count.
- *
- * Helper used by hmallocFmt to write a single character while
- * respecting the buffer capacity. When the buffer is full,
- * the function stops writing but continues to increment the
- * would-be length, so the caller can detect truncation.
- */
-struct hmFmtState {
-	char	*buf;
-	size_t	cap;
-	size_t	pos;
-};
-
 static void	hmFmtPutc(struct hmFmtState *st, char c)
 {
 	if (st->pos + 1 < st->cap)
@@ -132,8 +90,7 @@ static void	hmFmtPutn(struct hmFmtState *st, const char *s, size_t n)
 		hmFmtPutc(st, s[i]);
 }
 
-static void	hmFmtPutUnsigned(struct hmFmtState *st, uint64_t v,
-								 unsigned base, bool upper)
+static void	hmFmtPutUnsigned(struct hmFmtState *st, uint64_t v, unsigned base, bool upper)
 {
 	char	buf[64];
 	size_t	n;
@@ -155,9 +112,8 @@ static void	hmFmtPutSigned(struct hmFmtState *st, int64_t v)
 		hmFmtPutUnsigned(st,
 						 (uint64_t)(-(v + 1)) + 1ULL,
 						 10, false);
-	} else {
+	} else
 		hmFmtPutUnsigned(st, (uint64_t)v, 10, false);
-	}
 }
 
 size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
@@ -372,55 +328,6 @@ void	_hmallocVerboseMessage(const char *fmt, ...)
 	va_start(ap, fmt);
 	hmEmit(fmt, ap);
 	va_end(ap);
-}
-
-_hmDeclNoreturn void	_hmallocAssertFail(const char *expr,
-										 const char *file,
-										 unsigned line,
-										 const char *func)
-{
-	char		buf[512];
-	char		num[32];
-	size_t		pos;
-	const char	*parts[4];
-	size_t		n;
-
-	/*
-	 * Build the message by hand. Each piece is copied
-	 * literally; hmallocFmt is not used because the
-	 * pieces are already strings and numbers formatted by
-	 * hmallocUtoa.
-	 */
-	pos = 0;
-	parts[0] = "hmalloc: assertion failed: ";
-	parts[1] = expr;
-	parts[2] = " at ";
-	parts[3] = file;
-
-	for (int i = 0; i < 4; i++) {
-		const char	*p = parts[i];
-		while (*p != '\0' && pos + 1 < sizeof(buf))
-			buf[pos++] = *p++;
-	}
-
-	n = hmallocUtoa(num, sizeof(num), (uint64_t)line, 10, false);
-	if (pos + 1 < sizeof(buf))
-		buf[pos++] = ':';
-	for (size_t i = 0; i < n && pos + 1 < sizeof(buf); i++)
-		buf[pos++] = num[i];
-
-	if (pos + 3 < sizeof(buf)) {
-		buf[pos++] = ' ';
-		buf[pos++] = '(';
-		while (*func != '\0' && pos + 1 < sizeof(buf))
-			buf[pos++] = *func++;
-		buf[pos++] = ')';
-	}
-
-	buf[pos] = '\0';
-
-	hmallocPrimOutStderr(buf);
-	abort();
 }
 
 void	hmRegisterOutput(t_hmOutputFun *out, void *arg)

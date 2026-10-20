@@ -10,72 +10,47 @@
  * @file options.c
  * @brief Option parsing for the hajlibc allocator.
  * @Created: 2026/10/19 10:48:42 by Moutig
- * @Updated: 2026/10/19 10:48:50 by Moutig
+ * @Updated: 2026/10/20 13:04:01 by Moutig
  *
- * Les options sont stockées dans g_hmalloc.options[] (tableau
- * atomique de HMALLOC_OPT_LAST long). Elles sont lues par le
- * chemin lent uniquement ; le chemin rapide ne consulte rien.
- *
- * Ordre d'init :
- *   1. _hmallocOptionsInit : lit les variables d'environnement,
- *      remplit g_hmalloc.options[]. Appelé sous g_hmalloc.lock
- *      par _hmallocAutoProcessInit, AVANT que la moindre erreur
- *      ne puisse être émise.
- *   2. _hmallocOptionsPostInit : ajuste les options qui dépendent
- *      de l'état du reste (ex. ARENA_RESERVE borné par addrLimit).
- *
- * Parsing :
- *   - Entier décimal, hexadécimal (0x…), binaire (0b…).
- *   - Booléens : "1" "true" "on" "yes" "y" → 1 ;
- *                "0" "false" "off" "no" "n" → 0.
- *   - Toute autre valeur est rejetée (option laissée à sa défaut).
- *
- * Aucune allocation : tout tient dans un tampon pile de 64 octets.
- *
- * Note atomics
- * ------------
- * Les entrées de g_hmalloc.options[] sont de type _Atomic long.
- * Certains compilateurs (et le <stdatomic.h> embarqué de hajlibc)
- * refusent un pointeur vers un lvalue qui n'est pas explicitement
- * _Atomic, même quand la déclaration du tableau l'est. On passe
- * donc systématiquement par un pointeur _Atomic long * obtenu
- * par un cast explicite, ce qui ne change rien au code généré :
- * l'objet pointé est bien le tableau atomique.
+ * The allocator supports a small set of options that can be set
+ * via environment variables or programmatically. The options are
+ * stored in g_hmalloc.options, an array of atomic longs. The
+ * options are initialized from the environment at process startup
+ * and can be modified at runtime.
  */
 
 #include "include/hmInternal.h"
 #include "include/hmPrivate.h"
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
-
-/* ---------- Accès atomique aux options ---------- */
-
 /**
- * @brief Pointeur atomique vers l'entrée d'option d'index `i`.
- *
- * Le cast est sûr : g_hmalloc.options est déclaré `_Atomic long`.
- * On l'isole ici pour que le reste du fichier n'ait pas à
- * répéter la gymnastique.
+ * @brief Get the atomic slot for an option.
+ * @param opt The option to get the slot for.
+ * @return A pointer to the atomic slot for the option.
  */
 static inline _Atomic long	*hmOptSlot(t_hmallocOption opt)
 {
 	return ((_Atomic long *)&g_hmalloc.options[opt]);
 }
 
+/**
+ * @brief Store a value in an option slot.
+ * @param opt The option to store the value in.
+ * @param v The value to store.
+ */
 static inline void	hmOptStore(t_hmallocOption opt, long v)
 {
 	atomic_store_explicit(hmOptSlot(opt), v, memory_order_relaxed);
 }
 
+/**
+ * @brief Load a value from an option slot.
+ * @param opt The option to load the value from.
+ * @return The value loaded from the option slot.
+ */
 static inline long	hmOptLoad(t_hmallocOption opt)
 {
 	return (atomic_load_explicit(hmOptSlot(opt), memory_order_relaxed));
 }
-
-/* ---------- Table des options ---------- */
 
 typedef struct s_hmOptionDef {
 	t_hmallocOption	opt;
@@ -84,28 +59,37 @@ typedef struct s_hmOptionDef {
 } t_hmOptionDef;
 
 static const t_hmOptionDef	g_optionDefs[] = {
-	{ HMALLOC_OPT_SHOW_ERRORS,         "HMALLOC_SHOW_ERRORS",         0 },
-	{ HMALLOC_OPT_SHOW_STATS,          "HMALLOC_SHOW_STATS",          0 },
-	{ HMALLOC_OPT_VERBOSE,             "HMALLOC_VERBOSE",             0 },
-	{ HMALLOC_OPT_PURGE_DELAY,         "HMALLOC_PURGE_DELAY",         0 },
-	{ HMALLOC_OPT_ARENA_RESERVE,       "HMALLOC_ARENA_RESERVE",       0 },
-	{ HMALLOC_OPT_PAGE_FULL_RETAIN,    "HMALLOC_PAGE_FULL_RETAIN",    0 },
-	{ HMALLOC_OPT_GUARDED_SAMPLE_RATE, "HMALLOC_GUARDED_SAMPLE_RATE", 0 },
-	{ HMALLOC_OPT_PERTURB,             "HMALLOC_PERTURB",             0 },
-	{ HMALLOC_OPT_CHECK,               "HMALLOC_CHECK",               0 },
-	{ HMALLOC_OPT_TRACE,               "HMALLOC_TRACE",               0 },
+	{ HMALLOC_OPT_SHOW_ERRORS,			"HMALLOC_SHOW_ERRORS",			0 },
+	{ HMALLOC_OPT_SHOW_STATS,			"HMALLOC_SHOW_STATS",			0 },
+	{ HMALLOC_OPT_VERBOSE,				"HMALLOC_VERBOSE",				0 },
+	{ HMALLOC_OPT_PURGE_DELAY,			"HMALLOC_PURGE_DELAY",			0 },
+	{ HMALLOC_OPT_ARENA_RESERVE,		"HMALLOC_ARENA_RESERVE",		0 },
+	{ HMALLOC_OPT_PAGE_FULL_RETAIN,	"HMALLOC_PAGE_FULL_RETAIN",	0 },
+	{ HMALLOC_OPT_GUARDED_SAMPLE_RATE,	"HMALLOC_GUARDED_SAMPLE_RATE",	0 },
+	{ HMALLOC_OPT_PERTURB,				"HMALLOC_PERTURB",				0 },
+	{ HMALLOC_OPT_CHECK,				"HMALLOC_CHECK",				0 },
+	{ HMALLOC_OPT_TRACE,				"HMALLOC_TRACE",				0 },
 };
 
 #define HMOPT_DEF_COUNT	(sizeof(g_optionDefs) / sizeof(g_optionDefs[0]))
 
-/* ---------- Parseurs ---------- */
-
+/**
+ * @brief Check if a character is a whitespace character.
+ * @param c The character to check.
+ * @return true if the character is a whitespace character, false otherwise.
+ */
 static bool	hmOptIsSpace(char c)
 {
 	return (c == ' ' || c == '\t' || c == '\n' || c == '\r'
 			|| c == '\f' || c == '\v');
 }
 
+/**
+ * @brief Compare two strings case-insensitively.
+ * @param a The first string.
+ * @param b The second string.
+ * @return true if the strings are equal case-insensitively, false otherwise.
+ */
 static bool	hmOptStreqCI(const char *a, const char *b)
 {
 	while (*a != '\0' && *b != '\0') {
@@ -125,15 +109,15 @@ static bool	hmOptStreqCI(const char *a, const char *b)
 }
 
 /**
- * @brief Parse un entier ou un booléen.
+ * @brief Parse a string as a long integer.
  *
- * Supporte : décimal, 0x / 0X (hex), 0b / 0B (binaire), et les
- * alias booléens true/false/on/off/yes/no/y/n (insensibles à la
- * casse). Toute autre entrée laisse *ok à false.
- *
- * Ne détecte pas les overflows : une valeur absurde est tronquée
- * silencieusement. Les options n'ont pas de sensibilité à la
- * précision (ce sont des tailles en octets/KiB ou des flags).
+ * The string can be a decimal, hexadecimal (0x prefix), or binary (0b prefix) number.
+ * It can also be a boolean value ("true", "false", "on", "off", "yes", "no", "y", "n").
+ * Leading and trailing whitespace is ignored. If the string is not a valid number or boolean,
+ * the function returns 0 and sets *ok to false.
+ * @param s The string to parse.
+ * @param ok A pointer to a boolean that will be set to true if the parsing was successful, false otherwise.
+ * @return The parsed long integer, or 0 if the parsing failed.
  */
 static long	hmOptParse(const char *s, bool *ok)
 {
@@ -143,13 +127,13 @@ static long	hmOptParse(const char *s, bool *ok)
 
 	*ok = false;
 
-	/* Trim avant. */
+	/* Ignore leading whitespace. */
 	while (hmOptIsSpace(*s))
 		s++;
 	if (*s == '\0')
 		return (0);
 
-	/* Booléens textuels. */
+	/* Boolean values. */
 	if (hmOptStreqCI(s, "true")  || hmOptStreqCI(s, "on")
 		|| hmOptStreqCI(s, "yes") || hmOptStreqCI(s, "y"))
 	{
@@ -163,7 +147,7 @@ static long	hmOptParse(const char *s, bool *ok)
 		return (0);
 	}
 
-	/* Signe. */
+	/* Sign. */
 	if (*s == '-') {
 		neg = true;
 		s++;
@@ -209,20 +193,6 @@ static long	hmOptParse(const char *s, bool *ok)
 	return (v);
 }
 
-/* ---------- Init ---------- */
-
-/**
- * @brief Lit chaque variable d'environnement et remplit options[].
- *
- * Appelé sous g_hmalloc.lock par _hmallocAutoProcessInit, avant
- * toute opération susceptible d'émettre un message d'erreur.
- * N'utilise pas getenv (non autorisé / peut malloc) : passe par
- * hmallocPrimGetenv.
- *
- * Les valeurs par défaut de la table g_optionDefs sont appliquées
- * en premier, puis écrasées par l'environnement si présent et
- * valide.
- */
 void	_hmallocOptionsInit(void)
 {
 	size_t	i;
@@ -246,13 +216,6 @@ void	_hmallocOptionsInit(void)
 	}
 }
 
-/**
- * @brief Ajuste les options qui dépendent de l'état global.
- *
- * Exemple : ARENA_RESERVE doit rester strictement inférieur à
- * addrLimit, sinon les mmap échouent en ENOMEM dès la première
- * arène. On borne ici.
- */
 void	_hmallocOptionsPostInit(void)
 {
 	long	v;
@@ -267,9 +230,8 @@ void	_hmallocOptionsPostInit(void)
 		return;
 
 	/*
-	 * ARENA_RESERVE est exprimée en KiB par convention. On la
-	 * plafonne à addrLimit / 16 pour laisser de la marge aux
-	 * autres allocations (métadonnées, LARGE, mmap utilisateur).
+	 * If the arena reserve is greater than 1/16th of the address limit,
+	 * reduce it to 1/16th of the address limit.
 	 */
 	{
 		size_t	bytes = (size_t)v * 1024;
@@ -284,8 +246,6 @@ void	_hmallocOptionsPostInit(void)
 		}
 	}
 }
-
-/* ---------- API publique ---------- */
 
 void	hmOptionSet(t_hmallocOption opt, long value)
 {

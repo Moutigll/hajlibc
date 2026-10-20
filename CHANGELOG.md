@@ -15,9 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `<malloc.h>` public header: `malloc`/`free`/`realloc`/`calloc`
   plus the `h*` extension API (`hmallocAligned`, `husableSize`,
   `hgoodSize`, `hmStatsGet`, `hmProfilerStart`, `show_alloc_mem`,
-  callbacks, runtime options)
-- `<stdlib.h>` now declares the allocator entry points and the
-  environment API (`getenv`, `setenv`, `unsetenv`, `putenv`)
+  callbacks, runtime options) and `malloc_usable_size()`
+- `<hmConfig.h>`: one place for the allocator's build-time knobs
+  (`HMALLOC_DEBUG`, `CANARY`, `CHECK`, `ENCODE_FREELIST`, `LOG_*`,
+  `TRACE`, `PROFILE`, `STATS`, auto-detected ASAN/TSAN). All are
+  `-D` overridable; defaults are production-safe
+- `<hmStats.h>`: bin geometry and the `t_hmallocStats` snapshot,
+  extracted from `<malloc.h>`, plus `hmStatsInit()`
+- `<stdlib.h>` now declares the allocator entry points —
+  `calloc`, `malloc`, `realloc`, `free`, `posix_memalign`,
+  `aligned_alloc`, `memalign`, `valloc`, `pvalloc`,
+  `reallocarray` — and the environment API (`getenv`, `setenv`,
+  `unsetenv`, `putenv`)
 - `<unistd.h>` gains `STDOUT_FILENO` / `STDERR_FILENO` and a raw
   `syscall()` wrapper
 - `<stdatomic.h>` dispatches on the compiler: GCC uses `__atomic_*`,
@@ -29,11 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Core allocator** (`src/stdlib/malloc/`): mmap-only, no libc
   dependency, LD_PRELOAD-ready
 - **Arenas**: 256 MiB aligned, 64 KiB-sliced, 4096 slices per arena,
-  with a two-level binned bitmap (chunkmap + chunkmap_bins) for
+  with a two-level binned bitmap (chunkmap + chunkmapBins) for
   O(1) slice allocation
 - **Pages**: 3 size classes (64 KiB / 512 KiB / 4 MiB) with lazy
   free-list extension, per-page owner + cross-thread free-list,
-  cross-thread reclaim via `pages_abandoned[bin]` bitmap and
+  cross-thread reclaim via `pagesAbandoned[bin]` bitmap and
   heap-wide `abandonedCountBin[]` counters
 - **Deferred purge**: `madvise(MADV_DONTNEED)` on abandoned arena
   slices after a TTL (`purgeExpire`), THP-aware (2 MiB-aligned runs)
@@ -53,12 +62,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hmProfilerStop`), opt-in at compile time (`HMALLOC_PROFILE`)
 - **Callbacks**: `hmRegisterOutput`, `hmRegisterError`,
   `hmRegisterDeferredFree`
+- `src/stdlib/malloc/unix.c`: `hajVirtualAddressBits()`, and on
+  Linux `hajProbeLinux()` (huge pages, overcommit, THP) and
+  `hajReadProcStatm()`
 
 ### Changed
 
 - `strerror` uses a sparse table; unknown codes go to a thread-local buffer
 - `__HAJ_THREAD_LOCAL` is now always a real TLS qualifier
-
+- The statistics and profiler APIs are backed by inline stubs when
+  `HMALLOC_STATS` / `HMALLOC_PROFILE` is 0, so callers always link
+- `hmPrimTls.h` is gone: its TLS accessors now live in `hmPrim.h`
+- The bin-range cache moved into `g_hmallocTs`, keeping the
+  two-globals rule intact
+- Allocator internals renamed to match `<hmConfig.h>`:
+  `pages_abandoned` → `pagesAbandoned`,
+  `chunkmap_bins` → `chunkmapBins`
 ### Fixed
 
 - Nothing yet

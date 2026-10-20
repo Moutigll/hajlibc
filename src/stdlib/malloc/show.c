@@ -10,45 +10,22 @@
  * @file show.c
  * @brief Debugging output for the hajlibc allocator.
  * @Created: 2026/10/06 14:56:08 by Moutig
- * @Updated: 2026/10/19 10:46:53 by Moutig
+ * @Updated: 2026/10/20 13:44:10 by Moutig
  *
- * Format (from the 42 subject, exact match required):
- *
- *   TINY : 0xADDR
- *   0xA0020 - 0xA004A : 42 bytes
- *   0xA006A - 0xA00BE : 84 bytes
- *   SMALL : 0xADDR
- *   0xAD000 - 0xAD020 : 32 bytes
- *   LARGE : 0x1F0000
- *   0x1F0000 - 0x1F0030 : 48 bytes
- *   Total : 174 bytes
- *
- * Addresses are uppercase, no leading zeros, no "0x" on the
- * header line's zone prefix except a literal "0x" before the
- * hex digits.  Sizes are decimal.
- *
- * Constraints:
- *   - No allocation, no lock held during the walk beyond the
- *     top-level g_hmalloc.lock (which we take and release once).
- *   - Other threads must be quiescent: free-lists of pages not
- *     owned by the caller are read without synchronisation.
- *   - Output goes through write(2), never printf(3).
+ * The functions here provide a way to print the current state of
+ * the allocator to stdout. This is useful for debugging and
+ * understanding how the allocator is managing memory. The output
+ * includes information about arenas, pages, and allocated blocks.
  */
 
 #include "include/hmPrivate.h"
 #include "include/hmInternal.h"
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
+
 #define HM_SHOW_MAX_BLOCKS	65535
 #define HM_SHOW_MAP_WORDS	((HM_SHOW_MAX_BLOCKS + 63) / 64)
-
-/* ------------------------------------------------------------------ */
-/*  Small string builder + write(2)                                    */
-/* ------------------------------------------------------------------ */
 
 typedef struct s_hmShowBuf
 {
@@ -99,10 +76,6 @@ static void	hmShowNewline(t_hmShowBuf *b)
 	hmShowPutc(b, '\n');
 }
 
-/* ------------------------------------------------------------------ */
-/*  Bitmap helpers                                                     */
-/* ------------------------------------------------------------------ */
-
 static __HAJ_INLINE void	hmShowBitSet(uint64_t *map, size_t i)
 {
 	map[i >> 6] |= ((uint64_t)1 << (i & 63));
@@ -121,12 +94,7 @@ static __HAJ_INLINE size_t	hmShowBlockIndex(const t_hmallocPage *page,
 	return (((uintptr_t)p - start) / page->blockSize);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Per-page printing                                                  */
-/* ------------------------------------------------------------------ */
-
-static void	hmShowMarkList(const t_hmallocPage *page, t_hmallocBlock *head,
-						   uint64_t *map, size_t cap)
+static void	hmShowMarkList(const t_hmallocPage *page, t_hmallocBlock *head, uint64_t *map, size_t cap)
 {
 	size_t	guard = 0;
 
@@ -144,8 +112,7 @@ static void	hmShowMarkList(const t_hmallocPage *page, t_hmallocBlock *head,
 	}
 }
 
-static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page,
-						size_t *total)
+static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page, size_t *total)
 {
 	uint64_t	map[HM_SHOW_MAP_WORDS];
 	size_t		cap;
@@ -162,8 +129,8 @@ static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page,
 
 	memset(map, 0, sizeof(uint64_t) * ((cap + 63) / 64));
 
-	hmShowMarkList(page, page->free,      map, cap);
-	hmShowMarkList(page, page->localFree, map, cap);
+	hmShowMarkList(page, page->free,		map, cap);
+	hmShowMarkList(page, page->localFree,	map, cap);
 	hmShowMarkList(page,
 		(t_hmallocBlock *)(atomic_load_explicit(&page->xthreadFree,
 			memory_order_relaxed) & ~(uintptr_t)1),
@@ -200,10 +167,6 @@ static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page,
 	}
 }
 
-/* ------------------------------------------------------------------ */
-/*  Arena walk                                                         */
-/* ------------------------------------------------------------------ */
-
 static void	hmShowArena(t_hmShowBuf *b, const t_hmallocArena *a, size_t *total)
 {
 	uintptr_t	start;
@@ -233,10 +196,6 @@ static void	hmShowArena(t_hmShowBuf *b, const t_hmallocArena *a, size_t *total)
 	}
 }
 
-/* ------------------------------------------------------------------ */
-/*  Public API                                                         */
-/* ------------------------------------------------------------------ */
-
 void	show_alloc_mem(void)
 {
 	t_hmShowBuf		b;
@@ -263,10 +222,6 @@ void	show_alloc_mem(void)
 
 	hmallocLockRelease(&g_hmallocTs.lock);
 }
-
-/* ------------------------------------------------------------------ */
-/*  show_alloc_mem_ex (bonus)                                          */
-/* ------------------------------------------------------------------ */
 
 static void	hmShowHexdump(t_hmShowBuf *b, const void *p, size_t n)
 {

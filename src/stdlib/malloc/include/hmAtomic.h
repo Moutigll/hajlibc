@@ -10,7 +10,7 @@
  * @file hmAtomic.h
  * @brief Atomic primitives, spinlock and TLS qualifier.
  * @Created: 2026/10/05 15:27:35 by Moutig
- * @Updated: 2026/10/16 08:56:48 by Moutig
+ * @Updated: 2026/10/19 14:17:56 by Moutig
  *
  * C11 <stdatomic.h> is the single source of atomics. It is
  * available on every compiler hajlibc supports (GCC, Clang,
@@ -26,8 +26,7 @@
  * Thread-local storage uses the compiler's TLS qualifier. The
  * allocator only ever needs a few pointers per thread, so no
  * key-management API is required. The pthread_key_t typedef
- * is kept only for the thread-exit destructor hook (see
- * hmPrim.h and the todo).
+ * is kept only for the thread-exit destructor hook in hmPrim.h.
  */
 
 #ifndef HMALLOC_ATOMIC_H

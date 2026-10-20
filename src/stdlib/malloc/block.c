@@ -10,36 +10,40 @@
  * @file block.c
  * @brief Block management for the hajlibc allocator.
  * @Created: 2026/10/19 10:48:30 by Moutig
- * @Updated: 2026/10/19 10:48:38 by Moutig
+ * @Updated: 2026/10/20 11:52:38 by Moutig
  *
- * Blocks are fixed-size and stored inside a page. The page keeps a
- * single owner free-list (`free`) plus a local list from the owning
- * thread (`localFree`) and a remote list (`xthreadFree`) for blocks
- * returned by other threads. The functions implemented here extend a
- * page's free-list lazily and merge remote/local frees back into the
- * owner list.
+ * This file implements the block management for the hajlibc allocator.
+ * It provides functions for splitting, coalescing, and managing blocks
+ * within pages. The implementation ensures thread safety and efficient
+ * memory management by using atomic operations and careful handling of
+ * free lists.
  */
-
 
 #include "include/hmPrivate.h"
 
-#include <stddef.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* ------------------------------------------------------------------ */
-/*  Padding {canary, delta}                                            */
-/* ------------------------------------------------------------------ */
+# if HMALLOC_CANARY
 
-static __HAJ_INLINE uint32_t	hmallocPadCanary(const t_hmallocPage *page,
-												  const void *ptr)
+/**
+ * @brief Set the next block in a page's free list.
+ * @param page The page containing the block.
+ * @param block The block to set the next pointer for.
+ * @param next The next block in the free list.
+ */
+static __HAJ_INLINE uint32_t	hmallocPadCanary(const t_hmallocPage *page, const void *ptr)
 {
 	return ((uint32_t)(page->keys[1] ^ (uintptr_t)ptr));
 }
 
-static __HAJ_INLINE uint8_t	*hmallocPadSlot(const t_hmallocPage *page,
-											const void *ptr)
+/**
+ * @brief Get the slot for padding/canary data in a block.
+ * @param page The page containing the block.
+ * @param ptr The pointer to the block.
+ * @return A pointer to the slot for padding/canary data.
+ */
+static __HAJ_INLINE uint8_t	*hmallocPadSlot(const t_hmallocPage *page, const void *ptr)
 {
 	return ((uint8_t *)ptr + page->blockSize - HMALLOC_PADDING_SIZE);
 }
@@ -54,23 +58,8 @@ void	hmallocPadSet(t_hmallocPage *page, void *ptr, size_t requested)
 	if (page == NULL || ptr == NULL)
 		return;
 
-#if HMALLOC_CANARY
-	/*
-	 * Garde uniquement quand le padding est compilé : sinon
-	 * HMALLOC_PADDING_SIZE vaut 0 et la comparaison est toujours
-	 * fausse (avertissement -Wtype-limits).
-	 */
 	if (page->blockSize < HMALLOC_PADDING_SIZE)
 		return;
-#else
-	/*
-	 * Padding désactivé : la fonction n'a rien à faire.
-	 * hmMaybePadSet() compile en no-op dans ce cas, mais on garde
-	 * la fonction définie pour les appels directs éventuels.
-	 */
-	(void)slot; (void)canary; (void)delta; (void)usable;
-	return;
-#endif
 
 	usable = page->blockSize - HMALLOC_PADDING_SIZE;
 
@@ -82,13 +71,14 @@ void	hmallocPadSet(t_hmallocPage *page, void *ptr, size_t requested)
 		abort();
 	}
 
-	delta  = (uint32_t)(usable - requested);
-	canary = hmallocPadCanary(page, ptr);
+	delta	= (uint32_t)(usable - requested);
+	canary	= hmallocPadCanary(page, ptr);
 
 	slot = hmallocPadSlot(page, ptr);
 	memcpy(slot, &canary, sizeof(canary));
 	memcpy(slot + sizeof(canary), &delta, sizeof(delta));
 }
+
 size_t	hmallocPadGet(t_hmallocPage *page, const void *ptr)
 {
 	uint8_t		*slot;
@@ -98,8 +88,8 @@ size_t	hmallocPadGet(t_hmallocPage *page, const void *ptr)
 	if (page == NULL || ptr == NULL)
 		return (0);
 
-	slot   = hmallocPadSlot(page, ptr);
-	usable = page->blockSize - HMALLOC_PADDING_SIZE;
+	slot	= hmallocPadSlot(page, ptr);
+	usable	= page->blockSize - HMALLOC_PADDING_SIZE;
 
 	memcpy(&delta, slot + sizeof(uint32_t), sizeof(delta));
 	if ((size_t)delta > usable)
@@ -116,18 +106,15 @@ void	hmallocPadCheck(t_hmallocPage *page, const void *ptr)
 	if (page == NULL || ptr == NULL)
 		return;
 
-	slot     = hmallocPadSlot(page, ptr);
-	expected = hmallocPadCanary(page, ptr);
+	slot		= hmallocPadSlot(page, ptr);
+	expected	= hmallocPadCanary(page, ptr);
 	memcpy(&canary, slot, sizeof(canary));
 
 	if (canary != expected)
 		_hmallocErrorMessage(EINVAL,
 			"free(): heap corruption (canary mismatch)\n");
 }
-
-/* ------------------------------------------------------------------ */
-/*  Block start (pointeur intérieur)                                   */
-/* ------------------------------------------------------------------ */
+#endif /* HMALLOC_CANARY */
 
 t_hmallocBlock	*hmallocBlockStart(const t_hmallocPage *page, const void *user)
 {
@@ -138,18 +125,14 @@ t_hmallocBlock	*hmallocBlockStart(const t_hmallocPage *page, const void *user)
 	if (page == NULL || user == NULL || page->blockSize == 0)
 		return (NULL);
 
-	start  = (uintptr_t)hmallocPageStart(page);
-	addr   = (uintptr_t)user;
+	start	= (uintptr_t)hmallocPageStart(page);
+	addr	= (uintptr_t)user;
 	if (addr < start)
 		return (NULL);
 
 	offset = (addr - start) / page->blockSize;
 	return ((t_hmallocBlock *)(start + offset * page->blockSize));
 }
-
-/* ------------------------------------------------------------------ */
-/*  Extension paresseuse                                               */
-/* ------------------------------------------------------------------ */
 
 void	hmallocBlockSplit(t_hmallocPage *page, size_t size)
 {
@@ -176,15 +159,14 @@ void	hmallocBlockSplit(t_hmallocPage *page, size_t size)
 	if (ext == 0)
 		return;
 
-	base = (t_hmallocBlock *)((uint8_t *)hmallocPageStart(page)
-		+ (page->capacity * page->blockSize));
+	base = (t_hmallocBlock *)((uintptr_t)hmallocPageStart(page)
+		   + (page->capacity * page->blockSize));
 
 	for (i = 0; i < ext; ++i) {
-		cur = (t_hmallocBlock *)((uint8_t *)base
-								 + (i * page->blockSize));
+		cur = (t_hmallocBlock *)((uintptr_t)base + (i * page->blockSize));
 		next = (i + 1U < ext)
-			? (t_hmallocBlock *)((uint8_t *)base
-								 + ((i + 1U) * page->blockSize))
+			? (t_hmallocBlock *)((uintptr_t)base
+			+ ((i + 1U) * page->blockSize))
 			: page->free;
 		hmallocBlockSetNext(page, cur, next);
 	}
@@ -192,22 +174,6 @@ void	hmallocBlockSplit(t_hmallocPage *page, size_t size)
 	page->capacity += (uint16_t)ext;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Collecte xthreadFree -> localFree -> free                          */
-/* ------------------------------------------------------------------ */
-
-#ifndef HMALLOC_XTHREAD_OWNED
-# define HMALLOC_XTHREAD_OWNED	((uintptr_t)1)
-#endif
-
-/*
- * Collecte la liste xthreadFree dans localFree. Suppose que l'appelant
- * a la propriété (bit OWNED à 1) OU que personne d'autre ne touche
- * page->used et page->localFree.
- *
- * Important : on préserve le bit OWNED dans le CAS, sinon une autre
- * thread pourrait le voir à 0 et croire qu'elle peut claim.
- */
 void	hmallocBlockCoalesce(t_hmallocPage *page)
 {
 	uintptr_t		old;
@@ -226,13 +192,15 @@ void	hmallocBlockCoalesce(t_hmallocPage *page)
 		do {
 			newv = old & (uintptr_t)HMALLOC_XTHREAD_OWNED;
 		} while (!atomic_compare_exchange_weak_explicit(
-			&page->xthreadFree, &old, newv,
-			memory_order_acq_rel, memory_order_relaxed));
+					&page->xthreadFree, &old, newv,
+					memory_order_acq_rel, memory_order_relaxed));
 
+		/* If the remote free list was not empty, merge it into the local free list. */
 		head = (t_hmallocBlock *)(old & ~(uintptr_t)HMALLOC_XTHREAD_OWNED);
 		if (head != NULL) {
 			count = 0;
 			tail = head;
+			/* Count the number of blocks in the remote free list. */
 			while (tail != NULL && count <= page->capacity) {
 				count++;
 				next = hmallocBlockNext(page, tail);
@@ -240,6 +208,7 @@ void	hmallocBlockCoalesce(t_hmallocPage *page)
 					break;
 				tail = next;
 			}
+			/* Merge the remote free list into the local free list. */
 			if (tail != NULL) {
 				hmallocBlockSetNext(page, tail, page->localFree);
 				page->localFree = head;
@@ -251,7 +220,11 @@ void	hmallocBlockCoalesce(t_hmallocPage *page)
 		}
 	}
 
-	/* localFree -> free si free est vide. */
+	/* If the local free list is not empty and the main free list is empty,
+	 * move the local free list to the main free list. This avoids
+	 * unnecessary contention on the main free list when the page is
+	 * being used by a single thread.
+	 */
 	if (page->localFree != NULL && page->free == NULL) {
 		page->free = page->localFree;
 		page->localFree = NULL;

@@ -8,57 +8,47 @@
 
 /**
  * @file profile.c
- * @brief Profiler for the hajlibc allocator.
+ * @brief Sampling-based profiler for hmalloc.
  * @Created: 2026/10/19 10:46:23 by Moutig
- * @Updated: 2026/10/19 10:46:32 by Moutig
+ * @Updated: 2026/10/20 13:38:51 by Moutig
  *
+ * The profiler is an opt-in feature: when HMALLOC_PROFILE is 0,
+ * the public API still links (see hmalloc.h) but every call is a
+ * stub. When HMALLOC_PROFILE is 1, allocation and large-alloc
+ * paths call profiler->onSample every `sampleRate` bytes.
  *
- * Le profileur repose sur un compteur `sampleCountdown` dans
- * chaque theap. Sous #if HMALLOC_PROFILE, le chemin d'allocation
- * fait :
+ * Wiring in the allocator
+ * -----------------------
+ * The heavy lifting is done in alloc.c (see the note at the
+ * bottom of this file). This module only provides:
+ *   - attach / detach a profiler to a heap,
+ *   - arm / disarm the sampling counter on the calling thread,
+ *   - stop and callback dispatch.
  *
- *     if (hmUnlikely(th->sampleRate != 0
- *                    && size >= th->sampleCountdown)) {
- *         // slow path : appelle onSample
- *         th->sampleCountdown = th->sampleRate;
- *     } else if (th->sampleRate != 0) {
- *         th->sampleCountdown -= size;
- *     }
+ * State
+ * -----
+ * A profiler can be attached to a single heap at a time. It is
+ * stored in heap->profiler (guarded by g_hmallocTs.lock). The
+ * per-thread sample counter lives in theap->sampleRate and
+ * theap->sampleCountdown, and is read lock-free on the fast
+ * path (only the owner thread writes it).
  *
- * Quand HMALLOC_PROFILE == 0, ce bloc disparaît ; ce fichier reste
- * compilé mais ses fonctions ne sont appelées par personne.
+ * Threading model
+ * ---------------
+ * Attach / Disable / Start / Stop take g_hmallocTs.lock. The
+ * allocation fast path reads theap->sampleRate without a lock:
+ * it is immutable while the profiler is active, and it is set
+ * to 0 by Stop after taking the lock.
  *
- * Le [FLAG] du TODO signalait qu'aucun champ `profiler` n'existait
- * dans le heap : on l'a ajouté (`struct s_hmallocHeap.profiler`),
- * ainsi qu'un champ `heap` dans `t_hmallocProfiler` pour que
- * Start/Stop retrouvent le heap attaché.
- *
- * Verrouillage : les opérations Attach / Disable / Start / Stop
- * prennent le lock global (g_hmallocTs.lock). Le fast path lit
- * `th->sampleRate` sans lock (valeur immuable tant que le
- * profiler est actif).
- *
- * Une seule globale pour l'allocation : `g_hmalloc.heapMain`.
- * Une seule globale pour le thread-safe : `g_hmallocTs`.
+ * When a new theap is created after Start, init.c arms it
+ * lazily (see _hmallocThreadInit in init.c).
  */
 
 #include "include/hmInternal.h"
 #include "include/hmPrivate.h"
-#include "include/hmPrimTls.h"
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
+# if HMALLOC_PROFILE
 
-/* ---------- Attach / detach ---------- */
-
-/**
- * @brief Associe un profileur à un heap.
- *
- * Refuse si le heap a déjà un profileur différent. Un même
- * profileur peut être attaché à un seul heap à la fois.
- */
 bool	hmHeapProfile(t_hmallocHeap *heap, t_hmallocProfiler *prof)
 {
 	if (heap == NULL || prof == NULL)
@@ -71,19 +61,13 @@ bool	hmHeapProfile(t_hmallocHeap *heap, t_hmallocProfiler *prof)
 		return (false);
 	}
 
-	heap->profiler = prof;
-	prof->heap = heap;
+	heap->profiler	= prof;
+	prof->heap		= heap;
 
 	hmallocLockRelease(&g_hmallocTs.lock);
 	return (true);
 }
 
-/**
- * @brief Détache le profileur du heap.
- *
- * Si un profileur était attaché, il est marqué inactif et son
- * champ `heap` est remis à NULL. Le heap est laissé propre.
- */
 void	hmHeapProfileDisable(t_hmallocHeap *heap)
 {
 	if (heap == NULL)
@@ -92,38 +76,19 @@ void	hmHeapProfileDisable(t_hmallocHeap *heap)
 	hmallocLockAcquire(&g_hmallocTs.lock);
 
 	if (heap->profiler != NULL) {
-		heap->profiler->active = false;
-		heap->profiler->heap = NULL;
-		heap->profiler = NULL;
+		heap->profiler->active	= false;
+		heap->profiler->heap	= NULL;
+		heap->profiler			= NULL;
 	}
 
 	hmallocLockRelease(&g_hmallocTs.lock);
 }
 
-/**
- * @brief Attache le profileur au heap principal.
- *
- * Raccourci pour hmHeapProfile(&g_hmalloc.heapMain, prof).
- */
 bool	hmProfile(t_hmallocProfiler *prof)
 {
 	return (hmHeapProfile(&g_hmalloc.heapMain, prof));
 }
 
-/* ---------- Start / Stop ---------- */
-
-/**
- * @brief Active l'échantillonnage sur le heap attaché.
- *
- * Positionne `sampleRate` et `sampleCountdown` sur le theap
- * courant. Les autres theaps du même heap seront initialisés
- * paresseusement : au prochain slow path, si leur
- * sampleCountdown est à zéro et que le heap a un profiler
- * actif, alloc.c doit appeler ce code pour les armer (voir la
- * note en fin de fichier).
- *
- * Retourne false si prof est NULL, ou si l'attachement échoue.
- */
 bool	hmProfilerStart(t_hmallocProfiler *prof)
 {
 	t_hmallocHeap	*heap;
@@ -133,11 +98,11 @@ bool	hmProfilerStart(t_hmallocProfiler *prof)
 		return (false);
 
 	if (prof->initialSampleRate == 0)
-		prof->initialSampleRate = 64 * 1024;	/* 64 KiB par défaut */
+		prof->initialSampleRate = 64 * 1024;	/* 64 KiB default */
 
 	heap = prof->heap;
 	if (heap == NULL) {
-		/* Pas de heap attaché : on prend le heap principal. */
+		/* Not attached yet: fall back to the default heap. */
 		heap = &g_hmalloc.heapMain;
 		if (!hmHeapProfile(heap, prof))
 			return (false);
@@ -145,36 +110,26 @@ bool	hmProfilerStart(t_hmallocProfiler *prof)
 
 	hmallocLockAcquire(&g_hmallocTs.lock);
 
-	prof->sampleRate = prof->initialSampleRate;
-	prof->sampleCountdown = prof->sampleRate;
-	prof->sampleCount = 0;
-	prof->active = true;
+	prof->sampleRate			= prof->initialSampleRate;
+	prof->sampleCountdown		= prof->sampleRate;
+	prof->sampleCount			= 0;
+	prof->bytesSinceLastSample	= 0;
+	prof->active				= true;
 
 	/*
-	 * Arme le theap courant s'il existe. Les autres theaps du
-	 * heap seront armés paresseusement, au prochain slow path.
+	 * Arm the calling thread's theap if it already exists.
+	 * Other theaps of the same heap will be armed lazily.
 	 */
 	th = hmallocTheapDefaultGet();
 	if (th != NULL && th->tld != NULL) {
-		th->sampleRate = prof->sampleRate;
-		th->sampleCountdown = prof->sampleCountdown;
-		th->profileSampleRate = prof->initialSampleRate;
+		th->sampleRate		= prof->sampleRate;
+		th->sampleCountdown	= prof->sampleRate;
 	}
 
 	hmallocLockRelease(&g_hmallocTs.lock);
 	return (true);
 }
 
-/**
- * @brief Désactive l'échantillonnage.
- *
- * Remet le theap courant au repos (sampleRate = 0,
- * sampleCountdown = SIZE_MAX), détache le profileur du heap si
- * c'est bien le sien, et invoque le callback onStop.
- *
- * Le callback est appelé **hors du lock**, pour qu'il puisse
- * prendre d'autres locks sans risque d'inversion.
- */
 bool	hmProfilerStop(t_hmallocProfiler *prof)
 {
 	t_hmallocHeap	*heap;
@@ -187,18 +142,21 @@ bool	hmProfilerStop(t_hmallocProfiler *prof)
 
 	hmallocLockAcquire(&g_hmallocTs.lock);
 
-	prof->active = false;
-	prof->sampleCountdown = SIZE_MAX;	/* "jamais" côté fast path */
+	prof->active			= false;
+	prof->sampleCountdown	= SIZE_MAX;	/* "never" on the fast path */
 
-	th = hmallocTheapDefaultGet();
-	if (th != NULL && th->tld != NULL) {
-		th->sampleRate = 0;
-		th->sampleCountdown = SIZE_MAX;
-	}
+	if (heap != NULL) {
+		hmallocLockAcquire(&heap->theapsLock);
+		for (th = heap->theaps; th != NULL; th = th->hnext) {
+			th->sampleRate		= 0;
+			th->sampleCountdown	= SIZE_MAX;
+		}
+		hmallocLockRelease(&heap->theapsLock);
 
-	if (heap != NULL && heap->profiler == prof) {
-		heap->profiler = NULL;
-		prof->heap = NULL;
+		if (heap->profiler == prof) {
+			heap->profiler	= NULL;
+			prof->heap		= NULL;
+		}
 	}
 
 	hmallocLockRelease(&g_hmallocTs.lock);
@@ -208,37 +166,4 @@ bool	hmProfilerStop(t_hmallocProfiler *prof)
 	return (true);
 }
 
-/*
- * Note d'intégration (alloc.c, chemin lent) :
- *
- *   #if HMALLOC_PROFILE
- *   if (th->sampleRate != 0) {
- *       if (size >= th->sampleCountdown) {
- *           t_hmallocProfiler *p = th->heap->profiler;
- *           if (p != NULL && p->active && p->onSample != NULL) {
- *               p->onSample(p->arg, block, requested, usable);
- *               p->sampleCount++;
- *               p->totalSamples++;
- *           }
- *           th->sampleCountdown = th->sampleRate;
- *       } else {
- *           th->sampleCountdown -= size;
- *       }
- *   }
- *   #endif
- *
- * Ce bloc n'est compilé que si HMALLOC_PROFILE = 1. Par défaut
- * (0), aucun coût sur le chemin rapide.
- *
- * Armer paresseusement les theaps créés après Start :
- *
- *   if (HMALLOC_PROFILE && th->sampleRate == 0
- *       && th->heap->profiler != NULL
- *       && th->heap->profiler->active) {
- *       th->sampleRate = th->heap->profiler->sampleRate;
- *       th->sampleCountdown = th->sampleRate;
- *   }
- *
- * Optionnel : évite qu'un thread créé après hmProfilerStart()
- * ne soit jamais échantillonné.
- */
+# endif /* HMALLOC_PROFILE */

@@ -10,7 +10,7 @@
  * @file stdlib.h
  * @brief Standard library header.
  * @Created: 2026/10/01 12:44:14 by Moutig
- * @Updated: 2026/10/06 12:45:31 by Moutig
+ * @Updated: 2026/10/19 16:07:19 by Moutig
  *
  * This header provides declarations for standard library functions, including
  * atexit() and exit(). It also defines the standard macros and types used in
@@ -90,25 +90,100 @@ int		unsetenv(const char *name);
  */
 int		putenv(char *string);
 
+/* ----- Memory allocation (C standard + POSIX extensions) ----- */
+
 /**
- * @brief Allocate memory.
- * @param size The size of the memory to allocate.
- * @return A pointer to the allocated memory, or NULL if allocation fails.
+ * @brief Allocate an uninitialised block of memory.
+ *
+ * @param size Requested size in bytes.
+ * @return Pointer to the block, or NULL on failure (errno = ENOMEM).
  */
 void	*malloc(size_t size);
 
 /**
- * @brief Free allocated memory.
- * @param ptr Pointer to the memory to free.
+ * @brief Allocate and zero-initialise an array.
+ *
+ * @param count Number of elements.
+ * @param size  Size of each element in bytes.
+ * @return Pointer to the zeroed block, or NULL on failure.
+ */
+void	*calloc(size_t count, size_t size);
+
+/**
+ * @brief Resize a previously allocated block.
+ *
+ * @param ptr     Previously allocated block, or NULL.
+ * @param size    New size in bytes.
+ * @return Pointer to the resized block, or NULL on failure.
+ */
+void	*realloc(void *ptr, size_t size);
+
+/**
+ * @brief Release a block of memory.
+ *
+ * @param ptr Block to free, or NULL (no-op).
  */
 void	free(void *ptr);
 
+/* ----- POSIX aligned allocation ----- */
+
 /**
- * @brief Reallocate memory.
- * @param ptr Pointer to the previously allocated memory.
- * @param size The new size of the memory block.
- * @return A pointer to the reallocated memory, or NULL if reallocation fails.
+ * @brief Allocate aligned memory.
+ *
+ * The alignment must be a power of two and a multiple of sizeof(void *).
+ *
+ * @param memptr    Output: pointer to the allocated block.
+ * @param alignment Required alignment (power of two).
+ * @param size      Size in bytes.
+ * @return 0 on success, or an errno value on failure.
  */
-void	*realloc(void *ptr, size_t size);
+int		posix_memalign(void **memptr, size_t alignment, size_t size);
+
+/**
+ * @brief Allocate memory aligned on a specified boundary (C11).
+ *
+ * @param alignment Required alignment (power of two).
+ * @param size      Size in bytes, must be a multiple of alignment.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*aligned_alloc(size_t alignment, size_t size);
+
+/* ----- GNU/BSD extensions (widely available) ----- */
+
+/**
+ * @brief Allocate aligned memory (legacy).
+ *
+ * @param alignment Required alignment.
+ * @param size      Size in bytes.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*memalign(size_t alignment, size_t size);
+
+/**
+ * @brief Allocate memory aligned on a page boundary.
+ *
+ * @param size Size in bytes.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*valloc(size_t size);
+
+/**
+ * @brief Allocate memory aligned on a page boundary, rounded up.
+ *
+ * @param size Size in bytes.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*pvalloc(size_t size);
+
+/**
+ * @brief Reallocate an array with overflow checking (BSD/GNU).
+ *
+ * @param ptr   Previously allocated block, or NULL.
+ * @param count Number of elements.
+ * @param size  Size of each element in bytes.
+ * @return Pointer to the resized block, or NULL on failure
+ *         (errno = ENOMEM on overflow).
+ */
+void	*reallocarray(void *ptr, size_t count, size_t size);
 
 #endif /* _STDLIB_H */

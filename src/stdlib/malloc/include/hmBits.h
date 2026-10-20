@@ -8,15 +8,21 @@
 
 /**
  * @file hmBits.h
- * @brief Bit manipulation helpers.
+ * @brief Bit manipulation helpers and size geometry.
  * @Created: 2026/10/05 16:20:18 by Moutig
- * @Updated: 2026/10/16 08:54:07 by Moutig
+ * @Updated: 2026/10/19 11:47:05 by Moutig
  *
- * Population count, count-leading/trailing zeros, bit
- * rotations, and the small size/architecture constants the
- * allocator needs. The compiler builtins are used when
- * available; a portable fallback is provided for the rare
- * case where they are not.
+ * Population count, count-leading/trailing zeros, bit rotations,
+ * and the small size/architecture constants the allocator needs.
+ *
+ * The compiler builtins are used when available; a portable
+ * binary-search fallback (see bits.c) is used otherwise.
+ *
+ * Contract for x == 0
+ * -------------------
+ * To match the GCC builtins, hmallocClz(0) and hmallocCtz(0)
+ * both return HMALLOC_SIZE_BITS. Callers therefore do not need
+ * to test for zero before calling them.
  */
 
 #ifndef HMALLOC_BITS_H
@@ -24,35 +30,24 @@
 
 # include <stddef.h>
 # include <stdint.h>
-# include <stdbool.h>
 # include <limits.h>
 
-/* ----- Pointer and size geometry ----- */
-
-# if INTPTR_MAX > INT64_MAX
-#  define HMALLOC_INTPTR_SHIFT	4
-# elif INTPTR_MAX == INT64_MAX
-#  define HMALLOC_INTPTR_SHIFT	3
-# elif INTPTR_MAX == INT32_MAX
-#  define HMALLOC_INTPTR_SHIFT	2
-# else
-#  error "HMALLOC: pointers 32/64/128 bits required"
-# endif
+/* ----- Size geometry ----- */
 
 # if SIZE_MAX == UINT64_MAX
 #  define HMALLOC_SIZE_SHIFT	3
-typedef int64_t	t_hm_ssize;
 # elif SIZE_MAX == UINT32_MAX
 #  define HMALLOC_SIZE_SHIFT	2
-typedef int32_t	t_hm_ssize;
 # else
-#  error "HMALLOC: size_t 32/64 bits required"
+#  error "HMALLOC: size_t must be 32 or 64 bits"
 # endif
 
-# define HMALLOC_INTPTR_SIZE	(1 << HMALLOC_INTPTR_SHIFT)
-# define HMALLOC_INTPTR_BITS	(HMALLOC_INTPTR_SIZE * 8)
 # define HMALLOC_SIZE_SIZE		(1 << HMALLOC_SIZE_SHIFT)
 # define HMALLOC_SIZE_BITS		(HMALLOC_SIZE_SIZE * 8)
+
+# if HMALLOC_SIZE_BITS != 32 && HMALLOC_SIZE_BITS != 64
+#  error "HMALLOC_SIZE_BITS must be 32 or 64"
+# endif
 
 # define HMALLOC_KIB	((size_t)1024)
 # define HMALLOC_MIB	(HMALLOC_KIB * HMALLOC_KIB)
@@ -64,7 +59,7 @@ typedef int32_t	t_hm_ssize;
 #  define __has_builtin(x)	0
 # endif
 
-# define _hmBuiltin(name)	__builtin_##name
+# define _hmBuiltin(name)		__builtin_##name
 # define _hmHasBuiltin(name)	__has_builtin(__builtin_##name)
 
 # if LONG_MAX == INT32_MAX
@@ -86,41 +81,41 @@ typedef int32_t	t_hm_ssize;
 # if HMALLOC_SIZE_BITS == 32
 #  define _hmBuiltinz(name)			_hmBuiltin32(name)
 #  define _hmHasBuiltinz(name)		_hmHasBuiltin32(name)
-# elif HMALLOC_SIZE_BITS == 64
+# else
 #  define _hmBuiltinz(name)			_hmBuiltin64(name)
 #  define _hmHasBuiltinz(name)		_hmHasBuiltin64(name)
 # endif
 
-/* ----- Generic fallbacks ----- */
-
-
+/* ----- Portable fallbacks (implemented in bits.c) ----- */
 
 /**
- * @brief Count the number of leading zeros in a size_t.
+ * @brief Count leading zeros in a size_t.
  *
- * Portable binary-search implementation used when the
- * compiler has no __builtin_clz for the size_t width.
+ * Portable binary-search implementation used when the compiler
+ * has no __builtin_clz for the size_t width.
+ *
  * @param x Value to inspect.
- * @return Number of leading zero bits. Returns HMALLOC_SIZE_BITS for 0.
+ * @return Number of leading zero bits; HMALLOC_SIZE_BITS for 0.
  */
 size_t	_hmallocClzGeneric(size_t x);
 
 /**
- * @brief Count the number of trailing zeros in a size_t.
+ * @brief Count trailing zeros in a size_t.
  *
- * Portable binary-search implementation used when the
- * compiler has no __builtin_ctz for the size_t width.
+ * Portable binary-search implementation used when the compiler
+ * has no __builtin_ctz for the size_t width.
+ *
  * @param x Value to inspect.
- * @return Number of trailing zero bits. Returns HMALLOC_SIZE_BITS for 0.
+ * @return Number of trailing zero bits; HMALLOC_SIZE_BITS for 0.
  */
 size_t	_hmallocCtzGeneric(size_t x);
 
 /* ----- Fast paths ----- */
 
 /**
- * @brief Count the number of trailing zeros in a size_t.
+ * @brief Count trailing zeros in a size_t.
  * @param x Value to inspect.
- * @return Number of trailing zero bits, or HMALLOC_SIZE_BITS for 0.
+ * @return Number of trailing zero bits; HMALLOC_SIZE_BITS for 0.
  */
 static inline size_t	hmallocCtz(size_t x)
 {
@@ -136,9 +131,9 @@ static inline size_t	hmallocCtz(size_t x)
 }
 
 /**
- * @brief Count the number of leading zeros in a size_t.
+ * @brief Count leading zeros in a size_t.
  * @param x Value to inspect.
- * @return Number of leading zero bits, or HMALLOC_SIZE_BITS for 0.
+ * @return Number of leading zero bits; HMALLOC_SIZE_BITS for 0.
  */
 static inline size_t	hmallocClz(size_t x)
 {
@@ -156,11 +151,12 @@ static inline size_t	hmallocClz(size_t x)
 }
 
 /**
- * @brief Bit-scan reverse: index of the most significant bit.
+ * @brief Bit-scan reverse: index of the most significant set bit.
  *
  * Equivalent to floor(log2(x)). Used by the binning code.
- * @param x Value to inspect.
- * @return Index of the highest set bit. Undefined for 0.
+ *
+ * @param x Value to inspect. Must be non-zero.
+ * @return Index of the highest set bit.
  */
 static inline size_t	hmallocBsr(size_t x)
 {

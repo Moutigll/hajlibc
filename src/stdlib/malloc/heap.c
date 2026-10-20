@@ -10,29 +10,24 @@
  * @file heap.c
  * @brief Heap management for the hajlibc allocator.
  * @Created: 2026/10/19 10:44:42 by Moutig
- * @Updated: 2026/10/19 10:44:59 by Moutig
+ * @Updated: 2026/10/20 11:54:51 by Moutig
  *
  * This file implements the heap management for the hajlibc allocator.
  * It provides functions for creating, destroying, and managing heaps,
- * including allocation and deallocation of memory blocks within the heaps.
- * The implementation uses a thread-local heap structure to efficiently
- * manage memory allocations and deallocations, while ensuring thread safety
- * and minimizing contention between threads.
+ * as well as collecting and reclaiming memory from heaps. The implementation
+ * ensures thread safety and efficient memory management by using atomic
+ * operations and careful handling of heap structures.
  */
-
-
 
 #include "include/hmPrivate.h"
 
-#include <stddef.h>
 #include <string.h>
 
-t_hmallocHeap *
-hmHeapNew(void)
+t_hmallocHeap *hmHeapNew(void)
 {
-	t_hmallocHeap *heap;
-	t_hmallocSubproc *subproc;
-	t_hmallocMemId memid;
+	t_hmallocHeap		*heap;
+	t_hmallocSubproc	*subproc;
+	t_hmallocMemId		memid;
 
 	subproc = &g_hmalloc.subprocMain;
 	heap = (t_hmallocHeap *)_hmallocMetaZalloc(subproc, sizeof(*heap), &memid);
@@ -40,7 +35,6 @@ hmHeapNew(void)
 		return (NULL);
 	memset(heap, 0, sizeof(*heap));
 	heap->subproc = subproc;
-	heap->heapSeq = 1;
 	heap->memid = memid;
 	heap->next = subproc->heaps;
 	heap->prev = NULL;
@@ -60,21 +54,21 @@ void hmHeapDelete(t_hmallocHeap *heap)
 
 void	hmHeapDestroy(t_hmallocHeap *heap)
 {
-	t_hmallocTheap	*theap;
-	t_hmallocTheap	*next;
-	t_hmallocSubproc *subproc;
+	t_hmallocTheap		*theap;
+	t_hmallocTheap		*next;
+	t_hmallocSubproc	*subproc;
 
 	if (heap == NULL || heap == &g_hmalloc.heapMain)
 		return;
 	subproc = heap->subproc != NULL ? heap->subproc : &g_hmalloc.subprocMain;
 
-	/* Détache la liste d'un coup sous lock. */
+	/* Detach the heap from the thread-local storage if it is currently set. */
 	hmallocLockAcquire(&heap->theapsLock);
 	theap = heap->theaps;
 	heap->theaps = NULL;
 	hmallocLockRelease(&heap->theapsLock);
 
-	/* Maintenant, plus personne ne voit ces theaps via heap->theaps. */
+	/* Destroy all the theaps associated with this heap. */
 	while (theap != NULL) {
 		next = theap->hnext;
 		theap->hnext = NULL;
@@ -83,7 +77,7 @@ void	hmHeapDestroy(t_hmallocHeap *heap)
 		theap = next;
 	}
 
-	/* Retrait du heap de la liste du subproc. */
+	/* Remove the heap from the subproc's list of heaps. */
 	hmallocLockAcquire(&subproc->heapsLock);
 	if (heap->next != NULL)
 		heap->next->prev = heap->prev;

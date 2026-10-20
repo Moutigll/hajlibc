@@ -10,51 +10,13 @@
  * @file malloc.c
  * @brief Public heap API, and libc symbols for LD_PRELOAD.
  * @Created: 2026/10/06 14:56:09 by Moutig
- * @Updated: 2026/10/19 10:45:32 by Moutig
+ * @Updated: 2026/10/20 14:46:52 by Moutig
  *
- * Provides both the 42-required symbols (malloc, free, realloc,
- * calloc) and a small set of libc-compatible extras that are
- * needed so that LD_PRELOAD works on real binaries:
- * posix_memalign, aligned_alloc, memalign, valloc, pvalloc,
- * reallocarray, malloc_usable_size.
- */
-
-/*
- * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 Moutig <ele-lean@student.42lehavre.fr>
- *
- * This file is part of hajlibc.
- * See LICENSE for the full license text.
- */
-
-/**
- * @file malloc.c
- * @brief Public heap API, and libc symbols for LD_PRELOAD.
- *
- * Provides both the 42-required symbols (malloc, free, realloc,
- * calloc) and a small set of libc-compatible extras that are
- * needed so that LD_PRELOAD works on real binaries:
- * posix_memalign, aligned_alloc, memalign, valloc, pvalloc,
- * reallocarray, malloc_usable_size.
- *
- * All entry points route to hmallocAllocInternal / hmallocFreeInternal
- * so the fast path stays inlined.
- */
-/*
- * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 Moutig <ele-lean@student.42lehavre.fr>
- *
- * This file is part of hajlibc.
- * See LICENSE for the full license text.
- */
-
-/**
- * @file malloc.c
- * @brief Public heap API, and libc symbols for LD_PRELOAD.
- */
-/*
- * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 Moutig <ele-lean@student.42lehavre.fr>
+ * This file implements the public heap API for the hajlibc allocator,
+ * including functions for allocating, freeing, and reallocating memory.
+ * It also provides the standard libc symbols for `malloc`, `free`, `realloc`,
+ * and `calloc`, allowing the allocator to be used as a drop-in replacement
+ * for the standard memory allocation functions.
  */
 
 #include "include/hmPrivate.h"
@@ -62,27 +24,53 @@
 #include "include/hmTrack.h"
 
 #include <errno.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
 
+/**
+ * @brief Check for multiplication overflow when calculating total size.
+ *
+ * This function checks if the multiplication of `count` and `size` would
+ * overflow, and if not, calculates the total size and stores it in `total`.
+ *
+ * @param count Number of elements.
+ * @param size Size of each element.
+ * @param total Pointer to store the total size.
+ * @return true if overflow occurred, false otherwise.
+ */
+static __HAJ_INLINE bool	hmallocCountSizeOverflow(size_t count, size_t size, size_t *total)
+{
+	if (count == 1) {
+		*total = size;
+		return (false);
+	}
+	if (hmLikely(!__builtin_mul_overflow(count, size, total)))
+		return (false);
+	*total = SIZE_MAX;
+	return (true);
+}
+
+/**
+ * @brief Check if a number is a strict power of two.
+ * @param x The number to check.
+ * @return true if x is a strict power of two, false otherwise.
+ */
 static __HAJ_INLINE bool hmIsPow2Strict(size_t x)
 {
 	return (x != 0 && (x & (x - 1)) == 0);
 }
 
+/**
+ * @brief Align a value up to the nearest multiple of a given alignment.
+ * @param v The value to align.
+ * @param a The alignment (must be a power of two).
+ * @return The aligned value.
+ */
 static __HAJ_INLINE size_t hmAlignUp(size_t v, size_t a)
 {
 	return ((v + a - 1) & ~(a - 1));
 }
-
-/* ------------------------------------------------------------------ */
-/*  Core API                                                           */
-/* ------------------------------------------------------------------ */
 
 void	*hmalloc(size_t size)
 {
@@ -94,10 +82,6 @@ void	hfree(void *ptr)
 	hmallocFreeInternal(ptr);
 }
 
-/*
- * FIX perf : hcalloc vérifie freeIsZero pour éviter un memset
- * inutile sur les pages fraîches de l'OS (qui sont déjà zéro).
- */
 void	*hcalloc(size_t count, size_t size)
 {
 	size_t	total;
@@ -149,14 +133,13 @@ void	*hrealloc(void *ptr, size_t newsize)
 		return (NULL);
 	}
 
-	off    = (uintptr_t)ptr - (uintptr_t)real;
-	usable = page->blockSize - HMALLOC_PADDING_SIZE;
+	off		= (uintptr_t)ptr - (uintptr_t)real;
+	usable	= page->blockSize - HMALLOC_PADDING_SIZE;
 
 	/*
-	 * FIX PERF : élargit la fenêtre d'acceptation de 50 % à 75 %.
-	 * Cela évite beaucoup d'allocations inutiles dans realloc_growth
-	 * quand la nouvelle taille est juste au-dessus du seuil utilisable.
-	 * On accepte aussi tout newsize <= usable (shrink pur).
+	 * If the new size is smaller than the usable size, we can
+	 * potentially shrink the block in place. We allow shrinking
+	 * if the new size is at least 1/4 of the current usable size.
 	 */
 	if (off == 0) {
 		avail = hmMaybePadGet(page, ptr);
@@ -173,17 +156,15 @@ void	*hrealloc(void *ptr, size_t newsize)
 	}
 
 	/*
-	 * FIX PERF : avant d'allouer un nouveau bloc, tenter d'étendre
-	 * la capacité du page courant si le newsize tient dans la capacité
-	 * réservée. Cela évite un memcpy + free + alloc dans les
-	 * scénarios de croissance progressive (realloc_growth).
+	 * If the new size is larger than the usable size, we need to allocate a new block.
+	 * We check if the new size can fit in the same bin. If it can, we can reuse the page.
+	 * Otherwise, we allocate a new block and copy the data.
 	 */
 	if (newsize > usable && page->capacity < page->reserved) {
 		size_t newBin = hmallocBinOf(newsize + HMALLOC_PADDING_SIZE);
 		size_t curBin = hmallocBinOf(page->blockSize);
 		if (newBin == curBin) {
-			/* Même bin : on ne peut pas étendre le bloc individuellement,
-			 * mais on peut au moins réutiliser le page. */
+			/* We can reuse the same page. */
 			(void)0;
 		}
 	}
@@ -197,10 +178,6 @@ void	*hrealloc(void *ptr, size_t newsize)
 	return (q);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Aligned allocs                                                     */
-/* ------------------------------------------------------------------ */
-
 void	*hmallocAligned(size_t size, size_t alignment)
 {
 	void	*raw;
@@ -211,6 +188,10 @@ void	*hmallocAligned(size_t size, size_t alignment)
 		errno = EINVAL;
 		return (NULL);
 	}
+
+	/* If the requested alignment is less than or equal to the default alignment,
+	 * we can use the standard allocation function.
+	 */
 	if (alignment <= HMALLOC_ALIGNMENT)
 		return (hmallocAllocInternal(size));
 
@@ -218,6 +199,7 @@ void	*hmallocAligned(size_t size, size_t alignment)
 		errno = ENOMEM;
 		return (NULL);
 	}
+	/* Calculate the total size needed to ensure we can return an aligned pointer. */
 	total = size + alignment + HMALLOC_ALIGNMENT;
 
 	raw = hmallocAllocInternal(total);
@@ -258,10 +240,6 @@ void	*hmallocn(size_t count, size_t size)
 	return (hmallocAllocInternal(total));
 }
 
-/* ------------------------------------------------------------------ */
-/*  Sized free / usable size / good size                               */
-/* ------------------------------------------------------------------ */
-
 size_t	husableSize(const void *p)
 {
 	t_hmallocPage	*page;
@@ -291,8 +269,7 @@ size_t	hgoodSize(size_t size)
 	}
 
 	{
-		size_t	total = hmAlignUp(padded + HMALLOC_PAGE_HEADER_SIZE,
-		                          g_hmalloc.pageSize);
+		size_t	total = hmAlignUp(padded + HMALLOC_PAGE_HEADER_SIZE, g_hmalloc.pageSize);
 		return (total - HMALLOC_PAGE_HEADER_SIZE - HMALLOC_PADDING_SIZE);
 	}
 }
@@ -319,7 +296,7 @@ void	*hexpand(void *p, size_t newsize)
 
 void	hfreeSize(void *p, size_t size)
 {
-#if HMALLOC_DEBUG_CHECK
+#if HMALLOC_CHECK
 	if (p != NULL) {
 		size_t	usable = husableSize(p);
 		if (size > usable)
@@ -331,10 +308,6 @@ void	hfreeSize(void *p, size_t size)
 #endif
 	hfree(p);
 }
-
-/* ------------------------------------------------------------------ */
-/*  Heap-scoped malloc                                                 */
-/* ------------------------------------------------------------------ */
 
 void	*hmHeapMalloc(t_hmallocHeap *heap, size_t size)
 {
@@ -352,10 +325,6 @@ void	hmCollect(bool force)
 {
 	hmHeapCollect(&g_hmalloc.heapMain, force);
 }
-
-/* ------------------------------------------------------------------ */
-/*  libc symbols for LD_PRELOAD                                        */
-/* ------------------------------------------------------------------ */
 
 _hmDeclExport void	*malloc(size_t size)
 {
@@ -381,8 +350,7 @@ _hmDeclExport int	posix_memalign(void **memptr, size_t alignment, size_t size)
 {
 	void	*p;
 
-	if (memptr == NULL || !hmIsPow2Strict(alignment)
-		|| alignment % sizeof(void *) != 0)
+	if (!hmIsPow2Strict(alignment) || alignment % sizeof(void *) != 0)
 		return (EINVAL);
 
 	p = hmallocAligned(size, alignment);
@@ -433,14 +401,6 @@ _hmDeclExport size_t	malloc_usable_size(void *ptr)
 	return (husableSize(ptr));
 }
 
-/* ------------------------------------------------------------------ */
-/*  Introspection                                                      */
-/* ------------------------------------------------------------------ */
-
-int	hmVersion(void)
-{
-	return ((int)HMALLOC_VERSION);
-}
 
 bool	hmIsRedirected(void)
 {

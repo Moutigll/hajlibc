@@ -10,46 +10,20 @@
  * @file stats.c
  * @brief Statistics collection for the hajlibc allocator.
  * @Created: 2026/10/19 10:46:59 by Moutig
- * @Updated: 2026/10/19 10:47:08 by Moutig
+ * @Updated: 2026/10/20 13:56:25 by Moutig
  *
- * Les compteurs sont mis à jour uniquement sur le chemin lent
- * (_hmallocMallocGeneric, hmallocLargeAlloc, création/destruction
- * de page). Le chemin rapide ne touche à rien : pas de store
- * supplémentaire, pas de cache-line à partager.
- *
- * Deux sources de stats :
- *   - g_hmalloc.statsSubproc : compteurs globaux (mmap, arènes,
- *     erreurs), mis à jour par les primitives et l'init.
- *   - g_hmalloc.statsHeapMain + chaque theap->stats : compteurs
- *     par heap / par thread, mis à jour par alloc.c et page.c.
- *
- * hmStatsGet() fusionne tout à la demande. La lecture des stats
- * par-theap est "relaxed" (best-effort) : une valeur peut être
- * légèrement en retard, ce qui est acceptable pour un rapport.
- *
- * Aucune allocation : hmStatsGetJson écrit dans un buffer fourni
- * par l'appelant. hmStatsPrintOut passe par le callback de sortie.
- *
- * Le lock utilisé est g_hmallocTs.lock (lock global de
- * l'allocateur). Le heap est g_hmalloc.heapMain.
- *
- * Note d'inclusion : hmInternal.h tire hmalloc.h (t_hmallocStats)
- * et hmPrimTls.h (hmallocTheapDefaultGet). On ne touche pas à
- * <malloc.h>, qui en mode H est celui de glibc et ne nous
- * intéresse pas.
+ *	This file implements functions for collecting and reporting statistics
+ *	about memory usage in the hajlibc allocator. It provides functions to
+ *	initialize, merge, and retrieve statistics, as well as to output them
+ *	in various formats (plain text, JSON).
  */
 
 #include "include/hmInternal.h"
 #include "include/hmPrivate.h"
-#include "include/hmPrimTls.h"
 #include "include/hmTrack.h"
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
+#include <unistd.h>
 #include <string.h>
-
-/* ---------- Init & helpers ---------- */
 
 void	_hmallocStatsInit(void)
 {
@@ -64,57 +38,41 @@ void	_hmallocStatsInit(void)
 	s->size = sizeof(*s);
 	s->version = HMALLOC_STATS_VERSION;
 
-	/* Cablage : subprocMain.stats et heapMain.stats pointent ici. */
 	g_hmalloc.subprocMain.stats = &g_hmalloc.statsSubproc;
 	g_hmalloc.heapMain.stats = &g_hmalloc.statsHeapMain;
 }
 
-/**
- * @brief Fusionne `from` dans `to`, et remet `from` à zéro.
- *
- * Convention : total/current/reserved/etc. sont des compteurs
- * cumulatifs → addition. Les pics (`peak`) prennent le max. Les
- * tableaux par-bin sont additionnés.
- */
-void	_hmallocStatsMergeInto(struct s_hmallocStats *to,
-							   struct s_hmallocStats *from)
+void	_hmallocStatsMergeInto(struct s_hmallocStats *to, struct s_hmallocStats *from)
 {
 	size_t	i;
 
 	if (to == NULL || from == NULL)
 		return;
 
-	to->total             += from->total;
-	to->current           += from->current;
-	to->pages             += from->pages;
-	to->reserved          += from->reserved;
-	to->committed         += from->committed;
-	to->mmapCalls         += from->mmapCalls;
-	to->arenaCount        += from->arenaCount;
-	to->mallocNormalCount += from->mallocNormalCount;
-	to->mallocHugeCount   += from->mallocHugeCount;
-	to->mallocRequested   += from->mallocRequested;
-	to->errors            += from->errors;
+	to->total				+= from->total;
+	to->current				+= from->current;
+	to->pages				+= from->pages;
+	to->reserved			+= from->reserved;
+	to->committed			+= from->committed;
+	to->mmapCalls			+= from->mmapCalls;
+	to->arenaCount			+= from->arenaCount;
+	to->mallocNormalCount	+= from->mallocNormalCount;
+	to->mallocHugeCount		+= from->mallocHugeCount;
+	to->mallocRequested		+= from->mallocRequested;
+	to->errors				+= from->errors;
 
 	if (from->peak > to->peak)
 		to->peak = from->peak;
 
 	for (i = 0; i < HMALLOC_BIN_COUNT; i++) {
-		to->mallocBins[i] += from->mallocBins[i];
-		to->pageBins[i]   += from->pageBins[i];
+		to->mallocBins[i]	+= from->mallocBins[i];
+		to->pageBins[i]		+= from->pageBins[i];
 	}
 
 	memset(from, 0, sizeof(*from));
 	from->size = sizeof(*from);
 	from->version = HMALLOC_STATS_VERSION;
 }
-
-t_hmMsecs	_hmallocClockNow(void)
-{
-	return (hmallocPrimClockNow());
-}
-
-/* ---------- Agrégation ---------- */
 
 static void	hmStatsCollectTheaps(t_hmallocStats *dst)
 {
@@ -127,21 +85,20 @@ static void	hmStatsCollectTheaps(t_hmallocStats *dst)
 	hmallocLockAcquire(&heap->theapsLock);
 	th = heap->theaps;
 	while (th != NULL) {
-		/* Copie non-destructive des stats pas encore mergées. */
 		if (th->stats != NULL) {
 			const t_hmallocStats	*tmp = th->stats;
 
-			dst->total             += tmp->total;
-			dst->current           += tmp->current;
-			dst->pages             += tmp->pages;
-			dst->reserved          += tmp->reserved;
-			dst->committed         += tmp->committed;
-			dst->mmapCalls         += tmp->mmapCalls;
-			dst->arenaCount        += tmp->arenaCount;
-			dst->mallocNormalCount += tmp->mallocNormalCount;
-			dst->mallocHugeCount   += tmp->mallocHugeCount;
-			dst->mallocRequested   += tmp->mallocRequested;
-			dst->errors            += tmp->errors;
+			dst->total				+= tmp->total;
+			dst->current			+= tmp->current;
+			dst->pages				+= tmp->pages;
+			dst->reserved			+= tmp->reserved;
+			dst->committed			+= tmp->committed;
+			dst->mmapCalls			+= tmp->mmapCalls;
+			dst->arenaCount			+= tmp->arenaCount;
+			dst->mallocNormalCount	+= tmp->mallocNormalCount;
+			dst->mallocHugeCount	+= tmp->mallocHugeCount;
+			dst->mallocRequested	+= tmp->mallocRequested;
+			dst->errors				+= tmp->errors;
 			if (tmp->peak > dst->peak)
 				dst->peak = tmp->peak;
 			for (size_t i = 0; i < HMALLOC_BIN_COUNT; i++) {
@@ -169,31 +126,29 @@ bool	hmStatsGet(t_hmallocStats *stats)
 	acc.size = sizeof(acc);
 	acc.version = HMALLOC_STATS_VERSION;
 
-	/* Copie non destructive du global. */
 	{
 		const t_hmallocStats	*g = &g_hmalloc.statsSubproc;
 
-		acc.total             = g->total;
-		acc.peak              = g->peak;
-		acc.current           = g->current;
-		acc.pages             = g->pages;
-		acc.reserved          = g->reserved;
-		acc.committed         = g->committed;
-		acc.mmapCalls         = g->mmapCalls;
-		acc.arenaCount        = g->arenaCount;
-		acc.mallocNormalCount = g->mallocNormalCount;
-		acc.mallocHugeCount   = g->mallocHugeCount;
-		acc.mallocRequested   = g->mallocRequested;
-		acc.errors            = g->errors;
+		acc.total				= g->total;
+		acc.peak				= g->peak;
+		acc.current				= g->current;
+		acc.pages				= g->pages;
+		acc.reserved			= g->reserved;
+		acc.committed			= g->committed;
+		acc.mmapCalls			= g->mmapCalls;
+		acc.arenaCount			= g->arenaCount;
+		acc.mallocNormalCount	= g->mallocNormalCount;
+		acc.mallocHugeCount		= g->mallocHugeCount;
+		acc.mallocRequested		= g->mallocRequested;
+		acc.errors				= g->errors;
 		for (size_t i = 0; i < HMALLOC_BIN_COUNT; i++) {
-			acc.mallocBins[i] = g->mallocBins[i];
-			acc.pageBins[i]   = g->pageBins[i];
+			acc.mallocBins[i]	= g->mallocBins[i];
+			acc.pageBins[i]		= g->pageBins[i];
 		}
 	}
 
 	hmStatsCollectTheaps(&acc);
 
-	/* Mise à jour du pic global à partir de la somme courante. */
 	if (acc.total > acc.peak)
 		acc.peak = acc.total;
 
@@ -220,8 +175,6 @@ bool	hmHeapStatsGet(t_hmallocHeap *heap, t_hmallocStats *stats)
 	}
 	return (true);
 }
-
-/* ---------- Formatage JSON ---------- */
 
 typedef struct s_hmJson {
 	char	*buf;
@@ -379,10 +332,7 @@ char	*hmHeapStatsGetJson(t_hmallocHeap *heap, size_t bufSize, char *buf)
 	return (buf);
 }
 
-/* ---------- Impression texte ---------- */
-
-static void	hmStatsLine(t_hmOutputFun *out, void *arg,
-						 const char *key, uint64_t v)
+static void	hmStatsLine(t_hmOutputFun *out, void *arg, const char *key, uint64_t v)
 {
 	char	buf[128];
 	char	num[24];
@@ -409,8 +359,7 @@ static void	hmStatsLine(t_hmOutputFun *out, void *arg,
 		out(buf, arg);
 }
 
-static void	hmStatsPrintStats(t_hmallocStats *s,
-								t_hmOutputFun *out, void *arg)
+static void	hmStatsPrintStats(t_hmallocStats *s, t_hmOutputFun *out, void *arg)
 {
 	char	num[24];
 
@@ -449,8 +398,7 @@ void	hmStatsPrintOut(t_hmOutputFun *out, void *arg)
 	hmStatsPrintStats(&s, out, arg);
 }
 
-void	hmHeapStatsPrintOut(t_hmallocHeap *heap,
-							 t_hmOutputFun *out, void *arg)
+void	hmHeapStatsPrintOut(t_hmallocHeap *heap, t_hmOutputFun *out, void *arg)
 {
 	t_hmallocStats	s;
 
@@ -466,16 +414,8 @@ void	hmHeapStatsPrintOut(t_hmallocHeap *heap,
 	hmStatsPrintStats(&s, out, arg);
 }
 
-/*
- * hmStatsPrint(void *out) :
- *   - mode H : out = fd encodé en void* (NULL = 2, stderr).
- *   - mode N : out ignoré, on passe par le callback d'output.
- *
- * Voir le [FLAG] du TODO.
- */
 void	hmStatsPrint(void *out)
 {
-#if defined(HMALLOC_HOSTED)
 	int		fd = 2;
 	char	buf[512];
 	t_hmallocStats	s;
@@ -531,14 +471,7 @@ void	hmStatsPrint(void *out)
 	}
 	buf[pos] = '\0';
 	write(fd, buf, pos);
-#else
-	(void)out;
-	if (g_hmalloc.outFun != NULL)
-		hmStatsPrintOut(g_hmalloc.outFun, g_hmalloc.outArg);
-#endif
 }
-
-/* ---------- Reset / merge ---------- */
 
 void	hmStatsReset(void)
 {
@@ -568,11 +501,6 @@ void	hmStatsReset(void)
 	hmallocLockRelease(&h->theapsLock);
 }
 
-/**
- * @brief Fusionne les stats du thread courant dans celles du subproc.
- *
- * Appelé par _hmallocThreadDone avant d'abandonner le theap.
- */
 void	hmStatsMerge(void)
 {
 	t_hmallocTheap	*th = hmallocTheapDefaultGet();
@@ -585,12 +513,10 @@ void	hmStatsMerge(void)
 	_hmallocStatsMergeInto(dst, th->stats);
 }
 
-/* ---------- Process info ---------- */
-
-void	hmProcessInfo(size_t *elapsedMsecs, size_t *userMsecs,
-					   size_t *systemMsecs, size_t *currentRss,
-					   size_t *peakRss, size_t *currentCommit,
-					   size_t *peakCommit, size_t *pageFaults)
+void	hmProcessInfo(size_t *elapsedMsecs,	size_t *userMsecs,
+					  size_t *systemMsecs,	size_t *currentRss,
+					  size_t *peakRss,		size_t *currentCommit,
+					  size_t *peakCommit,	size_t *pageFaults)
 {
 	t_hmallocProcessInfo	info;
 

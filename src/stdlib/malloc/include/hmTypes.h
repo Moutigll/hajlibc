@@ -8,154 +8,230 @@
 
 /**
  * @file hmTypes.h
- * @brief Core types of the hmalloc allocator.
+ * @brief Type definitions for the memory allocator.
  * @Created: 2026/10/05 15:26:28 by Moutig
- * @Updated: 2026/10/16 08:58:07 by Moutig
+ * @Updated: 2026/10/20 15:24:29 by Moutig
  *
- * Pages, blocks, heaps, sub-processes, thread-local heaps and
- * arenas. The layout is designed for cache-line locality:
- * hot fields (free-list head, thread id, keys) are grouped
- * together, and the cross-thread free-list is on its own
- * cache line to avoid false sharing.
- *
- * The `reserved` / `capacity` distinction follows mimalloc:
- * `reserved` is the total number of blocks the zone can hold,
- * `capacity` is the number of blocks that have already been
- * linked into the page's free-list. Extension is lazy.
- */
-/*
- * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 Moutig <ele-lean@student.42lehavre.fr>
- *
- * This file is part of hajlibc.
- * See LICENSE for the full license text.
- */
-
-/**
- * @file hmTypes.h
- * @brief Core types of the hmalloc allocator.
+ * This file contains the type definitions used by the hajlibc memory allocator.
+ * It includes definitions for pages, blocks, arenas, heaps, and other
+ * related structures. The types are designed to be efficient and to support
+ * the allocator's features, such as cross-thread ownership tracking and
+ * memory origin tracking.
  */
 
 #ifndef HMALLOC_TYPES_H
 # define HMALLOC_TYPES_H
 
-# include <stdint.h>
-# include <stdbool.h>
-# include <limits.h>
-
-#include "../../../../include/malloc.h"
+# include "../../../../include/hmConfig.h"
+# include "../../../../include/hmStats.h"
 
 # include "hmBits.h"
 # include "hmAtomic.h"
 
-/* ------------------------------------------------------------------ */
-/*  Géométrie arène                                                    */
-/* ------------------------------------------------------------------ */
+/* ----- Arena geometry ----- */
 
 /*
- * Arène alignée 256 MiB, taille fixe. Chaque arène contient :
- *   - slice 0..infoSlices-1 : metas[] + struct t_hmallocArena + bitmaps
- *   - slice infoSlices..N-1 : slices utilisables
+ * 256 MiB aligned arena, fixed size. It is then cut into 64 KiB slices,
+ * each slice containing a single page.
+ * - Slice 0 is reserved for the arena's metadata.
+ * - Slice 1 contains the struct t_hmallocArena + metas[] + bitmaps
+ * - Slice 2..N < 4095 are used for pages.
  *
- * Le lookup page<->adresse se fait via un tableau de pointeurs
- * alignés au début de l'arène (metas). Comme l'arène est 256 MiB
- * alignée et fait exactement 256 MiB, un simple masque sur
- * l'adresse retrouve le début de l'arène sans dépendre d'aucun
- * autre pointeur (contrairement au `sliceMap` de l'ancien code).
+ * Three categories of pages are supported:
+ * - Tiny,	64 KiB	-> 1 slice,		for small allocations (<= ~10 KiB)
+ * - Small,	512 KiB	-> 8 slices,	for medium allocations (<= ~86 KiB)
+ * - Large,	4 MiB	-> 64 slices,	for large allocations (<= 2 MiB)
+ *
+ * Each category has its own dedicated arena list to avoid fragmentation.
+ *
+ * The arena uses three bitmaps(table where 1bit = a slice) to track free slices:
+ * - slicesFree: a 2-level bitmap of free slices, used to find a free slice in O(1).
+ * 		- chunkmap: 1 bit per 512 slices, set if any slice in that chunk is free.
+ * 		- chunkmapBins: tags each chunk with a bin (small/medium/large/huge/other/none) for O(1) category selection.
+ * 		- chunks[8]: each chunk has 512 bits, one per slice, set if the slice is free.
+ * - pagesAbandoned: a bitmap per bin, set if the page is abandoned (freed by another thread).
+ * - purgeBitmap: a bitmap of slices that are eligible for purging (not used for a while).
  */
-#ifndef HMALLOC_ARENA_SIZE
-# define HMALLOC_ARENA_SIZE   (256 * HMALLOC_MIB)   /* 256 MiB */
-#endif
-#define HMALLOC_ARENA_MASK    (HMALLOC_ARENA_SIZE - 1)
+# ifndef HMALLOC_ARENA_SIZE
+#  define HMALLOC_ARENA_SIZE	(256 * HMALLOC_MIB)	/* 256 MiB */
+# endif
 
-#ifndef HMALLOC_SLICE_SHIFT
-# define HMALLOC_SLICE_SHIFT    16                  /* 64 KiB */
-#endif
-#define HMALLOC_SLICE_SIZE            ((size_t)1 << HMALLOC_SLICE_SHIFT)
-#define HMALLOC_ARENA_SLICE_COUNT     (HMALLOC_ARENA_SIZE >> HMALLOC_SLICE_SHIFT)
-                                                                 /* 4096 */
-/* FIX perf (2) : nombre d'arènes vides gardées par catégorie avant de
- * détruire. mimalloc ne détruit jamais à chaud ; on garde un petit
- * cache pour éviter le cycle munmap/mmap à chaque pic alloc/free. */
-#ifndef HMALLOC_MAX_EMPTY_ARENAS
-# define HMALLOC_MAX_EMPTY_ARENAS 4u
-#endif
-/* ------------------------------------------------------------------ */
-/*  Classes de pages (identiques à mimalloc)                           */
-/* ------------------------------------------------------------------ */
+/**
+ * @brief Mask for the arena size.
+ * This is used to extract the arena offset from an address.
+ */
+# define HMALLOC_ARENA_MASK		(HMALLOC_ARENA_SIZE - 1)
 
-#define HMALLOC_SMALL_PAGE_SIZE     (64 * 1024)                    /* 64 KiB  */
-#define HMALLOC_MEDIUM_PAGE_SIZE    (8 * HMALLOC_SMALL_PAGE_SIZE)  /* 512 KiB */
-#define HMALLOC_LARGE_PAGE_SIZE     (8 * HMALLOC_MEDIUM_PAGE_SIZE)  /* 4 MiB  */
-#define HMALLOC_LARGE_MAX_OBJ_SIZE  (HMALLOC_LARGE_PAGE_SIZE / 2)   /* 2 MiB  */
-#define HMALLOC_LARGE_MAX_OBJ_WSIZE (HMALLOC_LARGE_MAX_OBJ_SIZE / 8) /* 256 Ki */
+/**
+ * @brief Shift for the slice size.
+ * This is used to calculate the slice size.
+ */
+# ifndef HMALLOC_SLICE_SHIFT
+#  define HMALLOC_SLICE_SHIFT	16					/* 64 KiB */
+# endif
 
-#define HMALLOC_SMALL_MAX_OBJ_SIZE  ((HMALLOC_SMALL_PAGE_SIZE  - 4096) / 6)   /* 10240  */
-#define HMALLOC_MEDIUM_MAX_OBJ_SIZE ((HMALLOC_MEDIUM_PAGE_SIZE - 4096) / 6)   /* 86656  */
+# define HMALLOC_SLICE_SIZE			((size_t)1 << HMALLOC_SLICE_SHIFT)
+# define HMALLOC_ARENA_SLICE_COUNT	(HMALLOC_ARENA_SIZE >> HMALLOC_SLICE_SHIFT)
+# define HMALLOC_MAX_EMPTY_ARENAS	4u
+# define HMALLOC_MAX_ARENAS			64
 
-/* Le "SMALL" historique devient la borne des bins (== LARGE_MAX) */
-#define HMALLOC_SMALL_MAX_SIZE      HMALLOC_LARGE_MAX_OBJ_SIZE
+/* -----  Page classes ----- */
+
+/* AFTER */
+/*
+ * Category boundaries, chosen so that the worst-case page holds at
+ * least 100 blocks:
+ *
+ * 	TINY  : 1 .. 1 KiB		-> 128 KiB page → ~127 blocks
+ * 	SMALL : 1 KiB+1 .. 4 K	-> 512 KiB page → ~127 blocks
+ * 	LARGE : > 4 KiB		-> dedicated mmap
+ */
+# define HMALLOC_TINY_MAX_OBJ_SIZE		(1u * 1024u)		/* n = 1 KiB */
+# define HMALLOC_SMALL_MAX_OBJ_SIZE		(4u * 1024u)		/* m = 4 KiB */
+
+# define HMALLOC_TINY_PAGE_SIZE			(128u * 1024u)		/* N = 128 KiB */
+# define HMALLOC_MEDIUM_PAGE_SIZE		(512u * 1024u)		/* M = 512 KiB */
+
+/* LARGE = mmap on its own, no fixed page size. The 4 MiB constant
+ * below is only used as an upper bound for the slicesFree bitmap
+ * (largest contiguous run that can be expressed in a chunk). */
+# define HMALLOC_LARGE_PAGE_SIZE		(4u * 1024u * 1024u)	/* 4 MiB */
+# define HMALLOC_LARGE_MAX_OBJ_SIZE		(HMALLOC_LARGE_PAGE_SIZE / 2)
+# define HMALLOC_LARGE_MAX_OBJ_WSIZE	(HMALLOC_LARGE_MAX_OBJ_SIZE / 8)
+
+/* Historical SMALL bound, anything <= this goes to TINY or SMALL, above goes to LARGE. */
+# define HMALLOC_SMALL_MAX_SIZE			HMALLOC_SMALL_MAX_OBJ_SIZE
 
 
-#define HMALLOC_MAX_ARENAS 64
 
-/* ----- Free-list encoding ----- */
+/**
+ * @brief Enable cross-thread ownership tracking.
+ *
+ * When enabled, the library will track which thread owns each page,
+ * allowing for more efficient memory management across multiple threads.
+ */
+# ifndef HMALLOC_XTHREAD_OWNED
+#  define HMALLOC_XTHREAD_OWNED		((uintptr_t)1)
+# endif
+
+/* ----- Block ----- */
+
+/**
+ * @brief Encoded pointer type for free-list.
+ *
+ * This type is used to store pointers in the free-list, with optional
+ * XOR obfuscation for security. The low bits are used for flags.
+ */
 typedef uintptr_t	t_hmEncoded;
+
+/**
+ * @brief Thread ID type.
+ *
+ * This type is used to represent the ID of a thread.
+ */
 typedef size_t		t_hmallocThreadId;
 
+/**
+ * @struct s_hmallocBlock
+ * @brief Fixed-size allocation unit inside a page.
+ *
+ * All blocks of a page share the same size (determined by the page's bin).
+ * The single field `next` is meaningful only when the block is free:
+ * it links the block into one of the page's free-lists. When allocated,
+ * the block is raw user memory and `next` is overwritten.
+ *
+ * Lifecycle:
+ *   created lazily (hmallocBlockSplit) -> allocated -> freed
+ *   (page->free for owner, page->xthreadFree for remote)
+ *   -> coalesced -> reused. Blocks are only released to the OS when the
+ *   whole page is retired.
+ *
+ * If HMALLOC_CANARY > 0, a canary is written in the padding of each block to detect
+ * buffer overflows. The canary is checked on free and realloc.
+ */
 typedef struct s_hmallocBlock {
 	t_hmEncoded	next;
 } t_hmallocBlock;
 
-/* ------------------------------------------------------------------ */
-/*  Page                                                               */
-/* ------------------------------------------------------------------ */
+/* ----- Page ----- */
 
 struct s_hmallocTheap;
 struct s_hmallocHeap;
 struct s_hmallocArena;
 
+/**
+ * @struct s_hmallocPage
+ * @brief A page of memory containing fixed-size blocks.
+ *
+ * Each page is a contiguous memory region that contains a header
+ * (this struct) followed by a number of fixed-size blocks. The
+ * page is managed by a t_hmallocTheap and belongs to a t_hmallocArena.
+ *
+ * The page has three main states:
+ * - Free: all blocks are free, the page can be reused or retired.
+ * - Partial: some blocks are allocated, some are free.
+ * - Full: all blocks are allocated, the page is in the full queue.
+ *
+ * The page also tracks cross-thread ownership and can be retired
+ * when it is no longer needed.
+ */
 typedef struct s_hmallocPage {
-	/* ---- Cache line 0 : champs chauds, lus à chaque alloc/free ---- */
-	_Atomic t_hmallocThreadId	xthreadId;	/* 0  : tid | flags */
-	t_hmallocBlock				*free;		/* 8  : free list owner */
-	t_hmallocBlock				*localFree;	/* 16 : frees owner non mergés */
+	_Atomic t_hmallocThreadId	xthreadId;	/* Owner thread ID (0 = abandoned) */
+	t_hmallocBlock				*free;		/* Free-list of blocks for the owner thread */
+	t_hmallocBlock				*localFree;	/* Free-list of blocks freed by the owner thread */
 
-	size_t		blockSize;		/* 24 */
-	size_t		pageOffset;		/* 32 : offset vers 1er bloc */
-	uint16_t	capacity;		/* 40 */
-	uint16_t	reserved;		/* 42 */
-	uint16_t	used;			/* 44 */
-	uint8_t		retireExpire;	/* 46 */
-	bool		freeIsZero;		/* 47 */
-	uint64_t	_pad_hot[2];	/* 48..63 : aligne xthreadFree */
+	size_t		blockSize;		/* Size of each block in this page */
+	size_t		pageOffset;		/* Offset from the start of the page to the first block */
+	uint16_t	capacity;		/* Total number of blocks this page can hold */
+	uint16_t	reserved;		/* Number of blocks reserved for this page (may be less than capacity) */
+	uint16_t	used;			/* Number of blocks currently allocated */
+	uint8_t		retireExpire;	/* Number of cycles until this page can be retired */
+	bool		freeIsZero;		/* True if the free-list is zeroed (no uninitialized memory) */
+	uint64_t	_pad_hot[2];	/* Padding to align the next field to a cache line boundary */
 
-	/* ---- Cache line 1 : xthreadFree seul (évite le false sharing) ---- */
-	_Atomic uintptr_t			xthreadFree;	/* 64 */
-	uint64_t					_pad_xthread_free[7];	/* 72..127 : padding */
+	/* Cache line 1 : xthreadFree isolated (avoids false sharing). */
+	_Atomic uintptr_t	xthreadFree;			/* Free-list of blocks freed by other threads (cross-thread free) */
+	uint64_t			_pad_xthread_free[7];
 
-	/* ---- Cache line 2 : champs froids (métadonnées) ---- */
-	uintptr_t					keys[2];		/* 128..143 */
-	struct s_hmallocTheap		*theap;			/* 144 */
-	struct s_hmallocHeap		*heap;			/* 152 */
-	struct s_hmallocArena		*arena;			/* 160 */
-	struct s_hmallocPage		*next;			/* 168 */
-	struct s_hmallocPage		*prev;			/* 176 */
-char						_pad_cold[8];	/* 184..191 : padding */
+	/* Cache line 2 : cold metadata. */
+	uintptr_t				keys[2];	/* Random keys for XOR obfuscation of free-list pointers */
+	struct s_hmallocTheap	*theap;		/* Pointer to the owning thread heap (theap) */
+	struct s_hmallocHeap	*heap;		/* Pointer to the owning heap (may be NULL if abandoned) */
+	struct s_hmallocArena	*arena;		/* Pointer to the arena this page belongs to */
+	struct s_hmallocPage	*next;		/* Next page in the bin's linked list */
+	struct s_hmallocPage	*prev;		/* Previous page in the bin's linked list */
+	char					_pad_cold[8];
 } t_hmallocPage;
 
 _Static_assert(offsetof(t_hmallocPage, xthreadFree) % 64 == 0,
-               "xthreadFree doit être sur sa propre cache line");
+			   "xthreadFree must be on its own cache line");
 _Static_assert(sizeof(t_hmallocPage) % 64 == 0,
-               "t_hmallocPage doit être multiple de 64 pour l'alignement");
+			   "t_hmallocPage must be a multiple of 64");
 
-/* ----- Page flags ----- */
+/* Page flags encoded in the low bits of xthreadId. */
+
+/** @brief Indicates that the page is in the queue of pages that are full (all blocks allocated). */
 # define HMALLOC_PAGE_IN_FULL_QUEUE			((size_t)0x1)
+/** @brief Indicates that the page has interior pointers (pointers to blocks inside the page). */
 # define HMALLOC_PAGE_HAS_INTERIOR_POINTERS	((size_t)0x2)
+
 # define HMALLOC_PAGE_FLAG_MASK				((size_t)0x3)
 
 # define HMALLOC_THREADID_ABANDONED			((size_t)0)
 
+/**
+ * @struct s_hmallocPageQueue
+ * @brief A queue of pages for a specific bin.
+ *
+ * Each bin has its own queue of pages, which can be in one of three states:
+ * - Free: all blocks are free, the page can be reused or retired.
+ * - Partial: some blocks are allocated, some are free.
+ * - Full: all blocks are allocated, the page is in the full queue.
+ *
+ * The queue maintains pointers to the first and last pages, as well as
+ * a count of the number of pages in the queue. The blockSize field is
+ * used to identify the bin this queue belongs to.
+ */
 typedef struct s_hmallocPageQueue {
 	t_hmallocPage	*first;
 	t_hmallocPage	*last;
@@ -163,303 +239,322 @@ typedef struct s_hmallocPageQueue {
 	size_t			blockSize;
 } t_hmallocPageQueue;
 
-/* ----- MemId ----- */
+/* ----- Memory ID (origin tracking) ----- */
+
+/**
+ * @enum e_hmallocMemKind
+ * @brief Identifies the origin of a memory region.
+ *
+ * This enum is used to track whether a memory region was allocated
+ * by the operating system (OS) or by an arena managed by the allocator.
+ */
 typedef enum e_hmallocMemKind {
 	HMALLOC_MEM_NONE,
-	HMALLOC_MEM_EXTERNAL,
-	HMALLOC_MEM_STATIC,
 	HMALLOC_MEM_OS,
-	HMALLOC_MEM_OS_HUGE,
 	HMALLOC_MEM_ARENA,
-	HMALLOC_MEM_MALLOC
 } t_hmallocMemKind;
 
-typedef struct s_hmallocArena	t_hmallocArena;
 
+/**
+ * @struct s_hmallocMemId
+ * @brief Identifies a contiguous memory region and its origin.
+ *
+ * This struct is used to track the origin of a memory region, which can be
+ * either from the OS (e.g., mmap) or from an arena managed by the allocator.
+ * The `base` field points to the start of the memory region, `size` is the
+ * size of the region in bytes, and `memkind` indicates whether it is from
+ * the OS or an arena.
+ */
 typedef struct s_hmallocMemId {
-	union {
-		struct { void *base; size_t size; } os;
-		struct { t_hmallocArena *arena; uint32_t sliceIndex; uint32_t sliceCount; } arena;
-		struct { void *base; size_t size; } malloc;
-	} mem;
-	t_hmallocMemKind	memkind;
-	bool				isPinned;
-	bool				initiallyCommitted;
-	bool				initiallyZero;
+	void				*base;	/* Base address of the memory region */
+	size_t				size;	/* Size of the memory region in bytes */
+	t_hmallocMemKind	memkind;/* Origin of the memory region (OS or arena) */
 } t_hmallocMemId;
 
-typedef struct s_hmallocHeap	t_hmallocHeap;
-typedef struct s_hmallocTheap	t_hmallocTheap;
-typedef struct s_hmallocTld		t_hmallocTld;
-typedef struct s_hmallocSubproc	t_hmallocSubproc;
+/* ----- Forward typedefs ----- */
+
+typedef struct s_hmallocHeap		t_hmallocHeap;
+typedef struct s_hmallocTheap		t_hmallocTheap;
+typedef struct s_hmallocTld			t_hmallocTld;
+typedef struct s_hmallocSubproc		t_hmallocSubproc;
 typedef struct s_hmallocProfiler	t_hmallocProfiler;
+typedef struct s_hmallocArena		t_hmallocArena;
 
-/* ----- Bins ----- */
 
+/* ----- Theap (per-thread heap) ----- */
 
-/* ------------------------------------------------------------------ */
-/*  Theap                                                              */
-/* ------------------------------------------------------------------ */
-
+/**
+ * @struct s_hmallocTheap
+ * @brief Per-thread heap structure.
+ *
+ * Each thread has its own t_hmallocTheap, which manages the pages
+ * and arenas for that thread. The theap maintains a list of pages
+ * for each bin, as well as counters for full and retired pages.
+ *
+ * The theap also tracks the owning thread's ID, the associated heap,
+ * and the associated subproc. It also contains statistics and profiling
+ * information if enabled.
+ */
 struct s_hmallocTheap {
-	t_hmallocPage	*pagesFreeDirect[HMALLOC_PAGES_DIRECT];
-	t_hmallocArena	*arenaHint[3];
+	t_hmallocPage	*pagesFreeDirect[HMALLOC_PAGES_DIRECT];	/* Direct free pages for small bins (O(1) allocation) */
+	t_hmallocArena	*arenaHint[3];							/* Arena hint for each category (tiny, small, large) */
 
-	t_hmallocTld					*tld;
-	_Atomic(t_hmallocHeap *)		heap;
-	_Atomic(t_hmallocSubproc *)		subproc;
-	_Atomic size_t					refcount;
+	t_hmallocTld				*tld;						/* Pointer to the thread-local data (TLD) for this thread */
+	_Atomic(t_hmallocHeap *)	heap;						/* Pointer to the owning heap (may be NULL if abandoned) */
+	_Atomic(t_hmallocSubproc *)	subproc;					/* Pointer to the owning subproc (may be NULL if abandoned) */
 
-	long	pageFullRetain;
-	bool	allowPageReclaim;
-	bool	allowPageAbandon;
-	bool	isDetached;
+	long				pageFullRetain;	/* Number of full pages to retain before retiring */
+	unsigned long long	heartbeat;		/* Heartbeat counter for the theap, used for retire expiration */
 
-	size_t	sampleCountdown;
-	size_t	sampleRate;
-	size_t	profileSampleRate;
-	size_t	guardedSampleRate;
+	uint16_t	pagesFullCount[HMALLOC_BIN_COUNT];	/* Count of full pages per bin (O(1) allocation) */
 
-	unsigned long long	heartbeat;
-	size_t				pageCount;
-	size_t				pagesFullSize;
+	uint16_t	pagesRetiredCount[HMALLOC_BIN_COUNT];	/* Count of retired pages per bin (O(1) allocation) */
+	uint16_t	retiredMinBin;	/* Minimum bin index with retired pages */
+	uint16_t	retiredMaxBin;	/* Maximum bin index with retired pages */
+	uint16_t	_pad_retired;	/* Padding to align the next field to a cache line boundary */
 
-	/* FIX 6 : compteur de full pages retenues par bin */
-	uint16_t			pagesFullCount[HMALLOC_BIN_COUNT];
-		/* FIX perf (4) : compteur de pages retirées par bin, pour rendre
-	 * hmallocPageRetire O(1) au lieu de O(pages). mimalloc fait pareil
-	 * avec page_retired_min/max. */
-	uint16_t			pagesRetiredCount[HMALLOC_BIN_COUNT];
-	uint16_t			retiredMinBin;
-	uint16_t			retiredMaxBin;
-	uint16_t			_pad_retired;
+	t_hmallocTheap	*tnext;	/* Next theap in the thread's list of theaps */
+	t_hmallocTheap	*tprev;	/* Previous theap in the thread's list of theaps */
+	t_hmallocTheap	*hnext;	/* Next theap in the heap's list of theaps */
+	t_hmallocTheap	*hprev;	/* Previous theap in the heap's list of theaps */
 
-	t_hmallocTheap	*tnext;
-	t_hmallocTheap	*tprev;
-	t_hmallocTheap	*hnext;
-	t_hmallocTheap	*hprev;
+	t_hmallocPageQueue	pages[HMALLOC_BIN_COUNT];	/* Page queues for each bin (free, partial, full) */
+	t_hmallocMemId		memid;						/* Memory ID for the theap's memory region */
 
-	t_hmallocPageQueue	pages[HMALLOC_BIN_COUNT];
-	t_hmallocMemId		memid;
+# if HMALLOC_STATS
+	t_hmallocStats		statsStorage;	/* Storage for statistics if enabled */
+	t_hmallocStats		*stats;			/* Pointer to statistics (may point to statsStorage or external) */
+	unsigned long long	statsPending;	/* Pending statistics to be flushed to the stats buffer */
+# endif
 
-	t_hmallocStats		statsStorage;
-	t_hmallocStats		*stats;
-	unsigned long long	statsPending;
+# if HMALLOC_PROFILE
+	size_t	sampleRate;			/* Sampling rate for profiling (e.g., 1 in N allocations) */
+	size_t	sampleCountdown;	/* Countdown to the next sample allocation */
+# endif
 };
 
-/* ------------------------------------------------------------------ */
-/*  Heap / Subproc / TLD                                               */
-/* ------------------------------------------------------------------ */
+/* ----- Heap / Subproc / TLD ----- */
 
+/**
+ * @struct s_hmallocHeap
+ * @brief A heap structure that manages multiple theaps and arenas for a process.
+ *
+ * Each heap can manage multiple theaps (per-thread heaps) and arenas.
+ * The heap maintains a list of theaps, a lock for thread-safe access,
+ * and counters for abandoned pages per bin. It also tracks the memory
+ * ID for the heap's memory region and may contain statistics and profiling
+ * information if enabled.
+ */
 struct s_hmallocHeap {
-	t_hmallocSubproc	*subproc;
-	size_t				heapSeq;
-	t_hmallocHeap		*next;
-	t_hmallocHeap		*prev;
+	t_hmallocSubproc	*subproc;	/* Pointer to the owning subproc (may be NULL if abandoned) */
+	t_hmallocHeap		*next;		/* Next heap in the subproc's list of heaps */
+	t_hmallocHeap		*prev;		/* Previous heap in the subproc's list of heaps */
 
-	t_hmallocTheapKey	theapKey;
-	t_hmallocArena		*exclusiveArena;
-	int					numaNode;
+	t_hmallocTheap		*theaps;	/* Pointer to the list of theaps (per-thread heaps) managed by this heap */
+	t_hmallocLock		theapsLock;	/* Lock for thread-safe access to the theaps list */
 
-	t_hmallocTheap		*theaps;
-	t_hmallocLock		theapsLock;
+	_Atomic size_t		abandonedCountBin[HMALLOC_BIN_COUNT];	/* Count of abandoned pages per bin (O(1) allocation) */
 
-		/* FIX PERF : compteur d'abandonnés par bin, pour early-exit
-	 * dans hmallocTheapFindPage (évite de scanner toutes les arènes
-	 * quand aucun abandonné n'existe pour ce bin). */
-	_Atomic size_t		abandonedCountBin[HMALLOC_BIN_COUNT];
-	t_hmallocPage		*osAbandonedPages;
-	t_hmallocLock		osAbandonedPagesLock;
+	t_hmallocMemId	memid;	/* Memory ID for the heap's memory region */
 
-	t_hmallocMemId			memid;
-	struct s_hmallocStats	*stats;
-	struct s_hmallocProfiler	*profiler;
+# if HMALLOC_STATS
+	t_hmallocStats	*stats;
+# endif
+
+# if HMALLOC_PROFILE
+	t_hmallocProfiler	*profiler;
+# endif
 };
 
+/**
+ * @struct s_hmallocSubproc
+ * @brief A subproc structure that manages multiple heaps and arenas for a process.
+ *
+ * Each subproc can manage multiple heaps (t_hmallocHeap) and arenas (t_hmallocArena).
+ * The subproc maintains a list of heaps, a lock for thread-safe access, and counters
+ * for the number of threads and heaps. It also tracks the memory ID for the subproc's
+ * memory region and may contain statistics if enabled.
+ */
 struct s_hmallocSubproc {
-	size_t				subprocSeq;
-	t_hmallocSubproc	*next;
-	t_hmallocSubproc	*prev;
+	_Atomic size_t				arenaCount;					/* Count of arenas managed by this subproc */
+	_Atomic(t_hmallocArena *)	arenas[HMALLOC_MAX_ARENAS];	/* Array of pointers to arenas managed by this subproc */
 
-	_Atomic size_t			arenaCount;
-	_Atomic(t_hmallocArena *)arenas[HMALLOC_MAX_ARENAS];
-	t_hmallocLock			arenaReserveLock;
+	_Atomic(t_hmallocHeap *)	heapMain;	/* Pointer to the main heap for this subproc */
+	t_hmallocHeap				*heaps;		/* Pointer to the list of heaps managed by this subproc */
+	t_hmallocLock				heapsLock;	/* Lock for thread-safe access to the heaps list */
 
-	_Atomic(t_hmallocHeap *)	heapMain;
-	t_hmallocHeap				*heaps;
-	t_hmallocLock				heapsLock;
+	_Atomic size_t			threadCount;	/* Count of threads managed by this subproc */
+	_Atomic size_t			heapCount;		/* Count of heaps managed by this subproc */
 
-	_Atomic size_t			threadCount;
-	_Atomic size_t			heapCount;
+	t_hmallocMemId	memid;	/* Memory ID for the subproc's memory region */
 
-	t_hmallocMemId			memid;
-	struct s_hmallocStats	*stats;
+# if HMALLOC_STATS
+	t_hmallocStats	*stats;
+# endif
 };
 
+/**
+ * @struct s_hmallocTld
+ * @brief A thread-local data structure that holds per-thread information.
+ *
+ * The TLD contains a pointer to the thread's subproc, the thread's theaps,
+ * a random number generator, and a memory ID.
+ */
 struct s_hmallocTld {
-	t_hmallocThreadId	threadId;
-	size_t				threadSeq;
-	int					numaNode;
-	t_hmallocSubproc	*subproc;
-	t_hmallocTheap		*theaps;
-	t_hmallocLock		theapsLock;
-	bool				recurse;
-	bool				isInThreadpool;
+	t_hmallocThreadId	threadId;	/* Thread ID for this thread */
+	t_hmallocSubproc	*subproc;	/* Pointer to the subproc this thread belongs to */
+	t_hmallocTheap		*theaps;	/* Pointer to the list of theaps (per-thread heaps) for this thread */
 
-	uint64_t	rng[2];
+	uint64_t	rng[2];		/* Random number generator state for this thread */
 
-	t_hmallocMemId		memid;
+	t_hmallocMemId	memid;	/* Memory ID for the TLD's memory region */
 };
 
+/**
+ * @enum e_hmallocCategory
+ * @brief An enumeration of the different categories of memory allocations.
+ */
 typedef enum e_hmallocCategory {
 	HMALLOC_CAT_TINY	= 0,
 	HMALLOC_CAT_SMALL	= 1,
 	HMALLOC_CAT_LARGE	= 2
 } t_hmallocCategory;
 
-/* ------------------------------------------------------------------ */
-/*  Arène                                                              */
-/* ------------------------------------------------------------------ */
+/* ----- Arena bitmaps ----- */
 
-/* Nombre de bits par bitmap de slices (4096/64). */
-#define HMALLOC_ARENA_BITMAP_WORDS \
+/**
+ * @brief The number of 64-bit words needed to represent the arena's bitmap.
+ */
+# define HMALLOC_ARENA_BITMAP_WORDS \
 	((HMALLOC_ARENA_SLICE_COUNT + 63) / 64)
 
-/* Les metas = un pointeur par slice, alignés au début de l'arène. */
-#define HMALLOC_PAGE_META_COUNT     HMALLOC_ARENA_SLICE_COUNT
-#define HMALLOC_PAGE_META_BYTES     (HMALLOC_PAGE_META_COUNT * sizeof(t_hmallocPage *))
-
-/* ------------------------------------------------------------------ */
-/*  Arène                                                              */
-/* ------------------------------------------------------------------ */
 /**
- * @brief Monotonic timestamp in milliseconds.
+ * @brief The number of 64-bit words needed to represent the arena's metadata.
+ */
+# define HMALLOC_PAGE_META_COUNT	HMALLOC_ARENA_SLICE_COUNT
+
+/* Two-level bitmap: chunkmap + chunkmapBins + chunks. */
+# ifndef HMALLOC_BCHUNK_BITS
+#  define HMALLOC_BCHUNK_BITS	512u
+# endif
+
+# define HMALLOC_BCHUNK_WORDS	(HMALLOC_BCHUNK_BITS / 64u)
+# define HMALLOC_BCHUNK_COUNT	(HMALLOC_ARENA_SLICE_COUNT / HMALLOC_BCHUNK_BITS)
+# define HMALLOC_CHUNKMAP_WORDS	((HMALLOC_BCHUNK_COUNT + 63u) / 64u)
+
+/**
+ * @enum e_hmChunkBin
+ * @brief An enumeration of the different bins for chunked memory allocations.
+ *
+ * This enum is used to categorize chunks of memory into different bins
+ * based on their size. Each bin corresponds to a specific range of sizes,
+ * allowing for efficient allocation and deallocation of memory blocks.
+ */
+typedef enum e_hmChunkBin {
+	HMALLOC_CBIN_SMALL	= 0,
+	HMALLOC_CBIN_MEDIUM	= 1,
+	HMALLOC_CBIN_LARGE	= 2,
+	HMALLOC_CBIN_HUGE	= 3,
+	HMALLOC_CBIN_OTHER	= 4,
+	HMALLOC_CBIN_NONE	= 5,
+	HMALLOC_CBIN_COUNT	= 6
+} t_hmChunkBin;
+
+/**
+ * @struct s_hmBChunk
+ * @brief A chunk of memory in the arena's bitmap.
+ *
+ * Each chunk contains a fixed number of bits (HMALLOC_BCHUNK_BITS) that
+ * represent the allocation status of slices in the arena. The fields array
+ * is an atomic array of 64-bit words, where each bit corresponds to a slice.
+ */
+typedef struct s_hmBChunk {
+	_Atomic uint64_t	fields[HMALLOC_BCHUNK_WORDS];
+} t_hmBChunk;
+
+/**
+ * @struct s_hmBBitmap
+ * @brief A bitmap representing the allocation status of chunks in the arena.
+ *
+ * The bitmap is composed of a chunkmap, which tracks the allocation status of each chunk,
+ * and a set of chunkmapBins, which group chunks into different bins based on their size.
+ * The chunks array contains the actual chunks of memory.
+ */
+typedef struct s_hmBBitmap {
+	_Atomic uint64_t	chunkmap[HMALLOC_CHUNKMAP_WORDS];	/* 1 bit per chunk, set if any slice in that chunk is free */
+	/* 1 bit per chunk, set if any slice in that chunk is free, grouped by bin */
+	_Atomic uint64_t	chunkmapBins[HMALLOC_CBIN_COUNT - 1][HMALLOC_CHUNKMAP_WORDS];
+	t_hmBChunk			chunks[HMALLOC_BCHUNK_COUNT];		/* 1 bit per slice, set if the slice is free */
+} t_hmBBitmap;
+
+
+
+/* ----- Time ----- */
+
+/**
+ * @typedef t_hmMsecs
+ * @brief A type representing milliseconds as a signed 64-bit integer.
+ *
+ * This type is used to represent time in milliseconds, allowing for
+ * high-resolution timing and duration measurements in the memory allocator.
  */
 typedef int64_t	t_hmMsecs;
 
 /**
- * @brief Return a monotonic timestamp.
- * @return Milliseconds since an arbitrary point.
+ * @brief Get the current time in milliseconds.
+ *
+ * This function returns the current time in milliseconds since the epoch.
+ * It is used for timing and profiling purposes in the memory allocator.
+ *
+ * @return The current time in milliseconds as a t_hmMsecs value.
  */
 t_hmMsecs	hmallocPrimClockNow(void);
 
-/* ------------------------------------------------------------------ */
-/*  Bitmap d'arène à deux niveaux (chunkmap + chunks binnés)           */
-/* ------------------------------------------------------------------ */
-/*
- * L'arène est découpée en "chunks" de HMALLOC_BCHUNK_BITS slices.
- * Chaque chunk a 8 champs de 64 bits (= 512 bits).
+
+/* ----- Arena ----- */
+
+/**
+ * @struct s_hmallocArena
+ * @brief A memory arena that manages a contiguous region of memory.
  *
- * Un premier bitmap (chunkmap) indique pour chaque chunk s'il a
- * au moins un bit libre (heuristique conservatrice : le bit est
- * mis à 1 quand on alloue, il n'est effacé que si le chunk est
- * réellement vide).
+ * Each arena is a contiguous region of memory that is divided into slices.
+ * The arena manages the allocation and deallocation of pages within its slices,
+ * and maintains bitmaps to track free slices, abandoned pages, and purgeable slices.
  *
- * Cinq chunkmaps supplémentaires (chunkmap_bins) étiquettent chaque
- * chunk avec la classe de taille de la première allocation qui y
- * a été faite. Cela force les pages de même type (SMALL, MEDIUM,
- * LARGE) à se regrouper physiquement dans l'arène, ce qui évite
- * la fragmentation et permet de libérer des plages contiguës.
- *
- * Classes : SMALL (1 slice), MEDIUM (8), LARGE (64), HUGE (>512),
- * OTHER (tout le reste), NONE (non étiqueté).
+ * The arena also tracks the owning subproc, the arena index, and the number of
+ * slices in use. It provides thread-safe access to its data structures using
+ * atomic operations.
  */
-
-#ifndef HMALLOC_BCHUNK_BITS
-# define HMALLOC_BCHUNK_BITS     512u
-#endif
-
-#define HMALLOC_BCHUNK_FIELDS \
-    (HMALLOC_BCHUNK_BITS / 64u)                            /* 8  */
-#define HMALLOC_BCHUNK_COUNT  \
-    (HMALLOC_ARENA_SLICE_COUNT / HMALLOC_BCHUNK_BITS)      /* 8  */
-#define HMALLOC_BCHUNKMAP_WORDS \
-    ((HMALLOC_BCHUNK_COUNT + 63u) / 64u)                   /* 1  */
-
-typedef enum e_hmChunkBin {
-    HMALLOC_CBIN_SMALL  = 0,   /* slice_count == 1        */
-    HMALLOC_CBIN_MEDIUM = 1,   /* slice_count == 8        */
-    HMALLOC_CBIN_LARGE  = 2,   /* slice_count == 64       */
-    HMALLOC_CBIN_HUGE   = 3,   /* slice_count > 512       */
-    HMALLOC_CBIN_OTHER  = 4,   /* tout autre slice_count  */
-    HMALLOC_CBIN_NONE   = 5,   /* chunk non étiqueté      */
-    HMALLOC_CBIN_COUNT  = 6
-} t_hmChunkBin;
-
-/* Un chunk = HMALLOC_BCHUNK_FIELDS champs atomiques de 64 bits. */
-typedef struct s_hmBChunk {
-    _Atomic uint64_t    fields[HMALLOC_BCHUNK_FIELDS];
-} t_hmBChunk;
-
-/* Bitmap binné : chunkmap + chunkmap_bins + chunks. */
-typedef struct s_hmBBitmap {
-    _Atomic uint64_t    chunkmap[HMALLOC_BCHUNKMAP_WORDS];
-    _Atomic uint64_t    chunkmap_bins[HMALLOC_CBIN_COUNT - 1]
-                                      [HMALLOC_BCHUNKMAP_WORDS];
-    t_hmBChunk          chunks[HMALLOC_BCHUNK_COUNT];
-} t_hmBBitmap;
-
-/* Compteurs atomiques par bin, pour early-exit. */
-typedef struct s_hmBBitmapCounters {
-    _Atomic size_t      abandonedCount[HMALLOC_BIN_COUNT];
-} t_hmBBitmapCounters;
-
-#define HMALLOC_ARENA_BITMAP_WORDS \
-	((HMALLOC_ARENA_SLICE_COUNT + 63) / 64)
-
-#define HMALLOC_PAGE_META_COUNT     HMALLOC_ARENA_SLICE_COUNT
-#define HMALLOC_PAGE_META_BYTES     (HMALLOC_PAGE_META_COUNT * sizeof(t_hmallocPage *))
-
-
-/* ------------------------------------------------------------------ */
-/*  Bitmap d'arène à deux niveaux (chunkmap + chunks binnés)           */
-/* ------------------------------------------------------------------ */
-
-
-#define HMALLOC_BCHUNK_WORDS          (HMALLOC_BCHUNK_BITS / 64u)        /* 8 */
-#define HMALLOC_BCHUNK_COUNT \
-    (HMALLOC_ARENA_SLICE_COUNT / HMALLOC_BCHUNK_BITS)                    /* 8 */
-#define HMALLOC_CHUNKMAP_WORDS \
-    ((HMALLOC_BCHUNK_COUNT + 63u) / 64u)                                 /* 1 */
-
-
-
 struct s_hmallocArena {
-	/* metas[0..sliceCount-1] : tableau de pointeurs vers les pages. */
-	_Atomic(t_hmallocPage *) metas[HMALLOC_PAGE_META_COUNT];
+	_Atomic(t_hmallocPage *)	metas[HMALLOC_PAGE_META_COUNT];	/* Metadata pages for each slice in the arena */
 
-	/* Header */
-	t_hmallocMemId		memid;
-	t_hmallocSubproc	*subproc;
-	size_t				arenaIdx;
-	void				*start;
-	size_t				sliceCount;
-	size_t				infoSlices;
+	t_hmallocMemId		memid;		/* Memory ID for the arena's memory region */
+	t_hmallocSubproc	*subproc;	/* Pointer to the owning subproc (may be NULL if abandoned) */
+	size_t				arenaIdx;	/* Index of this arena in the subproc's arenas array */
+	void				*start;		/* Start address of the arena's memory region */
+	size_t				sliceCount;	/* Total number of slices in the arena */
+	size_t				infoSlices;	/* Number of slices used for metadata and bitmaps (reserved) */
 
-	/* FIX: champs modifiables depuis plusieurs threads -> atomiques. */
-	_Atomic size_t		freeSlices;
-	_Atomic size_t		firstFreeWord;
-	_Atomic size_t		failedN;
-	_Atomic size_t		abandonedCount[HMALLOC_BIN_COUNT];  /* NEW: compteur par bin */
+	_Atomic size_t		freeSlices;	/* Count of free slices in the arena (O(1) allocation) */
+	/* Count of abandoned pages per bin (O(1) allocation) */
+	_Atomic size_t		abandonedCount[HMALLOC_BIN_COUNT];
 
-	t_hmallocLock		sliceLock;
-	int					numaNode;
-	bool				isExclusive;
-	size_t				totalSize;
-	t_hmallocArena		*parent;
-	t_hmallocArena		*next;
-	t_hmallocCategory	category;
+	t_hmallocLock		sliceLock;	/* Lock for thread-safe access to the arena's slices */
+	t_hmallocArena		*next;		/* Pointer to the next arena in the subproc's arenas list */
+	t_hmallocCategory	category;	/* Category of the arena (tiny, small, large) */
 
-	t_hmBBitmap         slicesFree;         /* NOUVEAU : bitmap binné */
-	_Atomic uint64_t	pages_abandoned[HMALLOC_BIN_COUNT]
-	                                    [HMALLOC_ARENA_BITMAP_WORDS];
-	/* hmTypes.h - struct s_hmallocArena */
-_Atomic t_hmMsecs   purgeExpire;                      /* NEW */
-_Atomic uint64_t    purgeBitmap[HMALLOC_ARENA_BITMAP_WORDS];  /* NEW */
-_Atomic size_t      emptyArenaLarge;                  /* NEW (optionnel, cf. plus bas) */
+	t_hmBBitmap			slicesFree;	/* Bitmap of free slices in the arena */
+	/* Bitmap of slices that are abandoned (freed by another thread) for each bin */
+	_Atomic uint64_t	pagesAbandoned[HMALLOC_BIN_COUNT]
+									  [HMALLOC_ARENA_BITMAP_WORDS];
+
+	_Atomic t_hmMsecs	purgeExpire;	/* Expiration time for purging the arena's slices (in milliseconds) */
+	/* Bitmap of slices that are eligible for purging (not used for a while) */
+	_Atomic uint64_t	purgeBitmap[HMALLOC_ARENA_BITMAP_WORDS];
 };
 
-/* ----- Error codes ----- */
+/* ----- Errno fallbacks ----- */
+
 # ifndef EAGAIN
 #  define EAGAIN	11
 # endif

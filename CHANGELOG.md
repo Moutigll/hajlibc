@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `syscall()` wrapper
 - `<stdatomic.h>` dispatches on the compiler: GCC uses `__atomic_*`,
   Clang uses `__c11_atomic_*` (its `__atomic_*` reject `_Atomic(T) *`)
+- `<elf.h>`: ELF64 types (`Elf64_Ehdr`, `Elf64_Shdr`, `Elf64_Sym`),
+  the `ET_*` / `EM_*` / `SHT_*` / `STT_*` / `STB_*` / `SHN_*`
+  constants, and the `ELF_ST_TYPE` / `ELF_ST_BIND` helpers
+- `src/debuginfo/elf.c`: mmap-backed `s_elf` handle with
+  `elf_open` / `elf_open_self`, `elf_close`, accessors for the
+  header, section table and shstrtab, section lookup by name or
+  type, and `elf_foreach_symbol` over `.symtab`
 - New `make malloc` target builds `libft_malloc_$(ARCH)_$(OS).so`
   and its `libft_malloc.so` symlink for `LD_PRELOAD`
 - `.gitignore` now covers allocator test binaries, benchmark output,
@@ -78,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allocator internals renamed to match `<hmConfig.h>`:
   `pages_abandoned` → `pagesAbandoned`,
   `chunkmap_bins` → `chunkmapBins`
+
 ### Fixed
 
 - Nothing yet

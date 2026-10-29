@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loaded object (real phdrs when the file is readable, one
   synthetic `PT_LOAD` per mapping otherwise; non-file mappings
   such as `[vdso]` are skipped)
+- `qsort()` in `<stdlib.h>`, backed by `src/stdlib/qsort.c
 
 ### Changed
 

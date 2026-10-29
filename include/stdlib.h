@@ -10,7 +10,7 @@
  * @file stdlib.h
  * @brief Standard library header.
  * @Created: 2026/10/01 12:44:14 by Moutig
- * @Updated: 2026/10/19 16:07:19 by Moutig
+ * @Updated: 2026/10/29 01:16:41 by Moutig
  *
  * This header provides declarations for standard library functions, including
  * atexit() and exit(). It also defines the standard macros and types used in
@@ -185,5 +185,15 @@ void	*pvalloc(size_t size);
  *         (errno = ENOMEM on overflow).
  */
 void	*reallocarray(void *ptr, size_t count, size_t size);
+
+/**
+ * @brief Sort an array using the pattern-defeating quicksort algorithm.
+ *
+ * @param base  Pointer to the first element of the array.
+ * @param nmemb Number of elements in the array.
+ * @param size  Size of each element in bytes.
+ * @param compar Comparator function that compares two elements.
+ */
+void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
 
 #endif /* _STDLIB_H */

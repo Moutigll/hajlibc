@@ -10,7 +10,7 @@
  * @file lookup.c
  * @brief Debug information lookup functions for hajlibc.
  * @Created: 2026/10/28 09:11:32 by Moutig
- * @Updated: 2026/10/29 06:51:12 by Moutig
+ * @Updated: 2026/10/29 12:34:38 by Moutig
  *
  * This file implements functions for looking up debug information,
  * such as function names and source file locations,
@@ -300,8 +300,8 @@ const char *di_object_warning(const di_object *d)
 
 static const di_func *findFunc(const di_object *d, uintptr_t addr)
 {
-	size_t			lo = 0, hi = d->nfuncs;
-	const di_func	*f;
+	size_t lo = 0, hi = d->nfuncs;
+	const di_func *f;
 
 	if (d->nfuncs == 0) return (NULL);
 	while (lo < hi) {
@@ -311,7 +311,17 @@ static const di_func *findFunc(const di_object *d, uintptr_t addr)
 	}
 	if (lo == 0) return (NULL);
 	f = &d->funcs[lo - 1];
-	return ((addr < f->hi) ? f : NULL);
+	if (addr < f->hi) return (f);
+	/*
+	 * Fallback: st_size can be wrong (0, or underreported, or the
+	 * symbol is a .cold / .part.N clone whose base symbol only covers
+	 * the hot part). Accept any address that is still strictly below
+	 * the next function's start. binutils' addr2line and nm do the
+	 * same: a function is assumed to extend up to the next symbol.
+	 */
+	if (lo < d->nfuncs && addr < d->funcs[lo].lo)
+		return (f);
+	return (NULL);
 }
 
 static const di_lne *findLine(const di_object *d, uintptr_t addr)

@@ -12,7 +12,7 @@
  * @file leak.c
  * @brief Post-mortem leak report, Valgrind-style.
  * @Created: 2026/10/23 18:28:25 by Moutig
- * @Updated: 2026/10/29 08:45:46 by Moutig
+ * @Updated: 2026/10/29 12:48:45 by Moutig
  *
  * Output goes through the allocator's existing formatter
  * (`hmallocFmtInto`). Every logical line is a single `lkFmt()`
@@ -296,8 +296,16 @@ static int hmLeakCaptureStack(uintptr_t *out, int max)
 	if (g_ranges_mode == 0)
 		rangeInit();
 
-	out[d++] = (uintptr_t)__builtin_return_address(0);
-	if (d >= max) return (d);
+	/*
+	 * The first frame is the internal allocator frame:
+	 * hmLeakOnAlloc is inlined into hmallocAllocInternal, so
+	 * __builtin_return_address(0) would give us hmallocAllocInternal
+	 * (or an inlined hmLeakOnAlloc). It is useless to the operator.
+	 * Skip it: the walker starts at the frame containing this
+	 * function, then reads the return address into the caller of
+	 * hmallocAllocInternal, i.e. hmalloc / hcalloc / posix_memalign
+	 * (if not tail-called) or main (if tail-called).
+	 */
 	fp = (uintptr_t)__builtin_frame_address(0);
 	while (d < max && fp != 0 && (fp & (sizeof(void *) - 1)) == 0) {
 		uintptr_t saved_fp = *(uintptr_t *)fp;
@@ -685,6 +693,30 @@ static const char *kindLetter(t_hmLeakKind k)
 }
 
 #if HMALLOC_LEAK_TRACE
+
+/**
+ * @brief Check if a string looks like a valid file path.
+ *
+ * This function checks if the given string `s` appears to be a valid file path.
+ * It returns true if the string is non-empty and consists of printable ASCII characters.
+ *
+ * @param s The string to check.
+ * @return true if the string looks like a valid path, false otherwise.
+ */
+static bool looksLikePath(const char *s)
+{
+	if (s == NULL || s[0] == '\0')
+		return (false);
+	for (size_t i = 0; i < 512; i++) {
+		unsigned char c = (unsigned char)s[i];
+		if (c == '\0')
+			return (true);
+		if (c < 0x20 || c > 0x7e)
+			return (false);
+	}
+	return (false);
+}
+
 static void printFrame(t_lkOut *o, uintptr_t pc)
 {
 	di_info info;
@@ -696,19 +728,28 @@ static void printFrame(t_lkOut *o, uintptr_t pc)
 		return;
 	}
 	file = HMLEAK_FULL_PATH ? info.path : info.file;
+	if (file != NULL && !looksLikePath(file))
+		file = NULL;
 
-	if (info.func && file) {
+	if (info.func) {
 		off = (pc >= info.func_lo) ? (pc - info.func_lo) : 0;
-		if (off)
-			lkFmt(o, "        at %p in %s()+0x%lx (%s:%lu)\n",
-				  (void *)pc, info.func, (unsigned long)off, file,
-				  (unsigned long)info.line);
-		else
-			lkFmt(o, "        at %p in %s() (%s:%lu)\n",
-				  (void *)pc, info.func, file,
-				  (unsigned long)info.line);
-	} else if (info.func) {
-		lkFmt(o, "        at %p in %s()\n", (void *)pc, info.func);
+		if (file) {
+			if (off)
+				lkFmt(o, "        at %p in %s()+0x%lx (%s:%lu)\n",
+					  (void *)pc, info.func, (unsigned long)off, file,
+					  (unsigned long)info.line);
+			else
+				lkFmt(o, "        at %p in %s() (%s:%lu)\n",
+					  (void *)pc, info.func, file,
+					  (unsigned long)info.line);
+		} else {
+			if (off)
+				lkFmt(o, "        at %p in %s()+0x%lx\n",
+					  (void *)pc, info.func, (unsigned long)off);
+			else
+				lkFmt(o, "        at %p in %s()\n",
+					  (void *)pc, info.func);
+		}
 	} else if (file) {
 		lkFmt(o, "        at %p (%s:%lu)\n", (void *)pc, file,
 			  (unsigned long)info.line);

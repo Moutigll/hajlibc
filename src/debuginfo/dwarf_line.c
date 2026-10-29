@@ -10,7 +10,7 @@
  * @file dwarf_line.c
  * @brief DWARF line number program parsing and callback handling.
  * @Created: 2026/10/28 09:11:10 by Moutig
- * @Updated: 2026/10/29 06:54:38 by Moutig
+ * @Updated: 2026/10/29 12:47:49 by Moutig
  *
  * Emits one callback per row. Storage of the rows is entirely
  * delegated to the caller; nothing is allocated here except the
@@ -20,10 +20,10 @@
 #include "./internal.h"
 #include "../../include/stddef.h"
 
-/* DW_FORM_strp is resolved to "" (no .debug_str loaded). */
 /**
  * @brief Global string table for DWARF line number information.
- * This is used to resolve DW_FORM_strp form values.
+ * This is used to resolve DW_FORM_line_strp form values
+ * (DWARF 5, .debug_line_str section).
  */
 static const char	*g_lineStr;
 /**
@@ -31,6 +31,16 @@ static const char	*g_lineStr;
  * This is used to determine the bounds of the string table.
  */
 static size_t		g_lineStrSize;
+
+/**
+ * @brief Global string table for DWARF .debug_str.
+ * Used to resolve DW_FORM_strp form values (DWARF 2-5, shared with
+ * .debug_info). Some compilers emit DW_FORM_strp for line-table
+ * file names even when .debug_line_str exists, and GCC < 11 (or
+ * -gdwarf-4) always emits DW_FORM_strp.
+ */
+static const char	*g_debugStr;
+static size_t		g_debugStrSize;
 
 /**
  * @brief Read a DWARF form value.
@@ -50,7 +60,7 @@ static int readForm(const uint8_t **pp, const uint8_t *end, uint16_t form, unsig
 	case 0x01:	/* DW_FORM_addr */
 		if (di_rd(pp, end, addrS9ze, &v) < 0) return (-1);
 		*uval = v; return (0);
-	case 0x08:	/* DW_FORM_strp */
+	case 0x08:	/* DW_FORM_string: NUL-terminated inline */
 	{
 		const uint8_t *s = *pp;
 		while (*pp < end && **pp) (*pp)++;
@@ -59,10 +69,11 @@ static int readForm(const uint8_t **pp, const uint8_t *end, uint16_t form, unsig
 		*sval = (const char *)s;
 		return (0);
 	}
-	case 0x0e:	/* DW_FORM_string */
+	case 0x0e:	/* DW_FORM_strp: 4-byte offset into .debug_str */
 		if (di_rd(pp, end, 4, &v) < 0) return (-1);
-		*sval = ""; return (0);
-	case 0x1f:	/* DW_FORM_strp_sup */
+		*sval = (g_debugStr && v < g_debugStrSize) ? g_debugStr + v : "";
+		return (0);
+	case 0x1f:	/* DW_FORM_line_strp: 4-byte offset into .debug_line_str */
 		if (di_rd(pp, end, 4, &v) < 0) return (-1);
 		*sval = (g_lineStr && v < g_lineStrSize) ? g_lineStr + v : "";
 		return (0);
@@ -418,6 +429,8 @@ int di_dwarf_parse_line(di_object *d, di_line_cb cb, void *arg)
 
 	g_lineStr = NULL;
 	g_lineStrSize = 0;
+	g_debugStr = NULL;
+	g_debugStrSize = 0;
 	if (di < 0) return (0);
 	base = elf_section_data(e, (unsigned)di, &dlineSize);
 	if (!base) return (0);
@@ -427,6 +440,15 @@ int di_dwarf_parse_line(di_object *d, di_line_cb cb, void *arg)
 		size_t sz = 0;
 		g_lineStr = elf_section_data(e, (unsigned)dsi, &sz);
 		g_lineStrSize = sz;
+	}
+
+	/* .debug_str: needed when the compiler emits DW_FORM_strp for
+	 * file names (DWARF 2-4, or GCC < 11 / -gdwarf-4). */
+	dsi = elf_find_section(e, ".debug_str");
+	if (dsi >= 0) {
+		size_t sz = 0;
+		g_debugStr = elf_section_data(e, (unsigned)dsi, &sz);
+		g_debugStrSize = sz;
 	}
 
 	end	= base + dlineSize;

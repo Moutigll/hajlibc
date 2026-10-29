@@ -10,7 +10,7 @@
  * @file hmTypes.h
  * @brief Type definitions for the memory allocator.
  * @Created: 2026/10/05 15:26:28 by Moutig
- * @Updated: 2026/10/20 15:24:29 by Moutig
+ * @Updated: 2026/10/29 05:59:48 by Moutig
  *
  * This file contains the type definitions used by the hajlibc memory allocator.
  * It includes definitions for pages, blocks, arenas, heaps, and other
@@ -22,8 +22,7 @@
 #ifndef HMALLOC_TYPES_H
 # define HMALLOC_TYPES_H
 
-# include "../../../../include/hmConfig.h"
-# include "../../../../include/hmStats.h"
+# include "../../../../include/malloc.h"
 
 # include "hmBits.h"
 # include "hmAtomic.h"

@@ -10,7 +10,7 @@
  * @file message.c
  * @brief Message formatting and output for hajmalloc.
  * @Created: 2026/10/06 12:37:31 by Moutig
- * @Updated: 2026/10/20 12:24:49 by Moutig
+ * @Updated: 2026/10/29 05:03:28 by Moutig
  *
  * The allocator must be able to report errors, warnings and
  * verbose information without calling the libc's stdio.
@@ -19,9 +19,11 @@
  *
  * This file provides:
  *
- *   - a minimal formatter, hmallocFmt, that understands the
- *     handful of conversions the allocator uses,
- *     and EINTR,
+ *   - a minimal formatter, hmallocFmt / hmallocFmtInto, that
+ *     understands the subset of printf used by the allocator:
+ *       %[-][0][width][l|ll|z](s|c|d|u|x|X|p|%)
+ *     with '-' (left-justify), '0' (zero-pad), width,
+ *     and %p as 0x + 8 or 16 hex digits zero-padded lowercase.
  *   - an integer-to-ASCII converter, hmallocUtoa,
  *   - the entry points used by the rest of the allocator:
  *     _hmallocErrorMessage, _hmallocWarningMessage,
@@ -90,57 +92,110 @@ static void	hmFmtPutn(struct hmFmtState *st, const char *s, size_t n)
 		hmFmtPutc(st, s[i]);
 }
 
-static void	hmFmtPutUnsigned(struct hmFmtState *st, uint64_t v, unsigned base, bool upper)
+static void	hmFmtPad(struct hmFmtState *st, size_t n, char c)
+{
+	while (n--)
+		hmFmtPutc(st, c);
+}
+
+static void	hmFmtPutUnsignedW(struct hmFmtState *st, uint64_t v,
+							  unsigned base, bool upper,
+							  int width, int left, int zero)
 {
 	char	buf[64];
-	size_t	n;
+	size_t	n = hmallocUtoa(buf, sizeof(buf), v, base, upper);
+	size_t	pad = (width > (int)n) ? (size_t)width - n : 0;
 
-	n = hmallocUtoa(buf, sizeof(buf), v, base, upper);
+	if (!left)
+		hmFmtPad(st, pad, zero ? '0' : ' ');
 	hmFmtPutn(st, buf, n);
+	if (left)
+		hmFmtPad(st, pad, ' ');
 }
 
-static void	hmFmtPutSigned(struct hmFmtState *st, int64_t v)
+/* Signed, with width / left-justify / zero-pad (sign before zeros). */
+static void	hmFmtPutSignedW(struct hmFmtState *st, int64_t v, int width, int left, int zero)
 {
-	if (v < 0) {
-		hmFmtPutc(st, '-');
-		/*
-		 * -INT64_MIN is undefined behavior; use the
-		 * standard trick of computing (v + 1) as a
-		 * negative number first, then adding one back
-		 * after the negation.
-		 */
-		hmFmtPutUnsigned(st,
-						 (uint64_t)(-(v + 1)) + 1ULL,
-						 10, false);
-	} else
-		hmFmtPutUnsigned(st, (uint64_t)v, 10, false);
+	char		buf[64];
+	uint64_t	uval;
+	size_t		n, total, pad;
+	int			neg = (v < 0);
+
+	if (neg)
+		uval = (uint64_t)(-(v + 1)) + 1;
+	else
+		uval = (uint64_t)v;
+	n = hmallocUtoa(buf, sizeof(buf), uval, 10, false);
+	total = n + (neg ? 1 : 0);
+	pad = (width > (int)total) ? (size_t)width - total : 0;
+
+	if (left) {
+		if (neg)
+			hmFmtPutc(st, '-');
+		hmFmtPutn(st, buf, n);
+		hmFmtPad(st, pad, ' ');
+	} else if (zero) {
+		if (neg)
+			hmFmtPutc(st, '-');
+		hmFmtPad(st, pad, '0');
+		hmFmtPutn(st, buf, n);
+	} else {
+		hmFmtPad(st, pad, ' ');
+		if (neg)
+			hmFmtPutc(st, '-');
+		hmFmtPutn(st, buf, n);
+	}
 }
 
-size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
+static void	hmFmtPutAddr(struct hmFmtState *st, uintptr_t v)
 {
-	struct hmFmtState	st;
+	static const char	hx[] = "0123456789abcdef";
+	int					digits = (v <= 0xFFFFFFFFUL) ? 8 : 16;
 
-	st.buf = buf;
-	st.cap = cap;
-	st.pos = 0;
+	hmFmtPutc(st, '0');
+	hmFmtPutc(st, 'x');
+	for (int i = digits - 1; i >= 0; i--)
+		hmFmtPutc(st, hx[(v >> (i * 4)) & 0xF]);
+}
 
-	if (buf == NULL || cap == 0 || fmt == NULL)
-		return (0);
+void	hmallocFmtInto(struct hmFmtState *st, const char *fmt, va_list ap)
+{
+	int	left, zero, width;
+	int	isLong, isLongLong;
+
+	if (st == NULL || fmt == NULL)
+		return;
 
 	while (*fmt != '\0') {
 		if (*fmt != '%') {
-			hmFmtPutc(&st, *fmt++);
+			hmFmtPutc(st, *fmt++);
 			continue;
 		}
 
 		fmt++;	/* skip '%' */
 
+		/* Flags. */
+		left = 0;
+		zero = 0;
+		for (;;) {
+			if (*fmt == '-') { left = 1; fmt++; }
+			else if (*fmt == '0') { zero = 1; fmt++; }
+			else break;
+		}
+
+		/* Width. */
+		width = 0;
+		while (*fmt >= '0' && *fmt <= '9') {
+			width = width * 10 + (*fmt - '0');
+			fmt++;
+		}
+
 		/*
 		 * Long modifiers. Only "l" and "ll" are used in the
 		 * allocator, so a single lookahead is enough.
 		 */
-		int	isLong = 0;
-		int	isLongLong = 0;
+		isLong = 0;
+		isLongLong = 0;
 		if (*fmt == 'l') {
 			isLong = 1;
 			fmt++;
@@ -154,12 +209,33 @@ size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
 		}
 
 		switch (*fmt) {
-		case 's':
-			hmFmtPuts(&st, va_arg(ap, const char *));
+		case 's': {
+			const char	*s = va_arg(ap, const char *);
+			size_t		len = 0, pad;
+
+			if (s == NULL)
+				s = "(null)";
+			while (s[len] != '\0')
+				len++;
+			pad = (width > (int)len) ? (size_t)width - len : 0;
+			if (!left)
+				hmFmtPad(st, pad, ' ');
+			hmFmtPuts(st, s);
+			if (left)
+				hmFmtPad(st, pad, ' ');
 			break;
-		case 'c':
-			hmFmtPutc(&st, (char)va_arg(ap, int));
+		}
+		case 'c': {
+			char	c = (char)va_arg(ap, int);
+			size_t	pad = (width > 1) ? (size_t)width - 1 : 0;
+
+			if (!left)
+				hmFmtPad(st, pad, ' ');
+			hmFmtPutc(st, c);
+			if (left)
+				hmFmtPad(st, pad, ' ');
 			break;
+		}
 		case 'd': {
 			int64_t	v;
 			if (isLongLong)
@@ -170,7 +246,7 @@ size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
 				v = (int64_t)va_arg(ap, size_t);
 			else
 				v = va_arg(ap, int);
-			hmFmtPutSigned(&st, v);
+			hmFmtPutSignedW(st, v, width, left, zero);
 			break ;
 		}
 		case 'u': {
@@ -183,7 +259,7 @@ size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
 				v = va_arg(ap, size_t);
 			else
 				v = va_arg(ap, unsigned int);
-			hmFmtPutUnsigned(&st, v, 10, false);
+			hmFmtPutUnsignedW(st, v, 10, false, width, left, zero);
 			break ;
 		}
 		case 'x': {
@@ -196,7 +272,7 @@ size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
 				v = va_arg(ap, size_t);
 			else
 				v = va_arg(ap, unsigned int);
-			hmFmtPutUnsigned(&st, v, 16, false);
+			hmFmtPutUnsignedW(st, v, 16, false, width, left, zero);
 			break ;
 		}
 		case 'X': {
@@ -209,27 +285,24 @@ size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
 				v = va_arg(ap, size_t);
 			else
 				v = va_arg(ap, unsigned int);
-			hmFmtPutUnsigned(&st, v, 16, true);
+			hmFmtPutUnsignedW(st, v, 16, true, width, left, zero);
 			break ;
 		}
 		case 'p': {
 			void	*p = va_arg(ap, void *);
 
-			hmFmtPutc(&st, '0');
-			hmFmtPutc(&st, 'x');
-			hmFmtPutUnsigned(&st, (uint64_t)(uintptr_t)p,
-							 16, true);
+			hmFmtPutAddr(st, (uintptr_t)p);
 			break ;
 		}
 		case '%':
-			hmFmtPutc(&st, '%');
+			hmFmtPutc(st, '%');
 			break ;
 		case '\0':
 			/*
 			 * Trailing % at the end of the format.
 			 * Print it literally and stop.
 			 */
-			hmFmtPutc(&st, '%');
+			hmFmtPutc(st, '%');
 			fmt--;
 			break ;
 		default:
@@ -238,12 +311,26 @@ size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
 			 * prefixed by a percent sign, so the
 			 * caller can see what went wrong.
 			 */
-			hmFmtPutc(&st, '%');
-			hmFmtPutc(&st, *fmt);
+			hmFmtPutc(st, '%');
+			hmFmtPutc(st, *fmt);
 			break ;
 		}
 		fmt++;
 	}
+}
+
+size_t	hmallocFmt(char *buf, size_t cap, const char *fmt, va_list ap)
+{
+	struct hmFmtState	st;
+
+	if (buf == NULL || cap == 0 || fmt == NULL)
+		return (0);
+
+	st.buf = buf;
+	st.cap = cap;
+	st.pos = 0;
+
+	hmallocFmtInto(&st, fmt, ap);
 
 	/* NUL-terminate, even when truncated. */
 	if (st.pos < st.cap)
@@ -286,6 +373,23 @@ static void	hmEmit(const char *fmt, va_list ap)
 	else
 		fn(buf, arg);
 }
+
+#if HMALLOC_DEBUG > 0
+
+_hmDeclNoreturn _hmDeclHidden void
+_hmallocAssertFail(const char *expr, const char *file, unsigned line, const char *func)
+{
+	_hmallocErrorMessage(EINVAL,
+		"hmalloc: assertion failed: %s\n"
+		"  at %s:%u in %s()\n",
+		expr ? expr : "(null)",
+		file ? file : "?",
+		line,
+		func ? func : "?");
+	abort();
+}
+
+#endif /* HMALLOC_DEBUG > 0 */
 
 void	_hmallocErrorMessage(int err, const char *fmt, ...)
 {

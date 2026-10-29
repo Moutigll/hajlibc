@@ -10,7 +10,7 @@
  * @file page.c
  * @brief Page management for the hajlibc allocator.
  * @Created: 2026/10/19 10:46:03 by Moutig
- * @Updated: 2026/10/20 13:38:10 by Moutig
+ * @Updated: 2026/10/23 17:14:06 by Moutig
  *
  *
  * The allocator groups fixed-size blocks into pages. A page is a
@@ -442,6 +442,8 @@ void hmallocPageFree(t_hmallocTheap *th, t_hmallocPage *p)
 
 	size_t nSlices	= hmallocPageZoneSize(p->blockSize) >> HMALLOC_SLICE_SHIFT;
 	size_t sliceIdx	= hmallocPageSliceIdx(p);
+
+	hmStatsOnPageFree(p->blockSize, hmallocPageZoneSize(p->blockSize));
 
 	/* If the page is small, attempt to claim it as abandoned in the arena. */
 	if (small) {

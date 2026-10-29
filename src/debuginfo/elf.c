@@ -10,14 +10,14 @@
  * @file elf.c
  * @brief Functions for loading and parsing ELF files, and retrieving section information.
  * @Created: 2026/10/28 08:35:32 by Moutig
- * @Updated: 2026/10/28 11:44:28 by Moutig
+ * @Updated: 2026/10/29 05:18:19 by Moutig
  *
  * This file implements functions for loading ELF files into memory, parsing their headers,
  * and retrieving information about their sections. It provides an interface for working
  * with ELF files in the context of debug information lookup.
  */
 
-#include <elf.h>
+#include "./internal.h"
 
 #include <string.h>
 #include <sys/mman.h>

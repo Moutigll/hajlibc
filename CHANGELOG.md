@@ -110,6 +110,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/unistd/pipe.c`, `src/unistd/dup2.c`, `src/unistd/lseek.c`:
   raw `SYS_pipe` / `SYS_dup2` / `SYS_lseek` wrappers, normalizing
   negative returns to `errno` and -1
+  - `<bits/symbols.h>`: single place for the linker-script symbols
+  (`__text_*`, `__data_*`, `__bss_*`, `__tdata_*`, `__tbss_*`,
+  `__tls_size` / `__tls_align` as absolute values, the
+  `__preinit_array_*` / `__init_array_*` / `__fini_array_*`
+  bounds, and `__haj_initial_sp`)
+- Per-thread TLS areas: `__haj_tlsAreaSize()` and
+  `__haj_tlsAreaInit()` build one contiguous, 64-byte aligned
+  block holding the TLS variables and the TCB, for both TLS
+  variant I (aarch64) and variant II (x86_64)
+- `__haj_tcbToTp()`: thread-register value for a TCB; the TCB is
+  no longer assumed to sit at TP on aarch64
+- Stack-protector canary for the main thread is now seeded from
+  `AT_RANDOM` (low byte cleared), with the whole startup path
+  compiled `no_stack_protector`
+- `<malloc.h>`: leak-tracking API — `t_hmLeakKind`
+  (`HMLEAK_DEFINITELY_LOST` / `_INDIRECTLY_LOST` /
+  `_POSSIBLY_LOST` / `_STILL_REACHABLE` / `_SUPPRESSED`),
+  `t_hmLeakRecord` (with a 32-frame allocation stack trace),
+  `hmLeakSetTrace()`, `hmLeakOnAlloc()`, `hmLeakOnFree()`, and
+  `hmReportLeaks()` which prints a Valgrind-style summary on
+  stderr
+- `HMALLOC_LEAK_TRACE` build knob (default 0), enabled at boot
+  from `_hmallocAutoProcessInit()`
+- `HMALLOC_OPT_CHECK_LEAKS` runtime option (`HMALLOC_CHECK_LEAKS`
+  env var)
+- Stats hooks in `hmInternal.h`: `hmStatsOnHugeAlloc`,
+  `hmStatsOnNormalAlloc`, `hmStatsOnPageAlloc`, `hmStatsOnFree`,
+  `hmStatsOnPageFree`, `hmStatsOnMmap`,
+  `hmStatsOnArenaCreate` / `hmStatsOnArenaDestroy`; all expand to
+  `(void)0` when `HMALLOC_STATS == 0`
+- `t_hmallocStats` tracks `total` (cumulative allocated bytes)
+  and `peak` (high-water mark of `current`)
+- `hmallocFmtInto()` in `message.c`: the formatter now supports
+  `-` (left-justify), `0` (zero-pad), width, and `%p` with
+  zero-padded 8/16-hex-digit output; `hmallocFmt()` is a thin
+  wrapper
+- `_hmallocAssertFail()` under `HMALLOC_DEBUG`, prints the
+  expression, file, line and function then aborts
+- `<unistd.h>`: `readlink` prototype; `src/unistd/readlink.c`
+  wraps `SYS_readlink` and normalizes `-errno` to -1
+
 
 ### Changed
 

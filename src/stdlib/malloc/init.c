@@ -10,7 +10,7 @@
  * @file init.c
  * @brief Initialization functions for the hajlibc allocator.
  * @Created: 2026/10/19 10:45:07 by Moutig
- * @Updated: 2026/10/20 12:00:13 by Moutig
+ * @Updated: 2026/10/29 05:08:44 by Moutig
  *
  * This file implements the initialization functions for the hajlibc allocator.
  * It provides functions for setting up the allocator's internal structures,
@@ -18,7 +18,6 @@
  */
 
 #include "include/hmPrivate.h"
-
 #include <stdlib.h>
 #include <string.h>
 
@@ -101,6 +100,9 @@ void	_hmallocAutoProcessInit(void)
 	hmallocPrimThreadInitAutoDone();
 	_hmallocOptionsPostInit();
 	g_hmalloc.initialized = true;
+#if HMALLOC_LEAK_TRACE
+	hmLeakSetTrace(true);
+#endif
 	hmallocLockRelease(&g_hmallocTs.lock);
 }
 

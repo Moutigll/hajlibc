@@ -10,7 +10,7 @@
  * @file unix.c
  * @brief OS primitives for the allocator (POSIX and Windows).
  * @Created: 2026/10/06 12:47:16 by Moutig
- * @Updated: 2026/10/20 14:43:32 by Moutig
+ * @Updated: 2026/10/23 17:16:41 by Moutig
  *
  * Virtual memory, page size, huge pages, time, process
  * information, output, environment access, OS entropy, and the
@@ -325,6 +325,7 @@ int	hmallocPrimAlloc(void *hint, size_t size, size_t align, bool commit,
 			*out = base;
 			atomic_fetch_add_explicit(&g_hmalloc.mappedBytes, size,
 									  memory_order_relaxed);
+			hmStatsOnMmap();
 			return (0);
 		}
 	}
@@ -345,6 +346,7 @@ int	hmallocPrimAlloc(void *hint, size_t size, size_t align, bool commit,
 		*out = base;
 		atomic_fetch_add_explicit(&g_hmalloc.mappedBytes, size,
 								  memory_order_relaxed);
+		hmStatsOnMmap();
 		return (0);
 	}
 	if (size > SIZE_MAX - align - pageSize) {
@@ -371,6 +373,7 @@ int	hmallocPrimAlloc(void *hint, size_t size, size_t align, bool commit,
 	*out = (void *)aligned;
 	atomic_fetch_add_explicit(&g_hmalloc.mappedBytes, size,
 							  memory_order_relaxed);
+	hmStatsOnMmap();
 	return (0);
 }
 

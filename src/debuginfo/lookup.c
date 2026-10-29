@@ -10,7 +10,7 @@
  * @file lookup.c
  * @brief Debug information lookup functions for hajlibc.
  * @Created: 2026/10/28 09:11:32 by Moutig
- * @Updated: 2026/10/29 01:05:46 by Moutig
+ * @Updated: 2026/10/29 06:51:12 by Moutig
  *
  * This file implements functions for looking up debug information,
  * such as function names and source file locations,
@@ -19,6 +19,7 @@
  */
 
 #include "./internal.h"
+#include "../../include/link.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -52,25 +53,25 @@ static void diStrlcpy(char *dst, const char *src, size_t cap)
 	dst[i] = '\0';
 }
 
-/**
- * @brief Allocate a new debug object.
- * @return A pointer to the newly allocated debug object, or NULL on failure.
- */
+static size_t diObjSize(void)
+{
+	return ((sizeof(di_object) + 4095u) & ~(size_t)4095u);
+}
+
 static di_object *diObjAlloc(void)
 {
-	void *p = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
+	void *p = mmap(NULL, diObjSize(), PROT_READ | PROT_WRITE,
 				   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
 	if (p == MAP_FAILED)
 		return (NULL);
 	memset(p, 0, sizeof(di_object));
-	return ((di_object *)p);
+	return (p);
 }
 
 static void diObjFreeStruct(di_object *d)
 {
 	if (d != NULL)
-		munmap(d, 4096);
+		munmap(d, diObjSize());
 }
 
 /**
@@ -216,6 +217,10 @@ static void buildIndexes(di_object *d)
 	}
 }
 
+static di_object	*g_self;
+static int			g_ready;
+static char			g_lastOpenError[256];
+
 di_object *di_object_open_self(void)
 {
 	return (di_object_open("/proc/self/exe"));
@@ -234,21 +239,24 @@ di_object *di_object_open(const char *path)
 
 	d->elf = e;
 	if (path)
+	{
 		diStrlcpy(d->pathBuff, path, sizeof(d->pathBuff));
 
-	if (elf_ehdr(e)->e_type != ELF_ET_EXEC) {
-		diStrlcpy(d->err,
-				   "PIE / ET_DYN binary (load base unknown), link with -no-pie",
-				   sizeof(d->err));
-		di_object_close(d);
-		return (NULL);
+		if (elf_ehdr(e)->e_type != ELF_ET_EXEC) {
+			diStrlcpy(g_lastOpenError,
+					  "PIE / ET_DYN binary (load base unknown), link with -no-pie",
+					  sizeof(g_lastOpenError));
+			di_object_close(d);
+			return (NULL);
+		}
 	}
 
 	buildIndexes(d);
 
 	if (d->nfuncs == 0 && d->nlines == 0) {
-		diStrlcpy(d->err, "no function symbols and no line info",
-				  sizeof(d->err));
+		diStrlcpy(g_lastOpenError,
+				  "no function symbols and no line info",
+				  sizeof(g_lastOpenError));
 		di_object_close(d);
 		return (NULL);
 	}
@@ -257,6 +265,7 @@ di_object *di_object_open(const char *path)
 	else if (d->nlines == 0)
 		diStrlcpy(d->warn, "no file:line", sizeof(d->warn));
 
+	g_lastOpenError[0] = '\0';
 	d->ready = 1;
 	return (d);
 }
@@ -419,11 +428,11 @@ int di_object_foreach_section(di_object *d, int (*cb)(const di_section *, void *
 		di_section s;
 
 		memset(&s, 0, sizeof(s));
-		s.name   = elf_section_name(e, i);
-		s.type   = sh->sh_type;
-		s.addr   = sh->sh_addr;
-		s.offset = sh->sh_offset;
-		s.size   = sh->sh_size;
+		s.name		= elf_section_name(e, i);
+		s.type		= sh->sh_type;
+		s.addr		= sh->sh_addr;
+		s.offset	= sh->sh_offset;
+		s.size		= sh->sh_size;
 		int r = cb(&s, arg);
 		if (r != 0) return (r);
 	}
@@ -440,62 +449,42 @@ const void *di_object_section_data(di_object *d, const char *name, size_t *outSi
 	return elf_section_data(d->elf, (unsigned)idx, outSize);
 }
 
-
-
-#if defined(__has_include)
-# if __has_include(<link.h>)
-#  include <link.h>
-#  define DI_HAVE_LINK_H 1
-# endif
-#endif
-
-#ifdef DI_HAVE_LINK_H
+typedef struct {
+	di_loaded_cb	cb;
+	void			*arg;
+} di_loaded_ctx;
 
 static int loaded_cb(struct dl_phdr_info *info, size_t sz, void *arg)
 {
-	di_loaded_cb	user = (di_loaded_cb)((void **)arg)[0];
-	void			*uarg = ((void **)arg)[1];
+	di_loaded_ctx	*ctx = arg;
 	uintptr_t		lo = 0, hi = 0;
 
 	(void)sz;
 	for (int i = 0; i < info->dlpi_phnum; i++) {
 		const ElfW(Phdr) *ph = &info->dlpi_phdr[i];
+		uintptr_t a, b;
+
 		if (ph->p_type != PT_LOAD) continue;
-		uintptr_t a = info->dlpi_addr + ph->p_vaddr;
-		uintptr_t b = a + ph->p_memsz;
+		a = info->dlpi_addr + ph->p_vaddr;
+		b = a + ph->p_memsz;
 		if (lo == 0 || a < lo) lo = a;
 		if (b > hi) hi = b;
 	}
-	user(info->dlpi_name ? info->dlpi_name : "",
-		 (uintptr_t)info->dlpi_addr, hi - lo, uarg);
+	ctx->cb(info->dlpi_name ? info->dlpi_name : "",
+			(uintptr_t)info->dlpi_addr, hi - lo, ctx->arg);
 	return (0);
 }
 
 int di_enumerate_loaded(di_loaded_cb cb, void *arg)
 {
-	void *pack[2];
+	di_loaded_ctx	ctx;
 
 	if (!cb) return (-1);
-	pack[0] = (void *)cb;
-	pack[1] = arg;
-	dl_iterate_phdr(loaded_cb, pack);
+	ctx.cb = cb;
+	ctx.arg = arg;
+	dl_iterate_phdr(loaded_cb, &ctx);
 	return (0);
 }
-
-#else	/* !DI_HAVE_LINK_H */
-
-int di_enumerate_loaded(di_loaded_cb cb, void *arg)
-{
-	(void)cb; (void)arg;
-	return (-1);
-}
-
-#endif
-
-
-
-static di_object	*g_self;
-static int			g_ready;
 
 int di_init(void)
 {
@@ -539,7 +528,14 @@ int di_lookup(uintptr_t addr, di_info *out)
 
 const char *di_error(void)
 {
-	return (g_self ? di_object_error(g_self) : "di_init() not called");
+	if (g_self) {
+		const char *err = di_object_error(g_self);
+		if (err) return (err);
+		if (g_lastOpenError[0]) return (g_lastOpenError);
+		return (NULL);
+	}
+	if (g_lastOpenError[0]) return (g_lastOpenError);
+	return ("di_init() not called");
 }
 
 const char *di_warning(void)

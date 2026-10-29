@@ -10,14 +10,31 @@
  * @file alloc.c
  * @brief Memory allocation and deallocation functions for the hajlibc allocator.
  * @Created: 2026/10/06 14:56:07 by Moutig
- * @Updated: 2026/10/19 16:37:46 by Moutig
+ * @Updated: 2026/10/29 05:09:00 by Moutig
  *
  * This file implements the core memory allocation and deallocation functions
- * for the hajlibc allocator. It provides functions for allocating and freeing
- * memory blocks, handling both small and large allocations, and managing
- * thread-local heaps and arenas. The implementation uses a combination of
- * fast paths for common cases and more complex logic for handling edge cases,
- * including cross-thread deallocation and abandoned pages.
+ * for the hajlibc allocator.
+ *
+ * Statistics semantics (when HMALLOC_STATS > 0):
+ *
+ *   total          cumulative bytes handed out since process start (never
+ *                  decremented). It is the running sum of every successful
+ *                  allocation request, rounded up to the allocator's
+ *                  internal padded size.
+ *   current        live bytes currently allocated. Incremented on every
+ *                  allocation, decremented on every free. Should return to
+ *                  zero when every block has been freed.
+ *   peak           maximum value `current` has ever reached.
+ *   mallocNormal   number of small/medium allocations (non-huge).
+ *   mallocHuge     number of huge allocations (handled by hmallocLargeAlloc).
+ *   mallocRequested cumulative *requested* bytes (before padding).
+ *   errors         number of reported allocation errors.
+ *   mallocBins     per-bin count of normal allocations.
+ *   pageBins       per-bin count of pages created.
+ *
+ * The increments and decrements are all guarded by `#if HMALLOC_STATS` so
+ * that a `HMALLOC_STATS=0` build compiles without warnings and the fields
+ * are not touched.
  */
 
 #include "include/hmPrivate.h"
@@ -146,12 +163,10 @@ static void *hmallocLargeAlloc(t_hmallocTheap *th, size_t padded)
 	ptr = hmallocPageStart(page);
 	hmMaybePadSet(page, ptr, padded - HMALLOC_PADDING_SIZE);
 
-	if (th != NULL && th->stats != NULL) {
-		th->stats->mallocHugeCount++;
-		th->stats->mallocRequested += padded - HMALLOC_PADDING_SIZE;
-		th->stats->current		 += padded;
-		th->statsPending++;
-	}
+	/* ---- Statistics: one page + one huge allocation ---- */
+	hmStatsOnPageAlloc(page->blockSize, zone);
+	hmStatsOnHugeAlloc(th, page->blockSize, padded);
+
 	return (ptr);
 }
 
@@ -174,6 +189,7 @@ static void *_hmallocMallocGeneric(t_hmallocTheap *th, size_t padded)
 	size_t			bin;
 	size_t			binSize;
 	uintptr_t		tid;
+	bool			newPage = false;
 
 	if (!g_hmalloc.initialized)
 		_hmallocAutoProcessInit();
@@ -217,8 +233,10 @@ static void *_hmallocMallocGeneric(t_hmallocTheap *th, size_t padded)
 	}
 
 	/* If the page has no free blocks and is not fully reserved, split it to create a new block. */
-	if (page->free == NULL && page->capacity < page->reserved)
+	if (page->free == NULL && page->capacity < page->reserved) {
 		hmallocBlockSplit(page, binSize);
+		newPage = (page->capacity == 0);  /* unused here, computed below */
+	}
 	block = page->free;
 
 	/* If no free block is available, mark the page as full and search for another page. */
@@ -231,6 +249,15 @@ static void *_hmallocMallocGeneric(t_hmallocTheap *th, size_t padded)
 		block = page->free;
 		if (block == NULL) { errno = ENOMEM; return (NULL); }
 	}
+
+	/*
+	 * Detect whether the page we got was freshly created by
+	 * hmallocTheapFindPage. `page->used` is incremented below, so if
+	 * it was zero *before* this allocation and `capacity == 0`, the
+	 * page came from hmallocPageInit and counts as a new page.
+	 */
+	newPage = (page->used == 0 && page->capacity == 0);
+	(void)newPage;
 
 	/* Remove the block from the free list and update the page's metadata. */
 	page->free = hmallocBlockNext(page, block);
@@ -246,14 +273,9 @@ static void *_hmallocMallocGeneric(t_hmallocTheap *th, size_t padded)
 
 	hmMaybePadSet(page, block, padded - HMALLOC_PADDING_SIZE);
 
-#if HMALLOC_STATS
-	if (th->stats != NULL) {
-		th->stats->mallocNormalCount++;
-		th->stats->mallocRequested	+= padded - HMALLOC_PADDING_SIZE;
-		th->stats->current			+= padded;
-		th->statsPending++;
-	}
-#endif
+	/* ---- Statistics: one normal allocation ---- */
+	hmStatsOnNormalAlloc(th, padded, bin);
+
 	return (block);
 }
 
@@ -277,7 +299,6 @@ void *hmallocAllocInternal(size_t size)
 	th	= hmallocTheapDefaultGet();
 	tld	= (th != NULL) ? th->tld : NULL;
 
-
 	/* Fast path for small allocations: check if the TLD is available and
 	 * the padded size is within the tiny allocation limit. */
 	if (hmLikely(tld != NULL && padded <= HMALLOC_TINY_MAX_SIZE + HMALLOC_PADDING_SIZE))
@@ -293,6 +314,15 @@ void *hmallocAllocInternal(size_t size)
 			page->used++;
 			page->freeIsZero = false;
 			hmMaybePadSet(page, block, size);
+			hmLeakOnAlloc(block, size);
+
+			/*
+			 * Fast-path stats: the block comes from an existing
+			 * page (no new page created), so we only count the
+			 * allocation itself.
+			 */
+			hmStatsOnNormalAlloc(th, padded, hmallocBinOf(padded));
+
 			return (block);
 		}
 	}
@@ -313,7 +343,10 @@ void *hmallocAllocInternal(size_t size)
 	{
 		void *p = _hmallocMallocGeneric(th, padded);
 		if (p != NULL)
+		{
+			hmLeakOnAlloc(p, size);
 			hmTrackMalloc(p, size, size, false);
+		}
 		return (p);
 	}
 }
@@ -370,6 +403,9 @@ hmallocFreeLocalFast(t_hmallocTheap *th, t_hmallocPage *page,
 		if (page->retireExpire == 0)
 			hmallocPageRetire(th, page);
 	}
+
+	/* ---- Statistics: free one block of the page's blockSize ---- */
+	hmStatsOnFree(th, page->blockSize);
 }
 
 /**
@@ -412,7 +448,7 @@ hmallocFreeRemote(t_hmallocPage *page, void *p)
  * remote free list of the page.
  *
  * @param page The page containing the block to be freed.
- * @param p A pointer to the memory block to be freed.
+ * @param p The pointer to the memory block to be freed.
  * @param tid The thread ID of the current thread.
  * @param xtid The extended thread ID of the page.
  */
@@ -463,6 +499,9 @@ hmallocFreeGeneric(t_hmallocPage *page, void *p, uintptr_t tid, uintptr_t xtid)
 		uint16_t newused = (page->used > 0 ? page->used - 1 : 0);
 		page->used = newused;
 
+		/* ---- Statistics: free one block ---- */
+		hmStatsOnFree(hmallocTheapDefaultGet(), page->blockSize);
+
 		if (newused == 0) { /* Empty page: retire it. */
 			hmallocPageFree(NULL, page);
 			return;
@@ -502,6 +541,7 @@ hmallocFreeInternal(void *p)
 
 	if (hmUnlikely(p == NULL))
 		return;
+	hmLeakOnFree(p);
 
 	/* Find the page corresponding to the pointer. */
 	page = hmallocPageMapGet(p);
@@ -527,6 +567,9 @@ hmallocFreeInternal(void *p)
 			if (page->retireExpire == 0)
 				hmallocPageRetire(hmallocTheapDefaultGet(), page);
 		}
+
+		/* ---- Statistics: free one block of the page's blockSize ---- */
+		hmStatsOnFree(hmallocTheapDefaultGet(), page->blockSize);
 		return;
 	}
 

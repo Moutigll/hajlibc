@@ -10,7 +10,7 @@
  * @file hmInternal.h
  * @brief Internal definitions and utilities for the hajmalloc allocator.
  * @Created: 2026/10/05 16:24:44 by Moutig
- * @Updated: 2026/10/20 14:20:16 by Moutig
+ * @Updated: 2026/10/29 08:56:18 by Moutig
  *
  * This header file contains internal definitions, macros, and utility functions
  * used by the hajmalloc allocator. It includes alignment utilities, overflow checks,
@@ -422,5 +422,29 @@ void	_hmallocStatsMergeInto(t_hmallocStats *to, t_hmallocStats *from);
 
 void	_hmallocRandomInit(t_hmallocTld *tld);
 size_t	_hmallocRandomNext(t_hmallocTld *tld);
+
+#if HMALLOC_STATS
+
+void	hmStatsOnHugeAlloc(t_hmallocTheap *th, size_t blockSize, size_t padded);
+void	hmStatsOnNormalAlloc(t_hmallocTheap *th, size_t padded, size_t bin);
+void	hmStatsOnPageAlloc(size_t blockSize, size_t zoneSize);
+void	hmStatsOnFree(t_hmallocTheap *th, size_t padded);
+void	hmStatsOnPageFree(size_t blockSize, size_t zoneSize);
+void	hmStatsOnMmap(void);
+void	hmStatsOnArenaCreate(void);
+void	hmStatsOnArenaDestroy(void);
+
+#else /* !HMALLOC_STATS */
+
+# define hmStatsOnHugeAlloc(th, blockSize, padded)	((void)0)
+# define hmStatsOnNormalAlloc(th, padded, bin)		((void)0)
+# define hmStatsOnPageAlloc(blockSize, zoneSize)	((void)0)
+# define hmStatsOnFree(th, padded)					((void)0)
+# define hmStatsOnPageFree(blockSize, zoneSize)		((void)0)
+# define hmStatsOnMmap()							((void)0)
+# define hmStatsOnArenaCreate()						((void)0)
+# define hmStatsOnArenaDestroy()					((void)0)
+
+#endif /* HMALLOC_STATS */
 
 #endif /* HMALLOC_INTERNAL_H */

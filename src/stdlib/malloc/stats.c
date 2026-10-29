@@ -10,7 +10,7 @@
  * @file stats.c
  * @brief Statistics collection for the hajlibc allocator.
  * @Created: 2026/10/19 10:46:59 by Moutig
- * @Updated: 2026/10/20 13:56:25 by Moutig
+ * @Updated: 2026/10/23 17:53:17 by Moutig
  *
  *	This file implements functions for collecting and reporting statistics
  *	about memory usage in the hajlibc allocator. It provides functions to
@@ -24,7 +24,7 @@
 
 #include <unistd.h>
 #include <string.h>
-
+#if HMALLOC_STATS
 void	_hmallocStatsInit(void)
 {
 	t_hmallocStats	*s = &g_hmalloc.statsSubproc;
@@ -540,3 +540,114 @@ void	hmProcessInfo(size_t *elapsedMsecs,	size_t *userMsecs,
 	if (pageFaults != NULL)
 		*pageFaults = info.pageFaults;
 }
+
+
+__HAJ_INLINE void	hmStatsOnHugeAlloc(t_hmallocTheap *th, size_t blockSize, size_t padded)
+{
+	if (th == NULL || th->stats == NULL)
+		return;
+	th->stats->mallocHugeCount++;
+	th->stats->mallocRequested += padded - HMALLOC_PADDING_SIZE;
+	th->stats->total += padded;
+	th->stats->current += blockSize;
+	if (th->stats->current > th->stats->peak)
+		th->stats->peak = th->stats->current;
+	th->statsPending++;
+}
+
+__HAJ_INLINE void	hmStatsOnNormalAlloc(t_hmallocTheap *th, size_t padded, size_t bin)
+{
+	if (th == NULL || th->stats == NULL)
+		return;
+
+	th->stats->mallocNormalCount++;
+	th->stats->mallocRequested	+= padded - HMALLOC_PADDING_SIZE;
+	th->stats->total			+= padded;
+	th->stats->current			+= padded;
+	if (th->stats->current > th->stats->peak)
+		th->stats->peak = th->stats->current;
+	if (bin < HMALLOC_BIN_COUNT)
+		th->stats->mallocBins[bin]++;
+	th->statsPending++;
+}
+
+__HAJ_INLINE void	hmStatsOnPageAlloc(size_t blockSize, size_t zoneSize)
+{
+	__atomic_fetch_add(&g_hmalloc.statsSubproc.pages,		1,			__ATOMIC_RELAXED);
+	__atomic_fetch_add(&g_hmalloc.statsSubproc.reserved,	zoneSize,	__ATOMIC_RELAXED);
+	__atomic_fetch_add(&g_hmalloc.statsSubproc.committed,	zoneSize,	__ATOMIC_RELAXED);
+	if (blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE) {
+		size_t bin = hmallocBinOf(blockSize);
+		if (bin < HMALLOC_BIN_COUNT)
+			__atomic_fetch_add(&g_hmalloc.statsSubproc.pageBins[bin], 1,
+							   __ATOMIC_RELAXED);
+	}
+}
+
+__HAJ_INLINE void	hmStatsOnFree(t_hmallocTheap *th, size_t padded)
+{
+	if (th == NULL || th->stats == NULL)
+		return;
+
+	if (th->stats->current >= padded)
+		th->stats->current -= padded;
+	else
+		th->stats->current = 0;
+	th->statsPending++;
+}
+
+__HAJ_INLINE void	hmStatsOnPageFree(size_t blockSize, size_t zoneSize)
+{
+	size_t cur;
+	cur = __atomic_load_n(&g_hmalloc.statsSubproc.pages, __ATOMIC_RELAXED);
+	while (cur > 0) {
+		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.pages, &cur,
+				cur - 1, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+			break;
+	}
+	cur = __atomic_load_n(&g_hmalloc.statsSubproc.reserved, __ATOMIC_RELAXED);
+	while (cur >= zoneSize) {
+		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.reserved, &cur,
+				cur - zoneSize, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+			break;
+	}
+	cur = __atomic_load_n(&g_hmalloc.statsSubproc.committed, __ATOMIC_RELAXED);
+	while (cur >= zoneSize) {
+		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.committed, &cur,
+				cur - zoneSize, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+			break;
+	}
+	if (blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE) {
+		size_t bin = hmallocBinOf(blockSize);
+		if (bin < HMALLOC_BIN_COUNT) {
+			cur = __atomic_load_n(&g_hmalloc.statsSubproc.pageBins[bin], __ATOMIC_RELAXED);
+			while (cur > 0) {
+				if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.pageBins[bin], &cur,
+						cur - 1, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+					break;
+			}
+		}
+	}
+}
+
+__HAJ_INLINE void	hmStatsOnMmap(void)
+{
+	__atomic_fetch_add(&g_hmalloc.statsSubproc.mmapCalls, 1, __ATOMIC_RELAXED);
+}
+
+__HAJ_INLINE void	hmStatsOnArenaCreate(void)
+{
+	__atomic_fetch_add(&g_hmalloc.statsSubproc.arenaCount, 1, __ATOMIC_RELAXED);
+}
+
+__HAJ_INLINE void	hmStatsOnArenaDestroy(void)
+{
+	size_t cur = __atomic_load_n(&g_hmalloc.statsSubproc.arenaCount, __ATOMIC_RELAXED);
+	while (cur > 0) {
+		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.arenaCount, &cur,
+				cur - 1, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+			break;
+	}
+}
+
+#endif /* HMALLOC_STATS */

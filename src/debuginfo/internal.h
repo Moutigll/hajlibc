@@ -10,7 +10,7 @@
  * @file internal.h
  * @brief Internal header for debuginfo module.
  * @Created: 2026/10/28 08:54:53 by Moutig
- * @Updated: 2026/10/28 12:48:44 by Moutig
+ * @Updated: 2026/10/29 05:24:34 by Moutig
  *
  * This header file defines internal structures, constants, and function prototypes
  * used by the debuginfo module. It is not intended for public use and should only
@@ -20,8 +20,26 @@
 #ifndef HAJ_DI_INTERNAL_H
 # define HAJ_DI_INTERNAL_H
 
-# include <elf.h>
-# include <debuginfo.h>
+# include "../../include/elf.h"
+# include "../../include/debuginfo.h"
+
+# ifndef __HAJ_INLINE
+#  if defined(__HAJ_C_VERSION) && __HAJ_C_VERSION >= 199901L
+#   define __HAJ_INLINE	inline
+#  elif defined(__HAJ_COMPILER_GNULIKE)
+#   define __HAJ_INLINE	__inline__
+#  elif defined(__HAJ_COMPILER_MSVC)
+#   define __HAJ_INLINE	__inline
+#  else
+#   define __HAJ_INLINE
+#  endif
+# endif
+
+# if defined(__GNUC__) || defined(__clang__)
+#  define __HAJ_INLINE_UNUSED		__attribute__((unused))
+# else
+#  define __HAJ_INLINE_UNUSED
+# endif
 
 /* Default chunk size. One mmap is done per chunk. */
 # define DI_CHUNK_SIZE	(64u * 1024u)
@@ -142,7 +160,8 @@ const char *di_path_join(di_object *d, const char *dir, const char *name);
  * @param end Pointer to the end of the byte stream.
  * @return The decoded unsigned LEB128 value.
  */
-static __HAJ_INLINE uint64_t di_uleb(const uint8_t **pp, const uint8_t *end)
+static __HAJ_INLINE __HAJ_INLINE_UNUSED
+uint64_t di_uleb(const uint8_t **pp, const uint8_t *end)
 {
 	uint64_t v = 0;
 	unsigned s = 0;
@@ -166,7 +185,8 @@ static __HAJ_INLINE uint64_t di_uleb(const uint8_t **pp, const uint8_t *end)
  * @param end Pointer to the end of the byte stream.
  * @return The decoded signed LEB128 value.
  */
-static __HAJ_INLINE int64_t di_sleb(const uint8_t **pp, const uint8_t *end)
+static __HAJ_INLINE __HAJ_INLINE_UNUSED
+int64_t di_sleb(const uint8_t **pp, const uint8_t *end)
 {
 	int64_t		v = 0;
 	unsigned	s = 0;
@@ -194,7 +214,8 @@ static __HAJ_INLINE int64_t di_sleb(const uint8_t **pp, const uint8_t *end)
  * @param out Pointer to the location where the read value will be stored.
  * @return 0 on success, -1 on failure.
  */
-static __HAJ_INLINE int di_rd(const uint8_t **pp, const uint8_t *end, unsigned n, uint64_t *out)
+static __HAJ_INLINE __HAJ_INLINE_UNUSED
+int di_rd(const uint8_t **pp, const uint8_t *end, unsigned n, uint64_t *out)
 {
 	uint64_t v = 0;
 	if (n > 8 || (size_t)(end - *pp) < n) return -1;

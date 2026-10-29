@@ -10,7 +10,7 @@
  * @file theap.c
  * @brief Thread-local heaps: lifecycle and page reclaim.
  * @Created: 2026/10/19 10:47:14 by Moutig
- * @Updated: 2026/10/20 14:16:27 by Moutig
+ * @Updated: 2026/10/23 18:25:49 by Moutig
  *
  * Each thread owns a `t_hmallocTheap`, which manages the pages
  * assigned to that thread. The theap maintains one page queue per
@@ -429,6 +429,8 @@ t_hmallocPage	*hmallocTheapNewPage(t_hmallocTheap *th, size_t blockSize, size_t 
 		return (NULL);
 	}
 
+	hmStatsOnPageAlloc(blockSize, zoneSize);
+
 	page->theap	= th;
 	page->heap	= th->heap;
 	atomic_store_explicit(&page->xthreadId, hmallocPrimThreadId(), memory_order_relaxed);
@@ -502,7 +504,7 @@ void	hmallocTheapCollect(t_hmallocTheap *th, bool force)
 	/* Give the deferred-purge scheduler a chance to run. */
 	for (int c = 0; c < 3; c++) {
 		for (t_hmallocArena *a = g_hmalloc.arenas[c];
-		     a != NULL; a = a->next) {
+			 a != NULL; a = a->next) {
 			hmallocArenaTryPurge(a);
 		}
 	}

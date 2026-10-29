@@ -10,7 +10,7 @@
  * @file link.h
  * @brief Linker symbols and dl_iterate_phdr interface for hajlibc.
  * @Created: 2026/10/27 08:25:42 by Moutig
- * @Updated: 2026/10/29 01:02:50 by Moutig
+ * @Updated: 2026/10/29 05:27:47 by Moutig
  *
  * This header defines the interface for iterating over loaded ELF objects
  * using dl_iterate_phdr, as well as linker symbols for .text, .data, .bss, and TLS sections.
@@ -22,7 +22,7 @@
 # define HAJ_LINK_H
 
 # include <stdint.h>
-# include <elf.h>
+# include "./elf.h"
 
 # ifdef __cplusplus
 extern "C" {

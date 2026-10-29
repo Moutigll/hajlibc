@@ -10,13 +10,13 @@
  * @file dl_iterate_phdr.c
  * @brief Implementation of dl_iterate_phdr for hajlibc.
  * @Created: 2026/10/27 08:26:51 by Moutig
- * @Updated: 2026/10/29 01:11:36 by Moutig
+ * @Updated: 2026/10/29 05:35:37 by Moutig
  *
  * This file provides an implementation of the dl_iterate_phdr function, which
  * iterates over the program headers of loaded ELF objects in the current process.
  */
 
-#include <link.h>
+#include "../../include/link.h"
 
 #include <string.h>
 #include <fcntl.h>

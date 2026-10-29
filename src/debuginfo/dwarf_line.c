@@ -10,7 +10,7 @@
  * @file dwarf_line.c
  * @brief DWARF line number program parsing and callback handling.
  * @Created: 2026/10/28 09:11:10 by Moutig
- * @Updated: 2026/10/28 11:28:39 by Moutig
+ * @Updated: 2026/10/29 06:54:38 by Moutig
  *
  * Emits one callback per row. Storage of the rows is entirely
  * delegated to the caller; nothing is allocated here except the
@@ -18,7 +18,7 @@
  */
 
 #include "./internal.h"
-#include <stddef.h>
+#include "../../include/stddef.h"
 
 /* DW_FORM_strp is resolved to "" (no .debug_str loaded). */
 /**
@@ -422,7 +422,7 @@ int di_dwarf_parse_line(di_object *d, di_line_cb cb, void *arg)
 	base = elf_section_data(e, (unsigned)di, &dlineSize);
 	if (!base) return (0);
 
-	dsi = elf_find_section(e, ".debug_lineStr");
+	dsi = elf_find_section(e, ".debug_line_str");
 	if (dsi >= 0) {
 		size_t sz = 0;
 		g_lineStr = elf_section_data(e, (unsigned)dsi, &sz);

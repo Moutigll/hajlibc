@@ -10,7 +10,7 @@
  * @file hmalloc.h
  * @brief Public API of the hmalloc allocator.
  * @Created: 2026/10/05 15:16:12 by Moutig
- * @Updated: 2026/10/20 12:13:21 by Moutig
+ * @Updated: 2026/10/29 05:59:02 by Moutig
  *
  * hmalloc is the dynamic memory allocator shipped with
  * hajlibc. It backs the standard `malloc`, `free`, `realloc`
@@ -40,7 +40,6 @@
 # include <stdbool.h>
 
 # include "hmConfig.h"
-# include "hmStats.h"
 
 # ifdef __cplusplus
 extern "C" {
@@ -300,6 +299,192 @@ _hmDeclExport
 void	hfreeSize(void *p, size_t size)
 		_hmAttrNoexcept;
 
+/* ----- Leak API ----- */
+
+/**
+ * @brief Classification of a leaked block.
+ *
+ * This enumeration defines the possible classifications for
+ * leaked memory blocks. It is used in the leak detection and
+ * reporting functionality of the hmalloc allocator.
+ *
+ * - DEFINITELY_LOST: The block is definitely lost and cannot be reached.
+ * - INDIRECTLY_LOST: The block is indirectly lost,
+ * 					  meaning it is reachable only through other lost blocks.
+ * - POSSIBLY_LOST: The block is possibly lost,
+ * 					  meaning it may be reachable but is not currently accessible.
+ * - STILL_REACHABLE: The block is still reachable and can be accessed.
+ * - SUPPRESSED: The block is suppressed and will not be reported as a leak.
+ */
+typedef enum e_hmLeakKind {
+	HMLEAK_DEFINITELY_LOST	= 0,
+	HMLEAK_INDIRECTLY_LOST	= 1,
+	HMLEAK_POSSIBLY_LOST	= 2,
+	HMLEAK_STILL_REACHABLE	= 3,
+	HMLEAK_SUPPRESSED		= 4,
+} t_hmLeakKind;
+
+/* ----- One leaked block, as reported ----- */
+
+typedef struct s_hmLeakRecord {
+	const void		*ptr;		/* block base address */
+	size_t			size;		/* requested size (from padding) */
+	size_t			blockSize;	/* full block size including padding */
+	t_hmLeakKind	kind;
+	uintptr_t		ownerTid;	/* thread that allocated it */
+	uintptr_t		arenaStart;	/* arena base (for context) */
+	uintptr_t		pageStart;	/* page base (for context) */
+	/* Stack trace captured at allocation time. */
+	uintptr_t		stack[32];
+	int				stackDepth;
+} t_hmLeakRecord;
+
+/**
+ * @brief Enable stack trace capture at malloc() time.
+ *
+ * Called once at startup (or lazily on first malloc) from
+ * `_hmallocAutoProcessInit`. Off by default; the call site is inside
+ * the allocator's init path so it can be enabled at compile time
+ * with -DHMALLOC_LEAK_TRACE=1 or at runtime via
+ * `hmLeakSetTrace(true)`.
+ *
+ * Cost: 128 bytes of metadata per live block, plus one backtrace per
+ * malloc. On a modern CPU this is a few microseconds per allocation;
+ * it slows down alloc-heavy workloads by ~10x. Only useful for leak
+ * hunts.
+ */
+void	hmLeakSetTrace(bool enable);
+
+/**
+ * @brief Record a malloc in the leak tracker.
+ *
+ * Called from `hmallocAllocInternal` *after* the block has been
+ * allocated and its padding set, but *before* it is returned to the
+ * caller. No-op when tracing is disabled or when the block is
+ * immediately freed.
+ *
+ * @param ptr   User pointer (block start + padding).
+ * @param size  Requested size (before padding).
+ */
+void	hmLeakOnAlloc(void *ptr, size_t size);
+
+/**
+ * @brief Record a free in the leak tracker.
+ *
+ * Removes the allocation from the live set. No-op when tracing is
+ * disabled or when the pointer is unknown (interior pointer, reused
+ * memory, etc.).
+ *
+ * @param ptr User pointer passed to free().
+ */
+void	hmLeakOnFree(void *ptr);
+
+/**
+ * @brief Print a Valgrind-style leak report on stderr.
+ *
+ * Walks every arena, classifies every block, resolves the stack
+ * traces, and prints one section per classification, plus a summary
+ * that is identical to Valgrind's. The output format is:
+ *
+ *     ==12345== LEAK SUMMARY:
+ *     ==12345==    definitely lost: 32 bytes in 2 blocks
+ *     ==12345==    indirectly lost: 0 bytes in 0 blocks
+ *     ==12345==      possibly lost: 128 bytes in 1 blocks
+ *     ==12345==    still reachable: 4096 bytes in 3 blocks
+ *     ==12345==         suppressed: 0 bytes in 0 blocks
+ *
+ * The function takes the global allocator lock while walking, then
+ * releases it before printing (so symbolization can allocate).
+ *
+ * Requires `HMALLOC_LEAK_TRACE=1` for the stack traces to be
+ * meaningful. Without it, blocks are still classified but the
+ * "at 0x...: ..." lines are omitted.
+ */
+void	hmReportLeaks(void);
+
+/* ----- Stats API ----- */
+
+/* ----- Bin geometry ----- */
+
+/**
+ * @brief Maximum size for a "tiny" allocation.
+ *
+ * Allocations larger than this size are considered "huge" and are
+ * handled differently by the allocator.
+ */
+# define HMALLOC_BIN_HUGE		73
+# define HMALLOC_BIN_FULL		(HMALLOC_BIN_HUGE + 1)
+# define HMALLOC_BIN_COUNT		(HMALLOC_BIN_FULL + 1)
+
+/**
+ * @brief Maximum size for a "tiny" allocation.
+ *
+ * Allocations under this size follow a "fast-path" allocation strategy using a direct index table.
+ * Allocations larger than this size are handled differently by the allocator.
+ */
+# ifndef HMALLOC_TINY_MAX_SIZE
+#  define HMALLOC_TINY_MAX_SIZE	4096
+# endif
+
+/**
+ * @brief Number of direct page allocations for tiny allocations.
+ *
+ * This is calculated based on the maximum size for tiny allocations.
+ * It determines how many direct page allocations are available for tiny allocations.
+ */
+# define HMALLOC_PAGES_DIRECT	((HMALLOC_TINY_MAX_SIZE >> 3) + 2)
+
+/* ----- Stats snapshot ----- */
+
+# define HMALLOC_STATS_VERSION	1
+
+/**
+ * @brief Snapshot of the allocator statistics.
+ *
+ * The caller fills `size` and `version` before calling
+ * hmStatsGet (hmStatsInit does this).
+ *
+ * When HMALLOC_STATS == 0, the collection code is not compiled
+ * in, but the type is still available so the public API links.
+ */
+typedef struct s_hmallocStats {
+	size_t	size;		/* = sizeof(t_hmallocStats) */
+	int		version;	/* = HMALLOC_STATS_VERSION */
+
+	size_t	total;		/* Total memory allocated by the allocator. */
+	size_t	peak;		/* Peak memory usage recorded by the allocator. */
+	size_t	current;	/* Current memory usage recorded by the allocator. */
+
+	size_t	pages;		/* Total number of pages allocated by the allocator. */
+	size_t	reserved;	/* Total reserved memory by the allocator. */
+	size_t	committed;	/* Total committed memory by the allocator. */
+	size_t	mmapCalls;	/* Total number of mmap calls made by the allocator. */
+	size_t	arenaCount;	/* Total number of arenas created by the allocator. */
+
+	size_t	mallocNormalCount;	/* Total number of normal malloc calls made by the allocator. */
+	size_t	mallocHugeCount;	/* Total number of huge malloc calls made by the allocator. */
+	size_t	mallocRequested;	/* Total number of bytes requested by malloc calls. */
+	size_t	errors;				/* Total number of errors encountered by the allocator. */
+
+	size_t	mallocBins[HMALLOC_BIN_COUNT];	/* Total number of allocations per bin size. */
+	size_t	pageBins[HMALLOC_BIN_COUNT];	/* Total number of pages allocated per bin size. */
+} t_hmallocStats;
+
+/**
+ * @brief Zero-initialise a stats snapshot and set the header.
+ * @param s Structure to initialise.
+ */
+static inline void	hmStatsInit(t_hmallocStats *s)
+{
+	unsigned char	*p = (unsigned char *)s;
+
+	for (size_t i = 0; i < sizeof(*s); i++)
+		p[i] = 0;
+	s->size = sizeof(*s);
+	s->version = HMALLOC_STATS_VERSION;
+}
+
+
 /* ----- Heap API ----- */
 
 /**
@@ -498,6 +683,7 @@ typedef enum e_hmallocOption {
 	HMALLOC_OPT_PERTURB,
 	HMALLOC_OPT_CHECK,
 	HMALLOC_OPT_TRACE,
+	HMALLOC_OPT_CHECK_LEAKS,
 	HMALLOC_OPT_LAST
 } t_hmallocOption;
 

@@ -10,7 +10,7 @@
  * @file elf.h
  * @brief ELF64 header and section definitions, and loaded ELF handle.
  * @Created: 2026/10/28 08:11:18 by Moutig
- * @Updated: 2026/10/29 01:00:50 by Moutig
+ * @Updated: 2026/10/29 05:12:12 by Moutig
  *
  * This header defines the ELF64 structures and constants needed to parse
  * ELF files, as well as a handle for loaded ELF files that provides
@@ -20,6 +20,7 @@
 #ifndef HAJ_ELF_H
 # define HAJ_ELF_H
 
+# include <stddef.h>
 # include <stdint.h>
 
 # ifdef __cplusplus

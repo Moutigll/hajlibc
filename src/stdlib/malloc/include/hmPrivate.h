@@ -151,16 +151,6 @@ void			hmallocArenaFreeSlices(t_hmallocArena *a, size_t idx, size_t n);
 void			hmallocArenaDestroy(t_hmallocArena *a);
 
 /**
- * @brief Get the arena associated with a page.
- *
- * This function returns the arena that is associated with the specified page.
- *
- * @param p The page for which to get the associated arena.
- * @return The arena associated with the page, or NULL if no such arena exists.
- */
-t_hmallocArena __HAJ_INLINE	*hmallocArenaOfPage(const t_hmallocPage *p);
-
-/**
  * @brief Set the page range for an arena.
  *
  * This function sets the range of pages associated with the specified arena.

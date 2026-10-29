@@ -10,7 +10,7 @@
  * @file arena.c
  * @brief Arena allocation, binned slice bitmap, abandoned-slice reclaim.
  * @Created: 2026/10/06 13:32:48 by Moutig
- * @Updated: 2026/10/20 15:32:03 by Moutig
+ * @Updated: 2026/10/23 17:15:00 by Moutig
  *
  * An arena is a 256 MiB region carved into 64 KiB slices. Each slice
  * is either metadata (the arena header itself, plus its metas[] array
@@ -526,6 +526,7 @@ t_hmallocArena *hmallocArenaCreate(size_t zoneSize, t_hmallocCategory cat)
 	atomic_fetch_add_explicit(&subproc->arenaCount, 1, memory_order_relaxed);
 
 	hmallocArenaListAdd(&g_hmalloc.arenas[cat], a);
+	hmStatsOnArenaCreate();
 	return (a);
 }
 
@@ -558,6 +559,8 @@ void hmallocArenaDestroy(t_hmallocArena *a)
 				th->arenaHint[c] = NULL;
 	}
 	hmallocLockRelease(&heap->theapsLock);
+
+	hmStatsOnArenaDestroy();
 
 	if (base != NULL && total > 0)
 		(void)hmallocPrimFree(base, total);
@@ -849,11 +852,6 @@ void hmallocArenaFreeSlices(t_hmallocArena *a, size_t idx, size_t n)
 		hmallocArenaDestroy(a);
 
 	hmallocLockRelease(&g_hmallocTs.lock);
-}
-
-t_hmallocArena __HAJ_INLINE *hmallocArenaOfPage(const t_hmallocPage *p)
-{
-	return ((p == NULL) ? NULL : p->arena);
 }
 
 bool hmallocArenaSetPageRange(t_hmallocArena *a, size_t sliceIdx, size_t nSlices, t_hmallocPage *page)

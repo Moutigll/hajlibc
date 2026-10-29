@@ -10,15 +10,29 @@
  * @file tcb.h
  * @brief Thread Control Block (TCB).
  * @Created: 2026/09/30 05:17:29 by Moutig
- * @Updated: 2026/10/05 11:39:37 by Moutig
+ * @Updated: 2026/10/23 00:01:32 by Moutig
  *
  * The TCB holds all per-thread data the runtime needs: identity,
  * stack bounds, join state, TSD slots, cancellation state, and
  * cleanup handlers.
  *
- * It is placed at the top of the thread's stack, 16-byte
- * aligned. The thread register (%fs on x86_64, tpidr_el0 on
- * aarch64) points to it.
+ * Every thread owns one contiguous, 64-byte aligned "TLS area" that
+ * holds its TLS variables AND its TCB (see tcb.c):
+ *
+ *   x86_64  (TLS variant II, TCB at TP):
+ *
+ *       area                          area + tlsSize
+ *       | TLS variables (tlsSize) | TCB |
+ *                                  ^-- TP (%fs), TP == tcb, %fs:0 == tcb
+ *
+ *   aarch64 (TLS variant I, TLS above TP):
+ *
+ *       area            area + span      TP + 16 (rounded to tls align)
+ *       | TCB (span) |  TP -> | gap | TLS variables |
+ *                       ^-- tpidr_el0 == tcb + span
+ *
+ * The thread register therefore does NOT always equal the TCB
+ * pointer: always go through __haj_tcbSelf() / __haj_tcbToTp().
  *
  * Fields are ordered for a dense layout: pointers and size_t
  * first (8-byte aligned), then ints (4-byte), then arrays.
@@ -101,8 +115,13 @@ struct __haj_thCleanup;
 /**
  * @brief Thread Control Block.
  *
- * Offset 0 and 8 are reserved: the first two pointers are
- * mandated by the ABI (self, dtv). Everything else is free.
+ * ABI-mandated offsets (x86_64):
+ *   0x00  self          read by __haj_tcbSelf() as %fs:0
+ *   0x08  dtv
+ *   0x28  stackCanary   clang/gcc read the stack-protector canary
+ *                       from %fs:0x28 (glibc's stack_guard slot).
+ *
+ * Everything else is free.
  */
 struct __haj_tcb {
 	/* ---- ABI-mandated (offset 0, 8) ---- */
@@ -115,6 +134,9 @@ struct __haj_tcb {
 	int						state;			/* HAJ_THREAD_* */
 	int						joinFutex;		/* futex for pthread_join */
 	int						_pad0;			/* keep 8-byte alignment */
+
+	/* ---- Canary (ABI-mandated, offset 0x28 on x86_64) ---- */
+	__haj_uintptr			stackCanary;	/* stack protector guard value */
 
 	/* ---- Stack ---- */
 	void					*stackBase;		/* bottom of the mapping */
@@ -151,12 +173,25 @@ struct __haj_tcb {
 	/* ---- Affinity ---- */
 	cpu_set_t				*affinityMask;
 
-	/* ---- Canary ---- */
-	__haj_uintptr			stackCanary;
-
 	/* ---- TSD slots ---- */
 	void					*specific[PTHREAD_KEYS_MAX];
 } __HAJ_ALIGNED(16);
+
+_Static_assert(offsetof(struct __haj_tcb, self) == 0,
+			   "self must be at offset 0 (read as %fs:0)");
+
+# if defined(__x86_64__)
+_Static_assert(offsetof(struct __haj_tcb, stackCanary) == 0x28,
+			   "stackCanary must be at %fs:0x28 (stack protector ABI)");
+# endif
+
+/**
+ * @brief Bytes reserved for the TCB in an aarch64 TLS area.
+ *
+ * sizeof(TCB) rounded up to 64 so that TP (= tcb + span) stays 64-byte
+ * aligned. Only used on aarch64, where the TCB lives BELOW TP.
+ */
+# define __HAJ_TCB_SPAN		((sizeof(struct __haj_tcb) + 63u) & ~(size_t)63u)
 
 /* ----- Globals ----- */
 
@@ -171,31 +206,76 @@ extern struct __haj_tcb	*__haj_threadList;
 extern int				__haj_threadListLock;
 
 /**
- * @brief The main thread's TCB.
+ * @brief The main thread's TCB (NULL until __hajSetThreadRegister ran).
  *
- * It is declared here so that the linker sees a single definition;
- * the symbol __haj_main_tcb is exported through <bits/thread/tcb.h>
- * so both the startup and other internals (e.g. pthread_self) can find it.
+ * The main thread's TCB lives in a static TLS area defined in tcb.c.
+ * It is no longer a linker-script symbol.
  */
-extern struct __haj_tcb	__haj_main_tcb;
+extern struct __haj_tcb	*__haj_main_tcb_ptr;
+
+/*
+ * Compatibility: code written against the old linker-defined
+ * `struct __haj_tcb __haj_main_tcb` (e.g. `&__haj_main_tcb`) keeps
+ * working, it now resolves to the pointer above.
+ */
+# define __haj_main_tcb		(*__haj_main_tcb_ptr)
+
+/* ----- TLS area ----- */
+
+/**
+ * @brief Size in bytes of one thread's TLS area (TLS variables + TCB).
+ *
+ * Always a multiple of 64. The area must be allocated 64-byte aligned.
+ */
+size_t				__haj_tlsAreaSize(void);
+
+/**
+ * @brief Build a thread's TLS area in freshly allocated memory.
+ *
+ * Copies the .tdata image, zeroes .tbss, zeroes the TCB and sets
+ * `self`, `selfId` and `state`. Every other TCB field is left zero for
+ * the caller (pthread_create) to fill.
+ *
+ * @param area  64-byte aligned buffer of at least __haj_tlsAreaSize() bytes.
+ * @return      The TCB of the new thread.
+ */
+struct __haj_tcb	*__haj_tlsAreaInit(void *area);
 
 /* ----- Helpers ----- */
 
 /**
+ * @brief Value of the thread register (%fs base / tpidr_el0) for a TCB.
+ *
+ * This is the value to pass to arch_prctl(ARCH_SET_FS) or as the `tls`
+ * argument of clone(CLONE_SETTLS).
+ */
+static __HAJ_INLINE void *__haj_tcbToTp(struct __haj_tcb *tcb)
+{
+# if defined(__aarch64__)
+	return ((char *)tcb + __HAJ_TCB_SPAN);
+# else
+	return (tcb);
+# endif
+}
+
+/**
  * @brief Return the TCB of the calling thread.
  *
- * On x86_64: reads %fs:0.
- * On aarch64: reads tpidr_el0.
+ * On x86_64: reads %fs:0 (the TCB sits exactly at TP).
+ * On aarch64: reads tpidr_el0 and steps back over the TCB.
  * Elsewhere: falls back to __haj_tcbSelfFallback().
  */
 static __HAJ_INLINE struct __haj_tcb *__haj_tcbSelf(void)
 {
 	struct __haj_tcb *tcb;
 
-# if defined(HAJ_ARCH_X86_64)
+# if defined(__x86_64__)
 	__asm__ volatile ("movq %%fs:0, %0" : "=r" (tcb));
-# elif defined(HAJ_ARCH_AARCH64)
-	__asm__ volatile ("mrs %0, tpidr_el0" : "=r" (tcb));
+# elif defined(__aarch64__)
+	char *tp;
+
+	__asm__ volatile ("mrs %0, tpidr_el0" : "=r" (tp));
+	tcb = (struct __haj_tcb *)(tp - __HAJ_TCB_SPAN);
 # else
 	tcb = __haj_tcbSelfFallback();
 # endif

@@ -10,7 +10,7 @@
  * @file hmConfig.h
  * @brief Single source of truth for build-time configuration of the memory allocator.
  * @Created: 2026/10/19 12:04:15 by Moutig
- * @Updated: 2026/10/19 12:28:36 by Moutig
+ * @Updated: 2026/10/29 08:00:04 by Moutig
  *
  * All macros can be overridden from the command line (`-D...`)
  * or from a Makefile target. Defaults aim for a production
@@ -50,6 +50,10 @@
 #  define HMALLOC_CHECK	0
 # endif
 
+# ifndef HMALLOC_LEAK_TRACE
+#  define HMALLOC_LEAK_TRACE	0
+# endif
+
 /**
  * @brief XOR-obfuscated free-list pointers.
  *
@@ -69,27 +73,11 @@
 
 /* 0=silent 1=error 2=warn 3=info 4=debug 5=trace */
 # ifndef HMALLOC_LOG_LEVEL
-#  define HMALLOC_LOG_LEVEL	2
+#  define HMALLOC_LOG_LEVEL	0
 # endif
 
 # ifndef HMALLOC_LOG_COLOR
 #  define HMALLOC_LOG_COLOR	1
-# endif
-
-/* ---------- Trace ---------- */
-
-/**
- * @brief Enable tracing of memory allocation and deallocation.
- *
- * When enabled, the library will log all allocation and deallocation
- * events to a trace buffer.
- */
-# ifndef HMALLOC_TRACE
-#  define HMALLOC_TRACE	0
-# endif
-
-# ifndef HMALLOC_TRACE_BUFSIZE
-#  define HMALLOC_TRACE_BUFSIZE	16384
 # endif
 
 /* ---------- Profiling ---------- */
@@ -116,11 +104,11 @@
  * When enabled, the library will collect and display statistics on memory usage.
  */
 # ifndef HMALLOC_STATS
-#  define HMALLOC_STATS	1
+#  define HMALLOC_STATS	0
 # endif
 
 # ifndef HMALLOC_STATS_DISPLAY
-#  define HMALLOC_STATS_DISPLAY	1
+#  define HMALLOC_STATS_DISPLAY	0
 # endif
 
 # ifndef HMALLOC_STATS_WIDTH

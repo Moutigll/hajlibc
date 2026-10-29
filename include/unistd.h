@@ -10,7 +10,7 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/10/27 02:30:47 by Moutig
+ * @Updated: 2026/10/29 05:37:30 by Moutig
  *
  * @TODO: Add a description of the file.
  */
@@ -358,6 +358,19 @@ int	dup2(int oldfd, int newfd);
  *         or -1 on error (with errno set).
  */
 off_t lseek(int fd, off_t offset, int whence);
+
+/**
+ * @brief Read the value of a symbolic link.
+ *
+ * This function places the contents of the symbolic link `path` into the buffer `buf`,
+ * which has a size of `bufsiz`. The returned value is the number of bytes placed in `buf`.
+ *
+ * @param path The pathname of the symbolic link to read.
+ * @param buf The buffer to store the contents of the symbolic link.
+ * @param bufsiz The size of the buffer `buf`.
+ * @return The number of bytes placed in `buf` on success, or -1 on error (with errno set).
+ */
+ssize_t readlink(const char *path, char *buf, size_t bufsiz);
 
 # ifdef __cplusplus
 }

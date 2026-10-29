@@ -10,7 +10,7 @@
  * @file options.c
  * @brief Option parsing for the hajlibc allocator.
  * @Created: 2026/10/19 10:48:42 by Moutig
- * @Updated: 2026/10/20 13:04:01 by Moutig
+ * @Updated: 2026/10/29 08:57:23 by Moutig
  *
  * The allocator supports a small set of options that can be set
  * via environment variables or programmatically. The options are
@@ -68,7 +68,7 @@ static const t_hmOptionDef	g_optionDefs[] = {
 	{ HMALLOC_OPT_GUARDED_SAMPLE_RATE,	"HMALLOC_GUARDED_SAMPLE_RATE",	0 },
 	{ HMALLOC_OPT_PERTURB,				"HMALLOC_PERTURB",				0 },
 	{ HMALLOC_OPT_CHECK,				"HMALLOC_CHECK",				0 },
-	{ HMALLOC_OPT_TRACE,				"HMALLOC_TRACE",				0 },
+	{ HMALLOC_OPT_CHECK_LEAKS,			"HMALLOC_CHECK_LEAKS",			0 },
 };
 
 #define HMOPT_DEF_COUNT	(sizeof(g_optionDefs) / sizeof(g_optionDefs[0]))

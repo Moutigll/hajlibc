@@ -150,7 +150,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expression, file, line and function then aborts
 - `<unistd.h>`: `readlink` prototype; `src/unistd/readlink.c`
   wraps `SYS_readlink` and normalizes `-errno` to -1
-
+- `src/stdlib/malloc/leak.c`: post-mortem leak report behind
+  `hmReportLeaks()`, printing a Valgrind-style layout (one section
+  per category + `LEAK SUMMARY`) on stderr via the allocator's own
+  formatter, so it works without stdio
+- Leak classification: free / local-free / cross-thread free lists
+  are marked per page, unmarked slots are treated as live, root
+  ranges come from the linker-script symbols when available and
+  from `dl_iterate_phdr` otherwise, and a BFS over the block graph
+  separates still-reachable, possibly-lost, definitely-lost and
+  indirectly-lost blocks
+- Optional stack capture at allocation time (`HMALLOC_LEAK_TRACE=1`)
+  stored in a fixed 8192-slot open-addressing table with
+  tombstones; traces are symbolized through `<debuginfo.h>` and
+  degrade gracefully when symbolization is unavailable
+- `HMALLOC_REPORT_MAX` (default 64) caps the number of blocks shown
+  per category, `0` means unlimited, and truncation is surfaced in
+  the summary
+- The report runs automatically at process exit when
+  `HMALLOC_CHECK_LEAKS` is set
 
 ### Changed
 

@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/stdlib/malloc/unix.c`: `hajVirtualAddressBits()`, and on
   Linux `hajProbeLinux()` (huge pages, overcommit, THP) and
   `hajReadProcStatm()`
+- `<elf.h>`: `Elf64_Phdr` (wrapped as `ElfW(Phdr)` via `ElfW()`),
+  the `PT_*` / `PF_*` program header constants
+- `<link.h>`: `struct dl_phdr_info` and `dl_iterate_phdr`
+- `src/link/dl_iterate_phdr.c`: `/proc/self/maps` walker that
+  groups mappings by path and yields one `dl_phdr_info` per
+  loaded object (real phdrs when the file is readable, one
+  synthetic `PT_LOAD` per mapping otherwise; non-file mappings
+  such as `[vdso]` are skipped)
 
 ### Changed
 

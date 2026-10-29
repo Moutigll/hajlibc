@@ -10,7 +10,7 @@
  * @file elf.h
  * @brief ELF64 header and section definitions, and loaded ELF handle.
  * @Created: 2026/10/28 08:11:18 by Moutig
- * @Updated: 2026/10/28 11:32:39 by Moutig
+ * @Updated: 2026/10/29 01:00:50 by Moutig
  *
  * This header defines the ELF64 structures and constants needed to parse
  * ELF files, as well as a handle for loaded ELF files that provides
@@ -96,17 +96,38 @@ typedef struct {
 	Elf64_Xword		st_size;
 } Elf64_Sym;
 
+/**
+ * @brief ELF64 relocation entry structure (without addend).
+ *
+ * This structure represents a relocation entry in an ELF64 file that does
+ * not include an explicit addend, containing the offset, info, and other
+ * fields needed for relocation processing.
+ */
+typedef struct {
+	Elf64_Word	p_type;
+	Elf64_Word	p_flags;
+	Elf64_Off	p_offset;
+	Elf64_Addr	p_vaddr;
+	Elf64_Addr	p_paddr;
+	Elf64_Xword	p_filesz;
+	Elf64_Xword	p_memsz;
+	Elf64_Xword	p_align;
+} Elf64_Phdr;
+
 /* ----- Constants ----- */
 
+/* --- ELF file types --- */
 # define ELF_ET_EXEC	2
 # define ELF_ET_DYN		3
 # define ELF_EM_X86_64	62
 # define ELF_EM_AARCH64	183
 
+/* --- ELF section types --- */
 # define ELF_SHT_SYMTAB	2
 # define ELF_SHT_STRTAB	3
 # define ELF_SHT_NOBITS	8
 
+/* --- ELF symbol types --- */
 # define ELF_STT_NOTYPE		0
 # define ELF_STT_OBJECT		1
 # define ELF_STT_FUNC		2
@@ -115,14 +136,32 @@ typedef struct {
 # define ELF_STT_COMMON		5
 # define ELF_STT_TLS		6
 
+/* --- ELF symbol bindings --- */
 # define ELF_STB_LOCAL	0
 # define ELF_STB_GLOBAL	1
 # define ELF_STB_WEAK	2
 
 # define ELF_SHN_UNDEF	0
 
+/* ----- Program header types ----- */
+# define PT_NULL	0
+# define PT_LOAD	1
+# define PT_DYNAMIC	2
+# define PT_INTERP	3
+# define PT_NOTE	4
+# define PT_SHLIB	5
+# define PT_PHDR	6
+# define PT_TLS	7
+
+/* ----- Program header flags ----- */
+# define PF_X	0x1
+# define PF_W	0x2
+# define PF_R	0x4
+
 # define ELF_ST_TYPE(i)	((i) & 0xF)
 # define ELF_ST_BIND(i)	((i) >> 4)
+
+# define ElfW(type) Elf64_##type
 
 /* ----- Loaded ELF handle ----- */
 

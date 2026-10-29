@@ -10,7 +10,7 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/10/16 08:20:55 by Moutig
+ * @Updated: 2026/10/27 02:30:47 by Moutig
  *
  * @TODO: Add a description of the file.
  */
@@ -19,6 +19,7 @@
 #ifndef _UNISTD_H
 # define _UNISTD_H
 
+#include "bits/types.h"
 #include "stdarg.h"
 # include <stddef.h>
 # include <sys/types.h>
@@ -130,10 +131,15 @@ extern "C" {
 # define _POSIX_RAW_SOCKETS				1
 
 
+#define STDIN_FILENO	0
 #define STDOUT_FILENO	1
 #define STDERR_FILENO	2
 
-
+# define SEEK_SET	0
+# define SEEK_CUR	1
+# define SEEK_END	2
+# define SEEK_HOLE	3
+# define SEEK_DATA	4
 
 
 /* ----- Functions ----- */
@@ -309,6 +315,49 @@ static long	syscall(long num, ...) {
 }
 
 #endif /* __HAJ_SOURCE */
+
+/**
+ * @brief Create a pipe for interprocess communication.
+ *
+ * This function creates a unidirectional data channel that can be used
+ * for interprocess communication. The pipe consists of two file descriptors:
+ * one for reading and one for writing.
+ *
+ * @param pipefd An array of two integers where the file descriptors will be stored.
+ *               pipefd[0] is the read end, and pipefd[1] is the write end.
+ * @return 0 on success, or -1 on error.
+ */
+int	pipe(int pipefd[2]);
+
+/**
+ * @brief Duplicate a file descriptor.
+ *
+ * This function duplicates an existing file descriptor, creating a new
+ * file descriptor that refers to the same open file description.
+ *
+ * @param oldfd The file descriptor to duplicate.
+ * @param newfd The desired value for the new file descriptor. If this
+ *               value is already open, it will be closed before being reused.
+ * @return The new file descriptor on success, or -1 on error.
+ */
+int	dup2(int oldfd, int newfd);
+
+/**
+ * @brief Reposition the file offset of an open file descriptor.
+ *
+ * This function sets the file offset for the file descriptor `fd` to
+ * the specified `offset`, according to the directive specified by `whence`.
+ *
+ * @param fd The file descriptor whose offset is to be changed.
+ * @param offset The new offset, in bytes, relative to the position specified by `whence`.
+ * @param whence The directive that specifies how the offset is interpreted:
+ *               - SEEK_SET: The offset is set to `offset` bytes from the beginning of the file.
+ *               - SEEK_CUR: The offset is set to its current location plus `offset`.
+ *               - SEEK_END: The offset is set to the size of the file plus `offset`.
+ * @return The resulting offset location as measured in bytes from the beginning of the file,
+ *         or -1 on error (with errno set).
+ */
+off_t lseek(int fd, off_t offset, int whence);
 
 # ifdef __cplusplus
 }

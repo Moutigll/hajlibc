@@ -81,6 +81,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   synthetic `PT_LOAD` per mapping otherwise; non-file mappings
   such as `[vdso]` are skipped)
 - `qsort()` in `<stdlib.h>`, backed by `src/stdlib/qsort.c
+- `<debuginfo.h>`: `di_object`, `di_symbol`, `di_source`, `di_info`,
+  `di_loaded_cb`, `di_init` / `di_fini` / `di_lookup`, the
+  `di_object_*` accessors (path, size, error, warning),
+  `di_object_find_function` / `_find_symbol` / `_find_source`,
+  the `di_object_foreach_*` iterators (symbol, source, section),
+  `di_object_section_data`, `di_enumerate_loaded`, and
+  `di_error` / `di_warning` / `di_counts`
+- `src/debuginfo/`: mmap-chunk arena (`arena.c`), no free/realloc,
+  64 KiB chunks capped at 256, safe to call from a crash handler
+- `src/debuginfo/dwarf_line.c`: DWARF line number program parser
+  for versions 2-5, with `di_uleb` / `di_sleb` / `di_rd` decoders,
+  v4 (1-based) and v5 (0-based, dir/file entry formats) file
+  tables, and path resolution against the compilation directory
+- `src/debuginfo/lookup.c`: function and source-line indexes built
+  from `.symtab` and `.debug_line`, sorted with `qsort` and
+  binary-searched; zero-size symbols are extended to the next
+  function's start; PIE / `ET_DYN` objects are rejected with an
+  explicit error, and the no-symbols / no-line cases surface via
+  `di_object_error` / `di_object_warning`
+- `di_enumerate_loaded`: `dl_iterate_phdr`-based walker over the
+  loaded objects when `<link.h>` is available, one callback per
+  object with its path, load base and mapped span; returns -1
+  otherwise
+- `<unistd.h>`: `STDIN_FILENO`, the `SEEK_*` constants
+  (`SEEK_SET` / `CUR` / `END` / `HOLE` / `DATA`), and prototypes
+  for `pipe`, `dup2`, `lseek`
+- `src/unistd/pipe.c`, `src/unistd/dup2.c`, `src/unistd/lseek.c`:
+  raw `SYS_pipe` / `SYS_dup2` / `SYS_lseek` wrappers, normalizing
+  negative returns to `errno` and -1
 
 ### Changed
 

@@ -19,6 +19,7 @@ ASSERT_DIR		:= $(SRC_DIR)/assert
 CPU_DIR			:= $(SRC_DIR)/cpu
 CRT_DIR			:= $(SRC_DIR)/crt
 CTYPE_DIR		:= $(SRC_DIR)/ctype
+DEBUGINFO_DIR	:= $(SRC_DIR)/debuginfo
 ERRNO_DIR		:= $(SRC_DIR)/errno
 FCNTL_DIR		:= $(SRC_DIR)/fcntl
 GETOPT_DIR		:= $(SRC_DIR)/getopt
@@ -65,6 +66,14 @@ CRT_SRCS := \
 # ctype
 CTYPE_SRCS := \
 	ctype.c
+
+# debug info
+DEBUGINFO_SRCS := \
+	arena.c \
+	dwarf_line.c \
+	elf.c \
+	lookup.c \
+	../link/dl_iterate_phdr.c
 
 # errno
 ERRNO_SRCS := \
@@ -136,6 +145,7 @@ STDIO_SRCS :=
 STDLIB_SRCS := \
 	getenv.c \
 	setenv.c \
+	qsort.c \
 
 MALLOC_SRCS := \
 	alloc.c \
@@ -144,6 +154,7 @@ MALLOC_SRCS := \
 	block.c \
 	heap.c \
 	init.c \
+	leak.c \
 	malloc.c \
 	message.c \
 	meta.c \
@@ -155,6 +166,7 @@ MALLOC_SRCS := \
 	stats.c \
 	theap.c \
 	unix.c
+
 # string
 STRING_SRCS := \
 	mem/memcpy.c \
@@ -245,10 +257,14 @@ TIME_SRCS := \
 # unistd-
 UNISTD_SRCS := \
 	close.c \
+	dup2.c \
 	fork.c \
 	getids.c \
 	getpagesize.c \
+	lseek.c \
+	pipe.c \
 	read.c \
+	readlink.c \
 	sysconf.c \
 	unlink.c \
 	usleep.c \
@@ -259,6 +275,7 @@ ASSERT_SRCS		:= $(addprefix $(ASSERT_DIR)/,$(ASSERT_SRCS))
 CPU_SRCS		:= $(addprefix $(CPU_DIR)/,$(CPU_SRCS))
 CRT_SRCS		:= $(addprefix $(CRT_DIR)/,$(CRT_SRCS))
 CTYPE_SRCS		:= $(addprefix $(CTYPE_DIR)/,$(CTYPE_SRCS))
+DEBUGINFO_SRCS	:= $(addprefix $(DEBUGINFO_DIR)/,$(DEBUGINFO_SRCS))
 ERRNO_SRCS		:= $(addprefix $(ERRNO_DIR)/,$(ERRNO_SRCS))
 FCNTL_SRCS		:= $(addprefix $(FCNTL_DIR)/,$(FCNTL_SRCS))
 GETOPT_SRCS		:= $(addprefix $(GETOPT_DIR)/,$(GETOPT_SRCS))

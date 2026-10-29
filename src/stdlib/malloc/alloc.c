@@ -10,7 +10,7 @@
  * @file alloc.c
  * @brief Memory allocation and deallocation functions for the hajlibc allocator.
  * @Created: 2026/10/06 14:56:07 by Moutig
- * @Updated: 2026/10/29 05:09:00 by Moutig
+ * @Updated: 2026/10/29 12:12:14 by Moutig
  *
  * This file implements the core memory allocation and deallocation functions
  * for the hajlibc allocator.
@@ -532,6 +532,49 @@ hmallocFreeGeneric(t_hmallocPage *page, void *p, uintptr_t tid, uintptr_t xtid)
 	hmallocFreeRemote(page, real);
 }
 
+#if HMALLOC_CHECK
+static bool hmallocListHas(const t_hmallocPage *page, const t_hmallocBlock *head, const t_hmallocBlock *target)
+{
+	size_t guard = 0;
+
+	while (head != NULL && guard++ <= page->capacity) {
+		if (head == target)
+			return (true);
+		head = hmallocBlockNext(page, head);
+	}
+	return (false);
+}
+
+static bool hmallocCheckFree(t_hmallocPage *page, void *blk, bool owner)
+{
+	uintptr_t	start	= (uintptr_t)hmallocPageStart(page);
+	uintptr_t	addr	= (uintptr_t)blk;
+	size_t		span	= (size_t)page->capacity * page->blockSize;
+
+	if (addr < start || addr >= start + span) {
+		_hmallocErrorMessage(EINVAL, "free(): invalid pointer\n");
+		return (false);
+	}
+	if (((addr - start) % page->blockSize) != 0) {
+		_hmallocErrorMessage(EINVAL, "free(): misaligned pointer\n");
+		return (false);
+	}
+
+	if (!owner)
+		return (true);
+	if (page->used == 0
+		|| hmallocListHas(page, page->free, blk)
+		|| hmallocListHas(page, page->localFree, blk)
+		|| hmallocListHas(page,
+			(t_hmallocBlock *)(atomic_load_explicit(&page->xthreadFree,
+				memory_order_acquire) & ~(uintptr_t)HMALLOC_XTHREAD_OWNED), blk)) {
+		_hmallocErrorMessage(EINVAL, "free(): double free detected\n");
+		return (false);
+	}
+	return (true);
+}
+#endif
+
 void
 hmallocFreeInternal(void *p)
 {
@@ -541,18 +584,38 @@ hmallocFreeInternal(void *p)
 
 	if (hmUnlikely(p == NULL))
 		return;
+
+#if HMALLOC_CHECK
+	/* Reject obviously invalid pointers before dereferencing anything. */
+	if (hmUnlikely((uintptr_t)p < 4096 || ((uintptr_t)p & (HMALLOC_ALIGNMENT - 1)) != 0)) {
+		_hmallocErrorMessage(EINVAL, "free(): invalid pointer\n");
+		return;
+	}
+#endif
+
 	hmLeakOnFree(p);
 
-	/* Find the page corresponding to the pointer. */
 	page = hmallocPageMapGet(p);
 	if (hmUnlikely(page == NULL)) {
 		_hmallocErrorMessage(EINVAL, "free(): invalid pointer\n");
 		return;
 	}
 
+	tid		= hmallocPrimThreadId();
+	xtid	= atomic_load_explicit(&page->xthreadId, memory_order_relaxed);
+
+#if HMALLOC_CHECK
+	{
+		void *blk = (xtid & HMALLOC_PAGE_HAS_INTERIOR_POINTERS)
+			? (void *)hmallocBlockStart(page, p) : p;
+		bool owner = ((xtid & ~HMALLOC_PAGE_FLAG_MASK) == tid);
+
+		if (!hmallocCheckFree(page, blk, owner))
+			return ;
+	}
+#endif
+
 	/* Get the current thread ID and the page's extended thread ID. */
-	tid			= hmallocPrimThreadId();
-	xtid		= atomic_load_explicit(&page->xthreadId, memory_order_relaxed);
 	uintptr_t diff = xtid ^ tid;
 
 	/* Fast path: if the block was allocated by the current thread, free it locally. */

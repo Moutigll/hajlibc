@@ -39,3 +39,4 @@ clangd/
 .DS_Store
 Thumbs.db
 desktop.ini
+tests/standalone/malloc/bin

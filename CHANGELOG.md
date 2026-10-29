@@ -169,6 +169,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the summary
 - The report runs automatically at process exit when
   `HMALLOC_CHECK_LEAKS` is set
+- `make SHOW_FLAGS=1` / `make UNWIND=1`, plus
+  `HAJ_EXTRA_CPPFLAGS` / `HAJ_EXTRA_CFLAGS` for sub-projects
+- `HAJ_LDSCRIPT` and `HAJ_COMMON_CFLAGS` in `mk/hajlib.mk`
+- `HMALLOC_CHECK` rejects low/misaligned pointers and reports
+  double frees; the padding slack is painted and verified on free
+  to catch small overflows
 
 ### Changed
 
@@ -182,6 +188,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allocator internals renamed to match `<hmConfig.h>`:
   `pages_abandoned` → `pagesAbandoned`,
   `chunkmap_bins` → `chunkmapBins`
+- `mk/hajlibc.ld` rewritten: split PT_LOAD segments, sorted ctor
+  and dtor arrays, new `__text` / `__data` / `__bss` / `__tdata` /
+  `__tbss` / `__tls_*` symbols, and an ASSERT on the main-thread
+  TLS block size
+- `mk/config.mk` builds on `mk/hajlib.mk` instead of duplicating
+  flags, and drops `-Werror` / `-march=native` on cross builds
+- `Makefile` renamed to hajlibc, targets regrouped, and the
+  debuginfo sources are part of both the archive and the preload
+  library
 
 ### Fixed
 

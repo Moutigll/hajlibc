@@ -10,13 +10,31 @@
  * @file block.c
  * @brief Block management for the hajlibc allocator.
  * @Created: 2026/10/19 10:48:30 by Moutig
- * @Updated: 2026/10/20 11:52:38 by Moutig
+ * @Updated: 2026/10/29 12:13:54 by Moutig
  *
  * This file implements the block management for the hajlibc allocator.
  * It provides functions for splitting, coalescing, and managing blocks
  * within pages. The implementation ensures thread safety and efficient
  * memory management by using atomic operations and careful handling of
  * free lists.
+ *
+ * Canary layout (HMALLOC_CANARY > 0)
+ * ----------------------------------
+ * Each block reserves HMALLOC_PADDING_SIZE bytes at its end for the
+ * padding payload:
+ *
+ *     [ user data | slack | canary | delta ]
+ *                 ^        ^        ^
+ *                 requested        block end
+ *
+ * - delta : usable - requested (uint32), lets hmallocPadGet recover
+ *           the requested size without a second lookup.
+ * - canary: (uint32)(page->keys[1] ^ ptr), catches overflow exactly
+ *           at the padding slot.
+ * - slack : bytes between the requested size and the canary, filled
+ *           with HM_SLACK_BYTE. Catches small overflows that stop
+ *           before reaching the canary (e.g. writing b[16] when 16
+ *           bytes were requested but the block is padded).
  */
 
 #include "include/hmPrivate.h"
@@ -25,6 +43,17 @@
 #include <string.h>
 
 # if HMALLOC_CANARY
+
+/*
+ * Slack filler. When canary is enabled, the bytes between the end of
+ * the requested region and the canary slot are painted with this
+ * pattern and verified on free. Any single-byte overflow smaller
+ * than the slack is caught even if it doesn't reach the canary.
+ * HM_SLACK_MAX bounds the cost: on very large slack (big blocks,
+ * tiny requests) only the first HM_SLACK_MAX bytes are painted.
+ */
+#  define HM_SLACK_BYTE  0xA5
+#  define HM_SLACK_MAX   64
 
 /**
  * @brief Set the next block in a page's free list.
@@ -54,6 +83,7 @@ void	hmallocPadSet(t_hmallocPage *page, void *ptr, size_t requested)
 	uint32_t	canary;
 	uint32_t	delta;
 	size_t		usable;
+	size_t		slack;
 
 	if (page == NULL || ptr == NULL)
 		return;
@@ -73,6 +103,14 @@ void	hmallocPadSet(t_hmallocPage *page, void *ptr, size_t requested)
 
 	delta	= (uint32_t)(usable - requested);
 	canary	= hmallocPadCanary(page, ptr);
+
+	/* Paint the slack between the requested end and the canary slot.
+	 * Bounded so we never touch more than HM_SLACK_MAX bytes even on
+	 * very large blocks with tiny requests. */
+	slack = usable - requested;
+	if (slack > HM_SLACK_MAX)
+		slack = HM_SLACK_MAX;
+	memset((uint8_t *)ptr + requested, HM_SLACK_BYTE, slack);
 
 	slot = hmallocPadSlot(page, ptr);
 	memcpy(slot, &canary, sizeof(canary));
@@ -102,6 +140,10 @@ void	hmallocPadCheck(t_hmallocPage *page, const void *ptr)
 	uint8_t		*slot;
 	uint32_t	canary;
 	uint32_t	expected;
+	uint32_t	delta;
+	size_t		usable;
+	size_t		requested;
+	size_t		slack;
 
 	if (page == NULL || ptr == NULL)
 		return;
@@ -110,9 +152,33 @@ void	hmallocPadCheck(t_hmallocPage *page, const void *ptr)
 	expected	= hmallocPadCanary(page, ptr);
 	memcpy(&canary, slot, sizeof(canary));
 
-	if (canary != expected)
+	if (canary != expected) {
 		_hmallocErrorMessage(EINVAL,
 			"free(): heap corruption (canary mismatch)\n");
+		return ;
+	}
+
+	/* Verify the slack painted by hmallocPadSet. This catches overflows
+	 * that stop before the canary slot (e.g. b[16] when 16 bytes were
+	 * requested and the block is padded). */
+	usable = page->blockSize - HMALLOC_PADDING_SIZE;
+	memcpy(&delta, slot + sizeof(uint32_t), sizeof(delta));
+	if ((size_t)delta > usable) {
+		_hmallocErrorMessage(EINVAL,
+			"free(): heap corruption (bad size field)\n");
+		return ;
+	}
+	requested = usable - (size_t)delta;
+	slack = (size_t)delta;
+	if (slack > HM_SLACK_MAX)
+		slack = HM_SLACK_MAX;
+	for (size_t i = 0; i < slack; i++) {
+		if (((const uint8_t *)ptr)[requested + i] != HM_SLACK_BYTE) {
+			_hmallocErrorMessage(EINVAL,
+				"free(): heap corruption (write past end of block)\n");
+			return ;
+		}
+	}
 }
 #endif /* HMALLOC_CANARY */
 

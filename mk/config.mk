@@ -1,113 +1,67 @@
-# config.mk - toolchain and flags configuration for hajlib.
+# config.mk - internal build configuration for hajlibc.
 #
-# This file defines all the flags needed to build and link
-# against hajlib. It can be included from a user's Makefile to
-# get the right flags without having to remember them.
+# Reserved for building hajlibc itself. Users linking against hajlibc
+# must include mk/hajlib.mk only, NOT this file.
 #
-# Usage (from a user Makefile):
+# This file:
+#   - includes cross.mk (toolchain)
+#   - includes hajlib.mk (public flag set, single source of truth)
+#   - derives the internal flags CPPFLAGS / CFLAGS / LDFLAGS / LDLIBS
 #
-#   HAJ_ROOT := path/to/hajlib
-#   include $(HAJ_ROOT)/config.mk
+# Defines:
+#   CPPFLAGS, CFLAGS, LDFLAGS, LDLIBS    internal build flags
+#   COV_CFLAGS, COV_LDFLAGS, COV_LDLIBS  coverage flags (if HAJ_COV=1)
 #
-#   my_prog: main.c
-#       $(CC) $(HAJ_CPPFLAGS) $(HAJ_CFLAGS) $< \
-#             $(HAJ_LIBS) $(HAJ_LDFLAGS) -o $@
-#
-# Variables defined:
-#
-#   Build (project):
-#     CC, AR, LD            compiler, archiver, linker
-#     CPPFLAGS              preprocessor flags (include paths)
-#     CFLAGS                C compiler flags
-#     LDFLAGS               linker flags
-#     LDLIBS                libraries to link
-#
-#   Public (user):
-#     HAJ_ROOT              root of the hajlib source tree
-#     HAJ_INCLUDE           path to include/
-#     HAJ_LIB               path to libhajc.a
-#     HAJ_CPPFLAGS          preprocessor flags for users
-#     HAJ_CFLAGS            C compiler flags for users
-#     HAJ_LDFLAGS           linker flags for users
-#     HAJ_LIBS              libraries for users
-#
-# All variables can be overridden on the command line, e.g.:
-#   make CC=gcc
-#   make HAJ_ROOT=/usr/local
+# Ordering contract: config.mk must be included AFTER cross.mk if
+# cross.mk is included separately; but including config.mk alone is
+# sufficient because it includes cross.mk itself.
 
-# Root of the hajlib source tree
-# If HAJ_ROOT is not set, guess it from the location of this file.
-HAJ_ROOT ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+_HAJ_CONFIG_MK_DIR := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+include $(_HAJ_CONFIG_MK_DIR)/cross.mk
+include $(_HAJ_CONFIG_MK_DIR)/hajlib.mk
 
-# Coverage: if HAJ_COV=1, compile with gcov instrumentation.
-HAJ_COV		?= 0
+# --- Coverage -------------------------------------------------------------
+HAJ_COV ?= 0
 ifeq ($(HAJ_COV),1)
-COV_CFLAGS	:= --coverage -fprofile-arcs -ftest-coverage -O0 -g
-COV_LDFLAGS	:= --coverage
-COV_LDLIBS	:= $(shell $(CC) -print-file-name=libclang_rt.profile-$(shell uname -m).a)
+  COV_CFLAGS	:= --coverage -fprofile-arcs -ftest-coverage -O0 -g
+  COV_LDFLAGS	:= --coverage
+  COV_LDLIBS	:= $(shell $(CC) -print-file-name=libclang_rt.profile-$(shell uname -m).a)
 else
-COV_CFLAGS	:=
-COV_LDFLAGS	:=
-COV_LDLIBS	:=
+  COV_CFLAGS	:=
+  COV_LDFLAGS	:=
+  COV_LDLIBS	:=
 endif
 
-# Toolchain
-CC		?= clang
-AR		?= ar
-LD		?= $(CC)
-
-# Public paths (for users of hajlib)
-HAJ_INCLUDE	:= $(HAJ_ROOT)/include
-HAJ_LIB		:= $(HAJ_ROOT)/libhajc.a
-
-# Common compiler flags:
-# These flags are shared between building hajlib and building
-# programs against hajlib. They are needed because hajlib
-# replaces the libc: no builtins, no libc headers, no stack
-# protector from the libc, etc.
-
-HAJ_COMMON_CFLAGS := \
-	-std=c11 \
-	-ffreestanding \
-	-fno-builtin \
-	-fno-stack-protector \
-	-fno-pie \
-	-fno-pic \
-	-U_FORTIFY_SOURCE \
-	-D_FORTIFY_SOURCE=0 \
-	-O3
-
-# Public flags (for users of hajlib)
-HAJ_CPPFLAGS	:= -I$(HAJ_INCLUDE)
-HAJ_CFLAGS	:= $(HAJ_COMMON_CFLAGS)
-HAJ_LDFLAGS	:= \
-	-nostartfiles \
-	-nodefaultlibs \
-	-static \
-	-Wl,--build-id=none
-HAJ_LIBS	:= $(HAJ_LIB)
-
-# Project flags (for building hajlib itself)
-# We add warning flags and optimization on top of the common
-# flags. These are only used by the hajlib build, not by users.
-CPPFLAGS	:= -I$(HAJ_INCLUDE)
-CFLAGS		:= \
-	$(HAJ_COMMON_CFLAGS) \
-	-Wall \
-	-Wextra \
-	-Werror \
-	-Wpedantic \
-	-O2 -g
-LDFLAGS		:= $(HAJ_LDFLAGS)
+# --- Internal flags -------------------------------------------------------
+# Start from the public interface (single source of truth), then add
+# cross-compilation extras and lib-specific warnings/optimisation.
+CPPFLAGS	:= $(HAJ_CPPFLAGS)	$(CROSS_CPPFLAGS)
+CFLAGS		:= $(HAJ_CFLAGS)	$(CROSS_CFLAGS) -Wall -Wextra -Wpedantic -O3
+LDFLAGS		:= $(HAJ_LDFLAGS)	$(CROSS_LDFLAGS)
 LDLIBS		:= $(HAJ_LIBS)
 
-ifeq ($(HAJ_PTHREAD_PROCESS_SHARED),1)
-# If HAJ_PTHREAD_PROCESS_SHARED is set, we compile with -DHAJ_PTHREAD_PROCESS_SHARED to enable the process-shared
-CFLAGS		+= -DHAJ_PTHREAD_PROCESS_SHARED
-HAJ_CFLAGS	+= -DHAJ_PTHREAD_PROCESS_SHARED
+# Extra flags for sub-projects (e.g. the test harness) that need to
+# rebuild the library with different compile-time switches without
+# duplicating the whole flag set. These are appended AFTER the lib's
+# own flags, so they cannot break the lib's invariants.
+HAJ_EXTRA_CPPFLAGS	?=
+HAJ_EXTRA_CFLAGS	?=
+CPPFLAGS			+= $(HAJ_EXTRA_CPPFLAGS)
+CFLAGS				+= $(HAJ_EXTRA_CFLAGS)
+
+# In cross builds, -march=native/-mtune=native are meaningless on the
+# target and -Werror frequently trips on foreign headers. Strip them.
+ifeq ($(CROSS_COMPILING),1)
+  CFLAGS := $(filter-out -march=native -mtune=native -Werror,$(CFLAGS))
 endif
 
-# Export for sub-makefiles
+# -Werror belongs to native lib builds only (not appended above so that
+# cross builds above stay clean).
+ifeq ($(CROSS_COMPILING),0)
+  CFLAGS += -Werror
+endif
+
+# --- Export for sub-makefiles --------------------------------------------
 export CC
 export AR
 export LD
@@ -125,3 +79,7 @@ export HAJ_LIBS
 export COV_CFLAGS
 export COV_LDFLAGS
 export COV_LDLIBS
+export TARGET_OS
+export TARGET_ARCH
+export TARGET_EXT
+export CROSS_COMPILING

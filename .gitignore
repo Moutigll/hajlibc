@@ -40,3 +40,4 @@ clangd/
 Thumbs.db
 desktop.ini
 tests/standalone/malloc/bin
+benchmark/malloc/__pycache__

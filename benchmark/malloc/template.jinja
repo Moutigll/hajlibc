@@ -35,6 +35,16 @@
 		padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
 		border: 1px solid currentColor;
 	}
+	.machine {
+		display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+		gap: 6px 24px; margin: 0 0 8px 0; padding: 12px 16px;
+		background: var(--mantle); border: 1px solid var(--surface0); border-radius: 10px;
+		font-size: 12.5px;
+	}
+	.machine div { display: flex; gap: 8px; min-width: 0; }
+	.machine dt { color: var(--overlay1); flex: none; }
+	.machine dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+	.machine dt[title] { cursor: help; text-decoration: underline dotted var(--overlay0); }
 	main { max-width: 1500px; margin: 0 auto; padding: 22px 32px 80px; }
 	h2 {
 		color: var(--mauve); font-size: 17px; margin: 34px 0 12px; font-weight: 600;
@@ -43,10 +53,10 @@
 	.hint { color: var(--subtext0); font-size: 12.5px; margin: 0 0 14px 0; }
 	.warning {
 		background: rgba(249, 226, 175, 0.08);
-		border: 1px solid {{ palette.yellow }};
-		border-left: 4px solid {{ palette.yellow }};
+		border: 1px solid var(--yellow);
+		border-left: 4px solid var(--yellow);
 		padding: 12px 16px; border-radius: 8px; margin: 12px 0 20px;
-		color: {{ palette.yellow }}; font-size: 13px;
+		color: var(--yellow); font-size: 13px;
 	}
 	.warning code {
 		background: var(--surface0); padding: 2px 6px; border-radius: 4px;
@@ -145,6 +155,60 @@
 		main { padding: 16px; }
 		header { padding: 16px; }
 	}
+	/* --- Global scores --- */
+	.scores-section { margin: 32px 0; padding: 24px; background: #1e1e2e;
+		border-radius: 12px; color: #cdd6f4; }
+	.scores-section h2 { margin-top: 0; color: #cdd6f4; }
+	.scores-note { color: #a6adc8; font-size: 0.9em; margin-bottom: 20px;
+		line-height: 1.55; }
+	.scores-list { display: flex; flex-direction: column; gap: 10px; }
+	.score-row { display: grid; grid-template-columns: 220px 1fr 100px;
+		align-items: center; gap: 12px;
+		padding: 8px 10px; border-radius: 8px;
+		transition: background 0.15s ease; cursor: default; }
+	.score-row:hover { background: #313244; }
+	.score-name { font-weight: 600; font-family: monospace; font-size: 1em;
+		white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.miss-badge { display: inline-block; margin-left: 8px; padding: 1px 6px;
+		font-size: 0.75em; border-radius: 4px;
+		background: #45475a; color: #f9e2af; font-weight: 500;
+		vertical-align: middle; }
+	.score-bar-wrap { background: #313244; border-radius: 6px; height: 20px;
+		overflow: hidden; }
+	.score-bar { height: 100%; border-radius: 6px; transition: width 0.4s ease; }
+	.score-value { text-align: right; font-family: monospace; font-weight: 600;
+		font-size: 1.1em; }
+	.score-max { font-size: 0.75em; color: #a6adc8; font-weight: 400;
+		margin-left: 2px; }
+	.score-tip { display: none; position: fixed; z-index: 10000;
+		background: #181825; border: 1px solid #45475a;
+		border-radius: 8px; padding: 10px 14px;
+		box-shadow: 0 6px 24px rgba(0,0,0,0.75);
+		font-size: 0.82em; color: #cdd6f4;
+		min-width: 620px; max-width: 900px;
+		max-height: 80vh; overflow: auto;
+		pointer-events: none; }
+	.score-tip table { border-collapse: collapse; width: 100%; }
+	.score-tip th { text-align: left; color: #a6adc8; font-weight: 500;
+		padding: 3px 8px; border-bottom: 1px solid #45475a;
+		font-size: 0.9em; position: sticky; top: 0;
+		background: #181825; }
+	.score-tip td { padding: 3px 8px; }
+	.score-tip td.num { text-align: right; font-family: monospace; }
+	.score-tip th.num { text-align: right; }
+	.score-tip td.imp { color: #f9e2af; }
+	.score-tip td.t   { color: #89b4fa; }
+	.score-tip td.r   { color: #a6e3a1; }
+	.score-tip td.d   { color: #94e2d5; }
+	.score-tip td.s   { color: #f9e2af; font-weight: 600; }
+	.score-tip .cat { margin-top: 8px; font-weight: 600; color: #cba6f7;
+		border-top: 1px solid #313244; padding-top: 6px; }
+	.score-tip .cat:first-child { margin-top: 0; border-top: none; padding-top: 0; }
+	.score-tip .cat-weight { color: #6c7086; font-weight: 400; }
+	.score-tip details > summary { cursor: pointer; color: #a6adc8;
+		font-size: 0.9em; padding: 2px 0; }
+	.score-tip .test-tbl { margin: 4px 0 8px 12px; font-size: 0.95em; }
+	.score-tip .test-tbl th { font-size: 0.85em; }
 </style>
 </head>
 <body>
@@ -161,9 +225,18 @@
 
 <main>
 
+	{% if system %}
+	<h2>Test machine</h2>
+	<dl class="machine">
+		{% for s in system %}
+		<div><dt{% if s.hint %} title="{{ s.hint }}"{% endif %}>{{ s.label }}</dt><dd>{{ s.value }}</dd></div>
+		{% endfor %}
+	</dl>
+	{% endif %}
+
 	{% if unmeasurable %}
 	<div class="warning">
-		⚠️ <strong>Sub-nanosecond timing</strong> — for these tests, the mean time per
+		<strong>Sub-nanosecond timing</strong> - for these tests, the mean time per
 		operation is below the resolution of the wall clock. They are still charted,
 		but using throughput (ops/s) instead of ns/op:
 		{% for t in unmeasurable %}<code>{{ t }}</code>{% endfor %}
@@ -225,7 +298,7 @@
 						<span class="sub">{{ cell.peak_kb }} KB peak · {{ cell.ops }} ops · {{ cell.ops_per_sec }} ops/s</span>
 					</td>
 					{% else %}
-					<td class="na">—</td>
+					<td class="na">-</td>
 					{% endif %}
 					{% endfor %}
 				</tr>
@@ -258,7 +331,7 @@ const TICK_COLOR = PALETTE.overlay1;
 
 /* ---------- Number formatting ---------- */
 function fmtNum(v) {
-	if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '—';
+	if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '-';
 	const abs = Math.abs(v);
 	if (abs === 0) return '0';
 	if (abs >= 1e9) return (v / 1e9).toFixed(2) + ' G';
@@ -300,7 +373,7 @@ function buildCard(cfg) {
 		const info = document.createElement('span');
 		info.className = 'info-icon';
 		info.textContent = 'i';
-		info.setAttribute('data-tip', t.title + ' — ' + t.desc);
+		info.setAttribute('data-tip', t.title + ' - ' + t.desc);
 		h4.appendChild(info);
 	}
 	card.appendChild(h4);
@@ -637,5 +710,157 @@ document.querySelectorAll('.cat-btn').forEach(btn => {
 	});
 });
 </script>
+
+{% if score_board %}
+<!-- ---------- Global scores (data: SCORE_BOARD, markup: templates below) ---------- -->
+<section id="scores" class="scores-section">
+	<h2>Global scores</h2>
+	<p class="scores-note">
+		<strong>Time = {{ score_board.time_pct }} % · RSS = {{ score_board.rss_pct }} %</strong>
+		on <em>every</em> test, without exception. An allocator more than
+		<strong>{{ score_board.ratio_max_time }}× slower</strong> than another one
+		on a test gets 0 on the time sub-score. The {{ score_board.rss_pct }} %
+		memory share is split into 60 % peak RSS and 40 % ΔRSS normalized by the
+		peak (retained fraction). Multi-thread tests are scored at every thread
+		count; scaling efficiency is shown but not scored. A
+		ΔRSS ≤ {{ score_board.drss_noise_kb }} KB or ≤ {{ score_board.drss_floor_pct }} %
+		of the peak is treated as noise. Completeness penalty:
+		up to −{{ score_board.miss_pct }} % if some tests did not run (crash, timeout).
+		<br><strong>Hover a row</strong> to see the breakdown per category
+		<em>and per test</em>.
+	</p>
+	<div class="scores-list" id="scores-list"></div>
+</section>
+<div id="score-tip" class="score-tip"></div>
+
+<!-- ---------- DOM templates, cloned by the script below ---------- -->
+<template id="tpl-score-row">
+	<div class="score-row">
+		<div class="score-name"><span class="js-alloc"></span><span class="miss-badge"></span></div>
+		<div class="score-bar-wrap"><div class="score-bar"></div></div>
+		<div class="score-value"><span class="js-overall"></span><span class="score-max">/100</span></div>
+	</div>
+</template>
+
+<template id="tpl-tip-category">
+	<div class="cat"><span class="js-label"></span> &nbsp;<span class="cat-weight"></span></div>
+	<table>
+		<thead><tr>
+			<th class="num">Time</th><th class="num">RSS</th>
+			<th class="num">ΔRSS</th><th class="num">Score</th>
+		</tr></thead>
+		<tbody><tr>
+			<td class="num t"></td><td class="num r"></td>
+			<td class="num d"></td><td class="num s"></td>
+		</tr></tbody>
+	</table>
+</template>
+
+<template id="tpl-tip-tests">
+	<details>
+		<summary></summary>
+		<table class="test-tbl">
+			<thead><tr>
+				<th>Test</th><th class="num">Time</th><th class="num">RSS</th>
+				<th class="num">ΔRSS</th><th class="num">Score</th><th class="num">Weight</th>
+			</tr></thead>
+			<tbody></tbody>
+		</table>
+	</details>
+</template>
+
+<template id="tpl-tip-test-row">
+	<tr>
+		<td class="js-name"></td><td class="num t"></td><td class="num r"></td>
+		<td class="num d"></td><td class="num s"></td><td class="num imp"></td>
+	</tr>
+</template>
+
+<script>
+(function () {
+	const SCORE_BOARD = {{ score_board|tojson }};
+	const list = document.getElementById('scores-list');
+	const tip = document.getElementById('score-tip');
+	const PAD = 14;
+
+	const clone = id => document.getElementById(id).content.cloneNode(true);
+	const f = v => (v === null || v === undefined) ? '-' : v.toFixed(1);
+
+	/* Fill the Time / RSS / ΔRSS / Score cells of a cloned fragment. */
+	function fillScores(root, e) {
+		root.querySelector('.t').textContent = f(e.time);
+		root.querySelector('.r').textContent = f(e.rss);
+		root.querySelector('.d').textContent = f(e.drss);
+		root.querySelector('.s').textContent = f(e.score);
+	}
+
+	function buildTip(categories) {
+		const frag = document.createDocumentFragment();
+		for (const e of categories) {
+			const cat = clone('tpl-tip-category');
+			cat.querySelector('.js-label').textContent = e.label;
+			cat.querySelector('.cat-weight').textContent = '×' + e.weight.toFixed(2);
+			fillScores(cat, e);
+			frag.appendChild(cat);
+
+			const tests = e.tests || [];
+			if (!tests.length) continue;
+			const det = clone('tpl-tip-tests');
+			det.querySelector('summary').textContent = 'Per-test breakdown (' + tests.length + ')';
+			const body = det.querySelector('tbody');
+			for (const t of tests) {
+				const tr = clone('tpl-tip-test-row');
+				tr.querySelector('.js-name').textContent = t.name;
+				tr.querySelector('.imp').textContent = '×' + t.importance.toFixed(2);
+				fillScores(tr, t);
+				body.appendChild(tr);
+			}
+			frag.appendChild(det);
+		}
+		return frag;
+	}
+
+	function place(ev) {
+		const w = tip.offsetWidth, h = tip.offsetHeight;
+		let x = ev.clientX + PAD;
+		let y = ev.clientY + PAD;
+		if (x + w > window.innerWidth - 8)  x = ev.clientX - w - PAD;
+		if (y + h > window.innerHeight - 8) y = ev.clientY - h - PAD;
+		if (x < 8) x = 8;
+		if (y < 8) y = 8;
+		tip.style.left = x + 'px';
+		tip.style.top  = y + 'px';
+	}
+
+	for (const r of SCORE_BOARD.rows) {
+		const frag = clone('tpl-score-row');
+		const row = frag.querySelector('.score-row');
+		row.dataset.alloc = r.alloc;
+		row.querySelector('.score-name').style.color = r.color;
+		row.querySelector('.js-alloc').textContent = r.alloc;
+		const badge = row.querySelector('.miss-badge');
+		if (r.missing > 0) {
+			badge.title = 'Missing tests: ' + r.missing;
+			badge.textContent = '⚠ ' + r.missing + ' missing';
+		} else {
+			badge.remove();
+		}
+		const bar = row.querySelector('.score-bar');
+		bar.style.width = r.pct.toFixed(1) + '%';
+		bar.style.background = r.color;
+		row.querySelector('.js-overall').textContent = f(r.overall);
+
+		row.addEventListener('mouseenter', ev => {
+			tip.replaceChildren(buildTip(r.categories));
+			tip.style.display = 'block';
+			place(ev);
+		});
+		row.addEventListener('mousemove', place);
+		row.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+		list.appendChild(row);
+	}
+})();
+</script>
+{% endif %}
 </body>
 </html>

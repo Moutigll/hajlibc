@@ -1,218 +1,223 @@
 # =============================================================================
-# Benchmark des allocateurs mémoire
+# Memory allocator benchmark
 # =============================================================================
-# Cibles principales :
-#   make                 build + run tous les allocs + génère report.html
-#   make check-deps      vérifie la présence des libs externes
-#   make list            affiche les flags de link de chaque allocateur
-#   make run-hajlibc     relance UNIQUEMENT hajlibc (archive l'ancien run)
-#   make report-hajlibc  run-hajlibc + report
-#   make fclean          nettoie tout (bin/, results/, report.html)
-#   make clean-old       supprime l'archive hajlibc_old
+# Targets:
+#   make, make all          build + run every allocator + generate report.html
+#   make build              build the benchmark binaries only
+#   make check-deps         show which allocators are available
+#   make list               show how each allocator is linked / loaded
+#   make run                run every available benchmark
+#   make run-hajlibc        run hajlibc only (previous run is archived)
+#   make run-hajlibc-static run hajlibc_static only (same archive rotation)
+#   make report             regenerate report.html from results/
+#   make report-hajlibc     run-hajlibc + report
+#   make report-hajlibc-static  run-hajlibc-static + report
+#   make clean              remove bin/*, results/*, report.html, scores.json
+#   make fclean             clean + remove bin/ and results/
+#   make clean-old          remove the archived hajlibc run (*_hajlibc_old.csv)
+#   make re                 fclean + all
 #
-# NOTE importante :
-#   - hajlibc et mimalloc : lancés sur le host (glibc native).
-#   - tcmalloc / jemalloc : les .so viennent du rootfs junest et requièrent
-#     une glibc plus récente que celle du host. On les lance donc DANS junest
-#     (même rootfs que les .so), via LD_PRELOAD, sur le binaire bench_tcmalloc
-#     compilé normalement (non linké aux libs externes).
+# bench.c is built in one of two modes:
+#   host          glibc, hajlibc, mimalloc, tcmalloc, jemalloc. Plain
+#                 malloc/free/calloc/realloc against the system headers; the
+#                 allocator under test is selected by preloading it
+#                 (LD_PRELOAD / DYLD_INSERT_LIBRARIES) or by linking it.
+#   freestanding  hajlibc_static (-DBENCH_STATIC). Only hajlibc headers,
+#                 calls hmalloc/hfree/..., links libhajc.a statically without
+#                 any system libc.
 # =============================================================================
 
-CC       ?= clang
-CFLAGS   ?= -O2 -Wall -Wextra -pthread -g -D_FORTIFY_SOURCE=0 \
-            -fno-builtin-malloc -fno-builtin-free \
-            -fno-builtin-realloc -fno-builtin-calloc
-LDFLAGS  ?= -pthread
+CC		?= clang
+PY		?= python3
 
-SRC      := bench.c
-BINDIR   := bin
-RESDIR   := results
-PY       ?= python3
+SRC		:= bench.c
+BINDIR	:= bin
+RESDIR	:= results
 
-# Commande junest (adapte si tu utilises un alias/chemin différent).
-JUNEST   ?= junest
+HAJ_ROOT	:= ../..
+include $(HAJ_ROOT)/mk/config.mk
 
-# Chemins des .so externes (vus depuis l'intérieur de junest).
-HAJ_LIB      := ../../libft_malloc.so
-JUNEST_LIB   := /sgoinfre/goinfre/Perso/ele-lean/.junest/usr/lib
-MIMALLOC_LIB := /home/ele-lean/mimalloc-v1.15.2-linux-x64/lib
+HAJ_SO		:= $(HAJ_ROOT)/libft_malloc.so
 
-MIMALLOC_SO  := $(MIMALLOC_LIB)/libmimalloc.so
-TCMALLOC_SO  := $(JUNEST_LIB)/libtcmalloc_minimal.so
-JEMALLOC_SO  := $(JUNEST_LIB)/libjemalloc.so
+# ----- Platform -----
+ifeq ($(TARGET_OS),Darwin)
+  PRELOAD	:= DYLD_FORCE_FLAT_NAMESPACE=1 DYLD_INSERT_LIBRARIES
+  SO_EXT	:= .dylib
+else
+  PRELOAD	:= LD_PRELOAD
+  SO_EXT	:= .so
+endif
 
-# Liste des allocateurs testés.
-ALLOC_NAMES := glibc hajlibc mimalloc tcmalloc jemalloc
+# The freestanding bench (ELF linker script, -static, no libc) only works on
+# ELF targets: Linux and FreeBSD (x86_64, aarch64).
+HAJ_STATIC_OK := $(if $(filter Linux FreeBSD,$(TARGET_OS)),1,0)
 
-# -----------------------------------------------------------------------------
-# Flags de link :
-#   - glibc                : rien
-#   - mimalloc             : linké normalement (install locale compatible host)
-#   - hajlibc/tcmalloc/jemalloc : LD_PRELOAD au runtime, pas de flag
-# -----------------------------------------------------------------------------
-ALLOC_FLAGS_glibc    :=
-ALLOC_FLAGS_hajlibc  :=
-ALLOC_FLAGS_mimalloc := -L$(MIMALLOC_LIB) -lmimalloc -Wl,-rpath,$(MIMALLOC_LIB)
-ALLOC_FLAGS_tcmalloc :=
-ALLOC_FLAGS_jemalloc :=
+# External allocators are looked up in the usual library directories:
+# Debian/Ubuntu multiarch, Fedora lib64, BSD /usr/local, macOS Homebrew.
+MULTIARCH	:= $(shell $(CC) -dumpmachine 2>/dev/null)
+LIB_DIRS	:= /usr/lib/$(MULTIARCH) /usr/lib64 /usr/lib \
+			   /usr/local/lib /opt/homebrew/lib
+find_lib	= $(firstword $(wildcard $(foreach d,$(LIB_DIRS),$(d)/$(1)$(SO_EXT) $(d)/$(1)$(SO_EXT).*)))
 
-# -----------------------------------------------------------------------------
-# Détection de la présence des libs externes.
-# Une seule commande shell (pas de if/then/fi multiligne).
-# -----------------------------------------------------------------------------
-define is_buildable
-$(shell if [ "$(1)" = "hajlibc" ]; then test -f "$(HAJ_LIB)" && echo 1 || echo 0; elif [ "$(1)" = "mimalloc" ]; then test -e "$(MIMALLOC_SO)" && echo 1 || echo 0; elif [ "$(1)" = "tcmalloc" ]; then test -e "$(TCMALLOC_SO)" && echo 1 || echo 0; elif [ "$(1)" = "jemalloc" ]; then test -e "$(JEMALLOC_SO)" && echo 1 || echo 0; else echo 1; fi)
-endef
+MIMALLOC_SO	:= $(call find_lib,libmimalloc)
+TCMALLOC_SO	:= $(call find_lib,libtcmalloc_minimal)
+JEMALLOC_SO	:= $(call find_lib,libjemalloc)
 
-BUILDABLE := $(foreach name,$(ALLOC_NAMES), \
-    $(if $(filter 1,$(call is_buildable,$(name))), \
-        $(BINDIR)/bench_$(name)))
+# ----- Compiler flags -----
+BENCH_HOST_CFLAGS	:= -Wall -Wextra -g -D_FORTIFY_SOURCE=0 -pthread
+BENCH_HOST_LDFLAGS	:= -pthread
 
-# =============================================================================
-# Cibles principales
-# =============================================================================
-all: check-deps $(BUILDABLE) run report
-
-build: $(BUILDABLE)
+BENCH_STATIC_CPPFLAGS	:= $(HAJ_CPPFLAGS) -DBENCH_STATIC
+BENCH_STATIC_CFLAGS		:= $(HAJ_CFLAGS)
+BENCH_STATIC_LDFLAGS	:= $(HAJ_LDFLAGS)
+BENCH_STATIC_LIBS		:= $(HAJ_LIB)
 
 # -----------------------------------------------------------------------------
-# check-deps : diagnostic des libs disponibles
+# Allocators
+#
+#   LIB_<a>      file the allocator needs; empty = not available
+#                (glibc is always available and needs none)
+#   MODE_<a>     how it is selected, shown by `check-deps` and `list`
+#   LINK_<a>     extra link flags (host mode)
+#   PRELOAD_<a>  library preloaded at run time
+#   MISSING_<a>  message shown when it is not available
 # -----------------------------------------------------------------------------
+# Remove or add allocators to the list below to change which ones are built and run.
+ALLOCS		:= glibc hajlibc hajlibc_static mimalloc tcmalloc jemalloc
+HOST_ALLOCS	:= $(filter-out hajlibc_static,$(ALLOCS))
+
+LIB_hajlibc			:= $(HAJ_SO)
+LIB_hajlibc_static	:= $(if $(filter 1,$(HAJ_STATIC_OK)),$(HAJ_LIB))
+LIB_mimalloc		:= $(MIMALLOC_SO)
+LIB_tcmalloc		:= $(TCMALLOC_SO)
+LIB_jemalloc		:= $(JEMALLOC_SO)
+
+MODE_glibc			:= default
+MODE_hajlibc		:= $(lastword $(PRELOAD))
+MODE_hajlibc_static	:= freestanding static link
+MODE_mimalloc		:= linked
+MODE_tcmalloc		:= $(lastword $(PRELOAD))
+MODE_jemalloc		:= $(lastword $(PRELOAD))
+
+LINK_mimalloc		:= $(MIMALLOC_SO) -Wl,-rpath,$(dir $(MIMALLOC_SO))
+
+PRELOAD_hajlibc		:= $(HAJ_SO)
+PRELOAD_tcmalloc	:= $(TCMALLOC_SO)
+PRELOAD_jemalloc	:= $(JEMALLOC_SO)
+
+MISSING_hajlibc			:= NOT BUILT (run 'make' at repo root)
+MISSING_hajlibc_static	:= $(if $(filter 1,$(HAJ_STATIC_OK)),NOT BUILT (run 'make' at repo root),unsupported on $(TARGET_OS) (ELF only))
+MISSING_mimalloc		:= NOT FOUND (libmimalloc$(SO_EXT) in $(LIB_DIRS))
+MISSING_tcmalloc		:= NOT FOUND (libtcmalloc_minimal$(SO_EXT) in $(LIB_DIRS))
+MISSING_jemalloc		:= NOT FOUND (libjemalloc$(SO_EXT) in $(LIB_DIRS))
+
+# $(call is_available,a) -> non-empty if allocator `a` can be built and run
+is_available = $(or $(filter glibc,$(1)),$(wildcard $(LIB_$(1))))
+
+# $(call run_cmd,a) -> shell command running the benchmark of allocator `a`
+run_cmd = $(if $(PRELOAD_$(1)),$(PRELOAD)="$(PRELOAD_$(1))" )./$(BINDIR)/bench_$(1) $(1) $(RESDIR)
+
+AVAILABLE := $(foreach a,$(ALLOCS),$(if $(call is_available,$(a)),$(a)))
+BUILDABLE := $(addprefix $(BINDIR)/bench_,$(AVAILABLE))
+
+# ----- Main targets -----
+all: build run report
+
+build: check-deps $(BUILDABLE)
+
 check-deps:
-	@echo "--- Détection des allocateurs ---"
-	@$(foreach name,$(ALLOC_NAMES), \
-		if [ "$(name)" = "hajlibc" ]; then \
-			if [ -f "$(HAJ_LIB)" ]; then \
-				echo "  hajlibc    : found ($(HAJ_LIB)) [LD_PRELOAD, host]"; \
-			else \
-				echo "  hajlibc    : NOT BUILT (run 'make malloc' at repo root)"; \
-			fi; \
-		elif [ "$(name)" = "mimalloc" ]; then \
-			if [ -e "$(MIMALLOC_SO)" ]; then \
-				echo "  mimalloc   : found ($(MIMALLOC_SO)) [linked, host]"; \
-			else \
-				echo "  mimalloc   : NOT FOUND ($(MIMALLOC_SO))"; \
-			fi; \
-		elif [ "$(name)" = "tcmalloc" ]; then \
-			if [ -e "$(TCMALLOC_SO)" ]; then \
-				echo "  tcmalloc   : found ($(TCMALLOC_SO)) [LD_PRELOAD, junest]"; \
-			else \
-				echo "  tcmalloc   : NOT FOUND ($(TCMALLOC_SO))"; \
-			fi; \
-		elif [ "$(name)" = "jemalloc" ]; then \
-			if [ -e "$(JEMALLOC_SO)" ]; then \
-				echo "  jemalloc   : found ($(JEMALLOC_SO)) [LD_PRELOAD, junest]"; \
-			else \
-				echo "  jemalloc   : NOT FOUND ($(JEMALLOC_SO))"; \
-			fi; \
-		else \
-			echo "  $(name)     : Always available (glibc)"; \
-		fi;)
-	@echo "---------------------------------"
+	@echo "--- Available allocators ---"
+	@$(foreach a,$(ALLOCS), \
+		printf "  %-15s: %s\n" "$(a)" \
+			"$(if $(call is_available,$(a)),found ($(or $(LIB_$(a)),system libc)) [$(MODE_$(a))],$(MISSING_$(a)))";)
+	@echo "----------------------------"
 
-# -----------------------------------------------------------------------------
-# list : affiche les flags de link
-# -----------------------------------------------------------------------------
 list:
-	@echo "Allocateurs configurés :"
-	@$(foreach name,$(ALLOC_NAMES), \
-		flags="$(ALLOC_FLAGS_$(name))"; \
-		if [ -z "$$flags" ]; then \
-			printf "  - %-12s ->  (LD_PRELOAD or default)\n" "$(name)"; \
-		else \
-			printf "  - %-12s ->  %s\n" "$(name)" "$$flags"; \
-		fi;)
+	@echo "Configured allocators:"
+	@$(foreach a,$(ALLOCS), \
+		printf "  - %-16s ->  %s\n" "$(a)" "$(or $(LINK_$(a)),($(MODE_$(a))))";)
 
-# =============================================================================
-# Build des binaires
-# =============================================================================
-$(BINDIR):
-	mkdir -p $(BINDIR)
+# ----- Build -----
+$(BINDIR) $(RESDIR):
+	@mkdir -p $@
 
-$(RESDIR):
-	mkdir -p $(RESDIR)
-
-define ALLOC_RULE
+# Host mode: one rule per allocator, differing only by LINK_<a>.
+define HOST_RULE
 $(BINDIR)/bench_$(1): $(SRC) | $(BINDIR)
-	$$(CC) $$(CFLAGS) -o $$@ $$(SRC) $$(LDFLAGS) $(ALLOC_FLAGS_$(1))
+	@printf "  CC   %s\n" "$$(notdir $$@)"
+	@$$(CC) $$(BENCH_HOST_CFLAGS) -o $$@ $$(SRC) \
+		$$(BENCH_HOST_LDFLAGS) $$(LINK_$(1))
 endef
+$(foreach a,$(HOST_ALLOCS),$(eval $(call HOST_RULE,$(a))))
 
-$(foreach name,$(ALLOC_NAMES), \
-	$(eval $(call ALLOC_RULE,$(name))))
+# Freestanding mode: -DBENCH_STATIC, static link against libhajc.a.
+$(BINDIR)/bench_hajlibc_static: $(SRC) $(HAJ_LIB) | $(BINDIR)
+	@printf "  CC   %s (freestanding)\n" "$(notdir $@)"
+	@$(CC) $(BENCH_STATIC_CPPFLAGS) $(BENCH_STATIC_CFLAGS) \
+		-o $@ $(SRC) \
+		$(BENCH_STATIC_LDFLAGS) $(BENCH_STATIC_LIBS) \
+		-pthread
 
-# =============================================================================
-# Backup hajlibc -> hajlibc_old
-# =============================================================================
+# ----- Run -----
+# Every hajlibc run first moves the previous results to *_hajlibc_old.csv,
+# so the last two runs can be compared.
 backup-hajlibc: | $(RESDIR)
-	@if [ -f "$(RESDIR)/results_hajlibc.csv" ]; then \
-		mv -f "$(RESDIR)/results_hajlibc.csv" "$(RESDIR)/results_hajlibc_old.csv"; \
-		echo "  ↻ hajlibc : ancien run archivé -> results_hajlibc_old.csv"; \
-	fi
-	@if [ -f "$(RESDIR)/timeseries_hajlibc.csv" ]; then \
-		mv -f "$(RESDIR)/timeseries_hajlibc.csv" "$(RESDIR)/timeseries_hajlibc_old.csv"; \
-	fi
-
-# =============================================================================
-# Run : tous les allocateurs
-#   - glibc, hajlibc, mimalloc : host
-#   - tcmalloc, jemalloc       : dans junest (glibc compatible avec leurs .so)
-# NB : bench.c écrit chaque ligne de CSV + fflush immédiatement, donc si un
-# allocateur crash, les tests déjà effectués restent exploitables. On conserve
-# donc les CSV partiels et on se contente d'un avertissement.
-# =============================================================================
-run: backup-hajlibc | $(RESDIR)
-	@mkdir -p $(RESDIR)
-	@for bin in $(BUILDABLE); do \
-		name=$$(basename $$bin | sed 's/bench_//'); \
-		echo ""; \
-		echo ">>> Launching benchmark: $$name"; \
-		case "$$name" in \
-			hajlibc)  LD_PRELOAD="$(HAJ_LIB)"     ./$$bin $$name $(RESDIR) ;; \
-			tcmalloc) $(JUNEST) -- env LD_PRELOAD="$(TCMALLOC_SO)" ./$$bin $$name $(RESDIR) ;; \
-			jemalloc) $(JUNEST) -- env LD_PRELOAD="$(JEMALLOC_SO)" ./$$bin $$name $(RESDIR) ;; \
-			*)        ./$$bin $$name $(RESDIR) ;; \
-		esac; \
-		rc=$$?; \
-		if [ $$rc -ne 0 ]; then \
-			lines=$$(wc -l < "$(RESDIR)/results_$$name.csv" 2>/dev/null || echo 0); \
-			echo "  ⚠️  $$name a crashé (code $$rc) — $$lines ligne(s) conservées dans $(RESDIR)/results_$$name.csv"; \
+	@for f in results_hajlibc.csv timeseries_hajlibc.csv; do \
+		if [ -f "$(RESDIR)/$$f" ]; then \
+			old="$${f%.csv}_old.csv"; \
+			mv -f "$(RESDIR)/$$f" "$(RESDIR)/$$old"; \
+			echo "  ↻ hajlibc: previous run archived -> $$old"; \
 		fi; \
 	done
-	@echo ""
-	@echo "Results are in: $(RESDIR)/"
 
-# =============================================================================
-# Run : hajlibc uniquement (itération rapide)
-# =============================================================================
+# A crashing benchmark does not stop the others: the rows it already wrote
+# are kept and reported as such.
+run: backup-hajlibc $(BUILDABLE) | $(RESDIR)
+	@$(foreach a,$(AVAILABLE), \
+		printf "\n>>> Launching benchmark: %s\n" "$(a)"; \
+		$(call run_cmd,$(a)) || { \
+			rc=$$?; csv="$(RESDIR)/results_$(a).csv"; \
+			lines=$$(wc -l < "$$csv" 2>/dev/null || echo 0); \
+			echo " $(a) crashed (exit $$rc), $$lines line(s) kept in $$csv"; \
+		};)
+	@printf "\nResults are in: %s/\n" "$(RESDIR)"
+
 run-hajlibc: backup-hajlibc $(BINDIR)/bench_hajlibc | $(RESDIR)
-	@echo ""
-	@echo ">>> Launching benchmark: hajlibc (only)"
-	@LD_PRELOAD=$(HAJ_LIB) ./$(BINDIR)/bench_hajlibc hajlibc $(RESDIR)
-	@echo ""
-	@echo "hajlibc results refreshed in: $(RESDIR)/"
+	@printf "\n>>> Launching benchmark: hajlibc (only, %s)\n" "$(MODE_hajlibc)"
+	@$(call run_cmd,hajlibc)
+	@printf "\nhajlibc results refreshed in: %s/\n" "$(RESDIR)"
 
-report-hajlibc: run-hajlibc report
+run-hajlibc-static: backup-hajlibc $(BINDIR)/bench_hajlibc_static | $(RESDIR)
+	@printf "\n>>> Launching benchmark: hajlibc_static (only, %s)\n" "$(MODE_hajlibc_static)"
+	@$(call run_cmd,hajlibc_static)
+	@printf "\nhajlibc_static results refreshed in: %s/\n" "$(RESDIR)"
 
-# =============================================================================
-# Rapport HTML
-# =============================================================================
+# ----- Report -----
 report:
-	$(PY) analyze.py --results-dir $(RESDIR) --output report.html
+	@printf "  PY   %s\n" "analyze.py --output report.html"
+	@$(PY) analyze.py --results-dir $(RESDIR) --output report.html
 	@echo "Report generated: report.html"
 
-# =============================================================================
-# Nettoyage
-# =============================================================================
+report-hajlibc: run-hajlibc report
+report-hajlibc-static: run-hajlibc-static report
+
+# ----- Cleanup -----
 clean:
-	@rm -f $(BINDIR)/* $(RESDIR)/*
+	@printf "  CLEAN %s\n" "$(BINDIR)/* $(RESDIR)/* report.html scores.json"
+	@rm -f $(BINDIR)/* $(RESDIR)/* report.html scores.json
 
 fclean: clean
-	@rm -rf $(BINDIR) $(RESDIR) report.html scores.json
+	@printf "  FCLEAN %s\n" "$(BINDIR)/ $(RESDIR)/"
+	@rm -rf $(BINDIR) $(RESDIR)
 
 clean-old:
-	@rm -f $(RESDIR)/results_hajlibc_old.csv \
-	       $(RESDIR)/timeseries_hajlibc_old.csv
+	@rm -f $(RESDIR)/results_hajlibc_old.csv $(RESDIR)/timeseries_hajlibc_old.csv
 	@echo "Archived hajlibc results removed."
 
-.PHONY: all build check-deps list run run-hajlibc report report-hajlibc \
-        backup-hajlibc clean fclean clean-old
+re: fclean
+	@$(MAKE) --no-print-directory all
+
+.PHONY:	all build check-deps list backup-hajlibc \
+		run run-hajlibc run-hajlibc-static \
+		report report-hajlibc report-hajlibc-static \
+		clean fclean clean-old re

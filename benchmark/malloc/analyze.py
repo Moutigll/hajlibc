@@ -9,11 +9,18 @@ Scoring model v4 (fixed 90/10 time/RSS split):
     log-ratio scoring, so a 2x memory overhead costs real points.
   - ΔRSS is normalized by the test's peak RSS (retained fraction), so an
     allocator that simply allocates less does not "win" on memory.
-  - Thread-scaling efficiency is folded into the 90% time share (it's a
-    timing measurement).
+  - Thread-scaling efficiency is reported but NOT scored: every thread
+    count is already scored on time, and an efficiency ratio rewards being
+    slow at the lowest thread count.
+  - ΔRSS below a noise floor (a few pages, or <= 1 % of the peak) is treated
+    as zero retention: page-granular jitter must not cost points.
+  - Multi-thread tests are scored at EVERY thread count (one CSV row per
+    (test, threads)); the per-thread-count scores are averaged per test.
+  - Test and category weights are fixed a priori: they do not depend on
+    which allocators are present in the comparison.
   - An allocator that crashed / did not complete a test is penalized: the
-    missing test counts as score 0 in the aggregation, and a global
-    completeness factor is applied.
+    missing test (or missing thread count) counts as score 0 in the
+    aggregation, and a global completeness factor is applied.
 
 Reads:
     results/results_<alloc>.csv
@@ -24,6 +31,9 @@ Produces:
 
 Usage:
     python3 analyze.py --results-dir results --output report.html
+
+Requires Python >= 3.10 and jinja2. Fully type-annotated: check with
+    mypy --strict analyze.py
 """
 
 import argparse
@@ -32,8 +42,10 @@ import glob
 import json
 import math
 import os
+import platform
 import sys
 from collections import defaultdict
+from typing import Final, TypeAlias, TypedDict
 
 try:
     from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -43,9 +55,209 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+# One CSV row, column name -> raw string value (csv.DictReader).
+Row: TypeAlias = dict[str, str]
+# results[alloc][test][threads] -> row
+AllocResults: TypeAlias = dict[str, dict[int, Row]]
+Results: TypeAlias = dict[str, AllocResults]
+# A scored unit: one (test, threads) pair, and the same with its label.
+Unit: TypeAlias = tuple[str, int]
+LabeledUnit: TypeAlias = tuple[str, int, str]
+# A 0-100 score, None when it cannot be computed; keyed by allocator.
+Score: TypeAlias = float | None
+ScoreMap: TypeAlias = dict[str, Score]
+
+
+class Sample(TypedDict):
+    """One RSS sample of a timeseries CSV."""
+    t_ms: float
+    rss_kb: int
+
+
+# timeseries[alloc][(test, threads)] -> samples
+Timeseries: TypeAlias = dict[str, dict[Unit, list[Sample]]]
+
+
+class Metrics(TypedDict):
+    """Raw metrics of one allocator on one (test, threads) unit."""
+    time: float
+    rss: float
+    frac: float | None
+
+
+class TestMeta(TypedDict):
+    category: str
+    time_weight: float
+    rss_weight: float
+    threads: list[int]
+
+
+class Scores(TypedDict):
+    """Output of compute_scores(), also dumped as scores.json."""
+    overall: ScoreMap
+    overall_time: ScoreMap
+    overall_rss: ScoreMap
+    overall_drss: ScoreMap
+    overall_completeness: dict[str, float]
+    missing_tests: dict[str, int]
+    per_category: dict[str, ScoreMap]
+    per_category_time: dict[str, ScoreMap]
+    per_category_rss: dict[str, ScoreMap]
+    per_category_drss: dict[str, ScoreMap]
+    per_category_test_weights: dict[str, dict[str, float]]
+    category_importance: dict[str, float]
+    per_test: dict[str, ScoreMap]
+    per_test_time: dict[str, ScoreMap]
+    per_test_rss: dict[str, ScoreMap]
+    per_test_drss: dict[str, ScoreMap]
+    per_test_scaling: dict[str, ScoreMap]
+    per_test_meta: dict[str, TestMeta]
+    tests_by_category: dict[str, list[str]]
+    all_tests: list[str]
+    constants: dict[str, float]
+
+
+class Point(TypedDict):
+    x: float
+    y: int
+
+
+class _DatasetBase(TypedDict):
+    label: str
+    borderColor: str
+
+
+class SeriesDataset(_DatasetBase, total=False):
+    """Chart.js dataset with one value per label (None = no data)."""
+    data: list[float | None]
+    backgroundColor: str
+
+
+class PointDataset(_DatasetBase, total=False):
+    """Chart.js dataset of (x, y) points (RSS timeseries)."""
+    data: list[Point]
+    backgroundColor: str
+
+
+class _ChartBase(TypedDict):
+    id: str
+    title: str
+    kind: str
+    metric: str
+    category: str
+    container: str
+
+
+class Chart(_ChartBase, total=False):
+    """A chart description consumed by template.jinja. Keys beyond the
+    base ones depend on `kind`."""
+    labels: list[str]
+    datasets: list[SeriesDataset] | list[PointDataset]
+    xLabel: str
+    yLabel: str
+    logScale: bool
+    logY: bool
+    fullWidth: bool
+    height_px: int
+    metric_per_label: list[str]
+    unit: str
+    values: list[float]
+    relative: list[float]
+    colors: list[str]
+
+
+class TableCell(TypedDict):
+    time_ns: str
+    peak_kb: str
+    delta_kb: str
+    ops: str
+    ops_per_sec: str
+    cls: str
+
+
+class TableRow(TypedDict):
+    test: str
+    cells: list[TableCell | None]
+    unmeasurable: bool
+
+
+class Term(TypedDict):
+    title: str
+    desc: str
+
+
+class TestDetail(TypedDict):
+    name: str
+    score: float | None
+    time: float | None
+    rss: float | None
+    drss: float | None
+    importance: float
+
+
+class CategoryEntry(TypedDict):
+    label: str
+    time: float | None
+    rss: float | None
+    drss: float | None
+    score: float | None
+    weight: float
+    tests: list[TestDetail]
+
+
+class ScoreRow(TypedDict):
+    alloc: str
+    color: str
+    overall: float | None
+    pct: float
+    missing: int
+    categories: list[CategoryEntry]
+
+
+class ScoreBoard(TypedDict):
+    """Global scores section: one row per allocator + formula parameters."""
+    rows: list[ScoreRow]
+    time_pct: int
+    rss_pct: int
+    ratio_max_time: str
+    drss_noise_kb: int
+    drss_floor_pct: str
+    miss_pct: int
+
+
+class SpecItem(TypedDict):
+    """One line of the "Test machine" block."""
+    label: str
+    value: str
+    hint: str
+
+
+class ReportContext(TypedDict):
+    """Variables passed to the Jinja template."""
+    allocators: list[str]
+    alloc_colors: dict[str, str]
+    palette: dict[str, str]
+    best_color: str
+    worst_color: str
+    charts: list[Chart]
+    ts_charts: list[Chart]
+    tests_by_category: dict[str, list[str]]
+    cat_labels: dict[str, str]
+    cat_descs: dict[str, str]
+    table_rows: list[TableRow]
+    terms: dict[str, Term]
+    unmeasurable: list[str]
+    scores: Scores
+    score_board: ScoreBoard | None
+    system: list[SpecItem]
+
+
+# ---------------------------------------------------------------------------
 # Palette (Catppuccin Mocha)
 # ---------------------------------------------------------------------------
-PALETTE = {
+PALETTE: Final[dict[str, str]] = {
     "base":     "#1e1e2e", "mantle":   "#181825", "crust":    "#11111b",
     "surface0": "#313244", "surface1": "#45475a", "surface2": "#585b70",
     "overlay0": "#6c7086", "overlay1": "#7f849c", "overlay2": "#9399b2",
@@ -60,10 +272,10 @@ PALETTE = {
 # Darker greens/reds used for the "best"/"worst" cell highlight in the
 # summary table. Slightly different from the palette's `green`/`red` so
 # they pop against the dark background without being blinding.
-BEST_COLOR  = "#4ea84e"   # dark green
-WORST_COLOR = "#c14545"   # dark red
+BEST_COLOR: Final  = "#4ea84e"   # dark green
+WORST_COLOR: Final = "#c14545"   # dark red
 
-AUTO_PALETTE = [
+AUTO_PALETTE: Final[list[str]] = [
     PALETTE["blue"], PALETTE["peach"], PALETTE["green"], PALETTE["mauve"],
     PALETTE["red"], PALETTE["teal"], PALETTE["yellow"], PALETTE["pink"],
     PALETTE["sky"], PALETTE["lavender"], PALETTE["maroon"], PALETTE["sapphire"],
@@ -72,8 +284,8 @@ AUTO_PALETTE = [
 ]
 
 
-def build_color_map(allocators):
-    colors = {}
+def build_color_map(allocators: list[str]) -> dict[str, str]:
+    colors: dict[str, str] = {}
     n = len(AUTO_PALETTE)
     for i, a in enumerate(sorted(allocators)):
         if i < n:
@@ -87,7 +299,7 @@ def build_color_map(allocators):
 # ---------------------------------------------------------------------------
 # Terminology
 # ---------------------------------------------------------------------------
-TERMS = {
+TERMS: Final[dict[str, Term]] = {
     "mean_alloc_ns": {
         "title": "Mean time per operation",
         "desc": ("Average wall-clock time in nanoseconds to complete one "
@@ -119,7 +331,7 @@ TERMS = {
     },
 }
 
-CATEGORY_LABELS = {
+CATEGORY_LABELS: Final[dict[str, str]] = {
     "single_size":          "Fixed-size allocations",
     "churn":                "Freelist churn",
     "mixed_sizes":          "Mixed sizes",
@@ -133,7 +345,7 @@ CATEGORY_LABELS = {
     "mt_contention":        "Shared-state contention",
 }
 
-CATEGORY_DESC = {
+CATEGORY_DESC: Final[dict[str, str]] = {
     "single_size":          "Repeated malloc/free of a fixed size.",
     "churn":                "Fast allocate/free cycles stressing the freelist.",
     "mixed_sizes":          "Random size distribution, part of the allocations kept alive.",
@@ -151,13 +363,13 @@ CATEGORY_DESC = {
 # ---------------------------------------------------------------------------
 # SCORING MODEL v4 — fixed 90 / 10
 # ---------------------------------------------------------------------------
-TIME_WEIGHT = 0.90
-RSS_WEIGHT  = 0.10
+TIME_WEIGHT: Final = 0.90
+RSS_WEIGHT: Final  = 0.10
 
-RATIO_MAX_TIME = 10.0   # 10x slower than best -> 0
-RATIO_MAX_RSS  = 8.0    # 8x more RSS than best -> 0
+RATIO_MAX_TIME: Final = 10.0   # 10x slower than best -> 0
+RATIO_MAX_RSS: Final  = 8.0    # 8x more RSS than best -> 0
 
-CATEGORY_IMPORTANCE = {
+CATEGORY_IMPORTANCE: Final[dict[str, float]] = {
     "mt_contention":        3.0,
     "mt_scaling":           2.5,
     "mt_cross_thread_free": 2.5,
@@ -170,55 +382,90 @@ CATEGORY_IMPORTANCE = {
     "single_size":          1.0,
     "pointer_heavy":        1.0,
 }
-DEFAULT_CATEGORY_IMPORTANCE = 1.0
+DEFAULT_CATEGORY_IMPORTANCE: Final = 1.0
 
-TEST_IMPORTANCE_OVERRIDES = {
-    "alloc_free_64B":        1.3,
-    "alloc_free_256B":       1.2,
-    "alloc_free_16B":        1.0,
-    "alloc_free_1KB":        1.0,
-    "alloc_free_4KB":        1.0,
-    "alloc_free_64KB":       0.9,
-    "alloc_free_1MB":        0.8,
-    "mixed_small_10pct_keep": 1.2,
-    "mixed_wide_30pct_keep":  1.4,
-    "batch_free_random":     1.2,
-    "batch_free_fifo":       1.0,
-    "batch_free_lifo":       1.0,
-    "realloc_growth":        1.0,
-    "linked_list":           1.0,
-    "string_workload":       1.0,
-    "fragmentation_stress":  1.0,
-    "churn_48B":             1.0,
-    "mt_independent_64B":    1.2,
-    "mt_independent_2KB":    1.0,
+TEST_IMPORTANCE_OVERRIDES: Final[dict[str, float]] = {
+    "alloc_free_64B":            1.3,
+    "alloc_free_256B":           1.2,
+    "alloc_free_16B":            1.0,
+    "alloc_free_1KB":            1.0,
+    "alloc_free_4KB":            1.0,
+    "alloc_free_64KB":           0.9,
+    "alloc_free_1MB":            0.8,
+    "mixed_small_10pct_keep":    1.2,
+    "mixed_wide_30pct_keep":     1.4,
+    "batch_free_random":         1.2,
+    "batch_free_fifo":           1.0,
+    "batch_free_lifo":           1.0,
+    "realloc_growth":            1.0,
+    "linked_list":               1.0,
+    "string_workload":           1.0,
+    "fragmentation_stress":      1.0,
+    "churn_48B":                 1.0,
+    "mt_independent_64B":        1.2,
+    "mt_independent_2KB":        1.0,
     "mt_producer_consumer_256B": 1.1,
     "mt_shared_contention_128B": 1.3,
 }
 
-MISSING_PENALTY = 0.30
+MISSING_PENALTY: Final = 0.30
+
+# ΔRSS noise floor: retention up to DRSS_NOISE_KB, or up to DRSS_FLOOR_FRAC of
+# the peak, is indistinguishable from page-level jitter and scores 100.
+DRSS_NOISE_KB: Final   = 256
+DRSS_FLOOR_FRAC: Final = 0.01
 
 
 # ---------------------------------------------------------------------------
 # CSV loading
 # ---------------------------------------------------------------------------
-def load_results(results_dir):
-    data = {}
+def load_results(results_dir: str) -> Results:
+    """results[alloc][test][threads] -> row. Multi-thread tests emit one row
+    per thread count, so the thread count is part of the key."""
+    data: Results = {}
     for path in sorted(glob.glob(os.path.join(results_dir, "results_*.csv"))):
         alloc = os.path.basename(path)[len("results_"):-len(".csv")]
-        rows = {}
+        rows: AllocResults = {}
         with open(path, newline="") as f:
             for row in csv.DictReader(f):
-                rows[row["test"]] = row
+                thr = int(fnum(row.get("threads"), 1) or 1)
+                rows.setdefault(row["test"], {})[thr] = row
         data[alloc] = rows
     return data
 
 
-def load_timeseries(results_dir):
-    data = {}
+def get_row(results: Results, alloc: str, test: str, thr: int) -> Row | None:
+    return results[alloc].get(test, {}).get(thr)
+
+
+def all_units(results: Results, allocators: list[str]) -> set[Unit]:
+    """Every (test, threads) pair measured by at least one allocator."""
+    units: set[Unit] = set()
+    for a in allocators:
+        for test, per_thr in results[a].items():
+            for thr in per_thr:
+                units.add((test, thr))
+    return units
+
+
+def unit_label(test: str, thr: int, multi: bool) -> str:
+    return f"{test} @{thr}t" if multi else test
+
+
+def col(row: Row, *names: str) -> str | None:
+    """First present column among `names` (the CSV uses camelCase names)."""
+    for n in names:
+        v = row.get(n)
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def load_timeseries(results_dir: str) -> Timeseries:
+    data: Timeseries = {}
     for path in sorted(glob.glob(os.path.join(results_dir, "timeseries_*.csv"))):
         alloc = os.path.basename(path)[len("timeseries_"):-len(".csv")]
-        series = defaultdict(list)
+        series: defaultdict[Unit, list[Sample]] = defaultdict(list)
         with open(path, newline="") as f:
             for row in csv.DictReader(f):
                 key = (row["test"], int(row["threads"]))
@@ -230,17 +477,19 @@ def load_timeseries(results_dir):
     return data
 
 
-def fnum(v, default=0.0):
+def fnum(v: str | float | None, default: float = 0.0) -> float:
+    if v is None:
+        return default
     try:
         return float(v)
     except (TypeError, ValueError):
         return default
 
 
-def precise_mean_ns(row):
+def precise_mean_ns(row: Row | None) -> float:
     if not row:
         return 0.0
-    dur_ns = row.get("duration_ns")
+    dur_ns = col(row, "durationNs", "duration_ns")
     ops = row.get("operations")
     if dur_ns is not None and ops is not None:
         try:
@@ -253,7 +502,7 @@ def precise_mean_ns(row):
     return fnum(row.get("mean_alloc_ns"))
 
 
-def delta_rss_kb(row):
+def delta_rss_kb(row: Row | None) -> float | None:
     if not row:
         return None
     v = row.get("delta_rss_kb")
@@ -265,26 +514,29 @@ def delta_rss_kb(row):
         return None
 
 
-def thread_counts_for(test, allocators, results):
-    tcs = set()
+def ops_per_sec(row: Row) -> float:
+    return fnum(col(row, "OpsPerSec", "ops_per_sec"))
+
+
+def thread_counts_for(test: str, allocators: list[str],
+                      results: Results) -> list[int]:
+    tcs: set[int] = set()
     for a in allocators:
-        for t in results[a]:
-            if t == test:
-                tcs.add(int(results[a][t]["threads"]))
+        tcs.update(results[a].get(test, {}).keys())
     return sorted(tcs)
 
 
-def test_importance(test, category):
-    for key, imp in TEST_IMPORTANCE_OVERRIDES.items():
-        if key in test:
-            return imp
-    return 1.0
+def test_importance(test: str, category: str) -> float:
+    # Exact match: substring matching silently mis-weights new test names.
+    return TEST_IMPORTANCE_OVERRIDES.get(test, 1.0)
 
 
 # ---------------------------------------------------------------------------
 # Scoring primitives
 # ---------------------------------------------------------------------------
-def score_ratio_log(v, best, higher_is_better=False, ratio_max=RATIO_MAX_TIME):
+def score_ratio_log(v: float | None, best: float | None,
+                    higher_is_better: bool = False,
+                    ratio_max: float = RATIO_MAX_TIME) -> float | None:
     """
     Log-ratio score. best -> 100, best*ratio_max -> 0.
     A 2x slower allocator scores ~70, a 5x slower scores ~30, 10x -> 0.
@@ -300,30 +552,38 @@ def score_ratio_log(v, best, higher_is_better=False, ratio_max=RATIO_MAX_TIME):
     return max(0.0, min(100.0, s))
 
 
-def score_rss(v, best):
+def score_rss(v: float | None, best: float | None) -> float | None:
     return score_ratio_log(v, best, higher_is_better=False,
                            ratio_max=RATIO_MAX_RSS)
 
 
-def score_drss_fraction(drss_kb, peak_kb, best_fraction):
+def retained_fraction(drss_kb: float | None,
+                      peak_kb: float | None) -> float | None:
+    """Retained memory as a fraction of the peak, noise floor removed and
+    clamped to DRSS_FLOOR_FRAC so jitter-sized deltas all tie at 100."""
     if drss_kb is None or peak_kb is None or peak_kb <= 0:
         return None
-    if drss_kb <= 0:
-        return 100.0
-    if best_fraction is None or best_fraction <= 0:
+    retained = max(0.0, drss_kb - DRSS_NOISE_KB)
+    return max(retained / peak_kb, DRSS_FLOOR_FRAC)
+
+
+def score_drss_fraction(frac: float | None,
+                        best_fraction: float | None) -> float | None:
+    if frac is None or best_fraction is None:
         return None
-    frac = drss_kb / peak_kb
     return score_ratio_log(frac, best_fraction, higher_is_better=False,
                            ratio_max=RATIO_MAX_RSS)
 
 
-def combine_scores(time_score, rss_score, drss_score=None, scaling_score=None):
+def combine_scores(time_score: float | None, rss_score: float | None,
+                   drss_score: float | None = None,
+                   scaling_score: float | None = None) -> float | None:
     """Fixed 90/10 split. Missing sub-scores are dropped and the remaining
     weights are renormalized."""
-    parts = []
+    parts: list[tuple[float, float]] = []   # (score, weight)
 
     # Time share (90 %)
-    time_parts = []
+    time_parts: list[tuple[float, float]] = []
     if time_score is not None:
         time_parts.append((time_score, 1.0))
     if scaling_score is not None:
@@ -334,7 +594,7 @@ def combine_scores(time_score, rss_score, drss_score=None, scaling_score=None):
         parts.append((tnum / tden, TIME_WEIGHT))
 
     # RSS share (10 %)
-    rss_parts = []
+    rss_parts: list[tuple[float, float]] = []
     if rss_score is not None:
         rss_parts.append((rss_score, 0.60))
     if drss_score is not None:
@@ -354,75 +614,101 @@ def combine_scores(time_score, rss_score, drss_score=None, scaling_score=None):
 # ---------------------------------------------------------------------------
 # Main scoring pipeline
 # ---------------------------------------------------------------------------
-def compute_scores(allocators, results):
-    # 1. Raw metrics per test
-    test_data = {}
+def compute_scores(allocators: list[str], results: Results) -> Scores:
+    # 1. Raw metrics per (test, threads) unit
+    unit_data: defaultdict[Unit, dict[str, Metrics]] = defaultdict(dict)
+    test_cat: dict[str, str] = {}
     for a in allocators:
-        for test, row in results[a].items():
-            test_data.setdefault(test, {})[a] = {
-                "time":    precise_mean_ns(row),
-                "rss":     fnum(row.get("peak_rss_kb")),
-                "drss":    delta_rss_kb(row),
-                "cat":     row.get("category", "other"),
-                "threads": int(row.get("threads", 1) or 1),
-            }
+        for test, per_thr in results[a].items():
+            for thr, row in per_thr.items():
+                rss = fnum(row.get("peak_rss_kb"))
+                unit_data[(test, thr)][a] = {
+                    "time": precise_mean_ns(row),
+                    "rss":  rss,
+                    "frac": retained_fraction(delta_rss_kb(row), rss),
+                }
+                test_cat.setdefault(test, row.get("category", "other"))
 
-    test_cat = {}
-    for test, ad in test_data.items():
-        for d in ad.values():
-            test_cat[test] = d["cat"]
-            break
-
-    mt_times = defaultdict(lambda: defaultdict(dict))
-    for test, ad in test_data.items():
+    # test -> alloc -> threads -> mean ns/op
+    mt_times: defaultdict[str, defaultdict[str, dict[int, float]]] = \
+        defaultdict(lambda: defaultdict(dict))
+    for (test, thr), ad in unit_data.items():
         for a, d in ad.items():
-            mt_times[test][a][d["threads"]] = d["time"]
+            mt_times[test][a][thr] = d["time"]
 
-    all_tests = sorted(test_data.keys())
+    all_tests = sorted(test_cat.keys())
+    units_by_test: defaultdict[str, list[int]] = defaultdict(list)
+    for (test, thr) in unit_data:
+        units_by_test[test].append(thr)
 
-    # 2. Per-test sub-scores
-    per_test_time    = {}
-    per_test_rss     = {}
-    per_test_drss    = {}
-    per_test_scaling = {}
-    per_test_mix     = {}
-    per_test_meta    = {}
-
-    for test, ad in test_data.items():
-        cat = test_cat[test]
-
-        times  = [d["time"] for d in ad.values() if d["time"] > 0]
-        rsses  = [d["rss"]  for d in ad.values() if d["rss"]  > 0]
-
+    # 2. Per-unit sub-scores, each against the best at the same thread count
+    unit_t: dict[Unit, ScoreMap] = {}
+    unit_r: dict[Unit, ScoreMap] = {}
+    unit_d: dict[Unit, ScoreMap] = {}
+    for key, ad in unit_data.items():
+        times = [d["time"] for d in ad.values() if d["time"] > 0]
+        rsses = [d["rss"]  for d in ad.values() if d["rss"]  > 0]
+        fracs = [d["frac"] for d in ad.values() if d["frac"] is not None]
         t_best = min(times) if times else None
         r_best = min(rsses) if rsses else None
+        f_best = min(fracs) if fracs else None
+        unit_t[key] = {a: score_ratio_log(d["time"], t_best)
+                       if d["time"] > 0 else None for a, d in ad.items()}
+        unit_r[key] = {a: score_rss(d["rss"], r_best)
+                       if d["rss"] > 0 else None for a, d in ad.items()}
+        unit_d[key] = {a: score_drss_fraction(d["frac"], f_best)
+                       for a, d in ad.items()}
 
-        fractions = []
-        for a, d in ad.items():
-            if d["drss"] is not None and d["rss"] > 0 and d["drss"] > 0:
-                fractions.append(d["drss"] / d["rss"])
-        best_frac = min(fractions) if fractions else None
+    def test_mean(unit_scores: dict[Unit, ScoreMap], test: str, a: str,
+                  missing_as_zero: bool) -> float | None:
+        """Average of a test's per-thread-count scores. A thread count the
+        allocator did not complete counts as 0 for time (it crashed)."""
+        vals: list[float] = []
+        for thr in units_by_test[test]:
+            s = unit_scores[(test, thr)].get(a)
+            if s is None:
+                if missing_as_zero and test in results[a]:
+                    vals.append(0.0)
+                continue
+            vals.append(s)
+        return sum(vals) / len(vals) if vals else None
 
+    # 3. Per-test sub-scores
+    per_test_time: dict[str, ScoreMap]    = {}
+    per_test_rss: dict[str, ScoreMap]     = {}
+    per_test_drss: dict[str, ScoreMap]    = {}
+    per_test_scaling: dict[str, ScoreMap] = {}
+    per_test_mix: dict[str, ScoreMap]     = {}
+    per_test_meta: dict[str, TestMeta]    = {}
+
+    for test in all_tests:
+        cat = test_cat[test]
         per_test_meta[test] = {
             "category":    cat,
             "time_weight": TIME_WEIGHT,
             "rss_weight":  RSS_WEIGHT,
+            "threads":     sorted(units_by_test[test]),
         }
 
-        t_scores, r_scores, d_scores, s_scores, m_scores = {}, {}, {}, {}, {}
-        for a, d in ad.items():
-            ts = score_ratio_log(d["time"], t_best, higher_is_better=False) \
-                 if d["time"] > 0 else None
-            rs = score_rss(d["rss"], r_best) if d["rss"] > 0 else None
-            ds = score_drss_fraction(d["drss"], d["rss"], best_frac)
+        t_scores: ScoreMap = {}
+        r_scores: ScoreMap = {}
+        d_scores: ScoreMap = {}
+        s_scores: ScoreMap = {}
+        m_scores: ScoreMap = {}
+        for a in allocators:
+            if test not in results[a]:
+                continue
+            ts = test_mean(unit_t, test, a, True)
+            rs = test_mean(unit_r, test, a, False)
+            ds = test_mean(unit_d, test, a, False)
 
-            sc = None
-            per_thr = mt_times[test].get(a, {})
-            if len(per_thr) >= 2:
-                base_thr = min(per_thr)
-                base_t   = per_thr[base_thr]
+            sc: float | None = None
+            thr_times = mt_times[test].get(a, {})
+            if len(thr_times) >= 2:
+                base_thr = min(thr_times)
+                base_t   = thr_times[base_thr]
                 best_eff = 0.0
-                for thr, t in per_thr.items():
+                for thr, t in thr_times.items():
                     if thr == base_thr or t <= 0 or base_t <= 0:
                         continue
                     eff = (base_t / t) / (thr / base_thr)
@@ -434,7 +720,8 @@ def compute_scores(allocators, results):
             r_scores[a] = rs
             d_scores[a] = ds
             s_scores[a] = sc
-            m_scores[a] = combine_scores(ts, rs, ds, sc)
+            # Scaling is informational only (see module docstring).
+            m_scores[a] = combine_scores(ts, rs, ds)
 
         per_test_time[test]    = t_scores
         per_test_rss[test]     = r_scores
@@ -443,42 +730,46 @@ def compute_scores(allocators, results):
         per_test_mix[test]     = m_scores
 
     # 3. Group by category
-    tests_by_cat = defaultdict(list)
+    tests_by_cat: defaultdict[str, list[str]] = defaultdict(list)
     for test, cat in test_cat.items():
         tests_by_cat[cat].append(test)
 
     # 4. Per-category scores
-    per_category              = {}
-    per_category_time         = {}
-    per_category_rss          = {}
-    per_category_drss         = {}
-    per_category_test_weights = {}
+    per_category: dict[str, ScoreMap]                     = {}
+    per_category_time: dict[str, ScoreMap]                = {}
+    per_category_rss: dict[str, ScoreMap]                 = {}
+    per_category_drss: dict[str, ScoreMap]                = {}
+    per_category_test_weights: dict[str, dict[str, float]] = {}
 
     for cat, tests in tests_by_cat.items():
-        weights = []
-        for test in tests:
-            vals = [v for v in per_test_mix[test].values() if v is not None]
-            spread = max(vals) - min(vals) if len(vals) >= 2 else 0.0
-            imp = test_importance(test, cat)
-            disc = 1.0 + spread / 100.0
-            weights.append(imp * disc)
+        # Fixed weights: a spread-based boost would make every allocator's
+        # score depend on which other allocators are being compared.
+        weights = [test_importance(test, cat) for test in tests]
         per_category_test_weights[cat] = dict(zip(tests, weights))
 
-        cat_time, cat_rss, cat_drss, cat_mix = {}, {}, {}, {}
+        cat_time: ScoreMap = {}
+        cat_rss: ScoreMap  = {}
+        cat_drss: ScoreMap = {}
+        cat_mix: ScoreMap  = {}
         for a in allocators:
-            def wmean(score_map):
+            def wmean(score_map: dict[str, ScoreMap],
+                      missing_as_zero: bool) -> float | None:
                 num = den = 0.0
                 for test, w in zip(tests, weights):
                     s = score_map[test].get(a)
-                    if s is not None:
-                        num += s * w
-                        den += w
+                    if s is None:
+                        # A test the allocator never completed scores 0.
+                        if missing_as_zero and test not in results[a]:
+                            den += w
+                        continue
+                    num += s * w
+                    den += w
                 return num / den if den > 0 else None
 
-            cat_time[a]  = wmean(per_test_time)
-            cat_rss[a]   = wmean(per_test_rss)
-            cat_drss[a]  = wmean(per_test_drss)
-            cat_mix[a]   = wmean(per_test_mix)
+            cat_time[a]  = wmean(per_test_time, True)
+            cat_rss[a]   = wmean(per_test_rss, False)
+            cat_drss[a]  = wmean(per_test_drss, False)
+            cat_mix[a]   = wmean(per_test_mix, True)
 
         per_category_time[cat] = cat_time
         per_category_rss[cat]  = cat_rss
@@ -486,22 +777,23 @@ def compute_scores(allocators, results):
         per_category[cat]      = cat_mix
 
     # 5. Global score + completeness penalty
-    cat_importance = {
+    cat_importance: dict[str, float] = {
         c: CATEGORY_IMPORTANCE.get(c, DEFAULT_CATEGORY_IMPORTANCE)
         for c in per_category
     }
 
-    overall       = {}
-    overall_time  = {}
-    overall_rss   = {}
-    overall_drss  = {}
-    completeness  = {}
-    missing_tests = {}
+    overall: ScoreMap               = {}
+    overall_time: ScoreMap          = {}
+    overall_rss: ScoreMap           = {}
+    overall_drss: ScoreMap          = {}
+    completeness: dict[str, float]  = {}
+    missing_tests: dict[str, int]   = {}
 
-    total_tests = len(all_tests)
+    all_unit_keys = list(unit_data.keys())
+    total_units = len(all_unit_keys)
 
     for a in allocators:
-        def wmean_cat(map_):
+        def wmean_cat(map_: dict[str, ScoreMap]) -> float | None:
             num = den = 0.0
             for cat, cs in map_.items():
                 s = cs.get(a)
@@ -514,9 +806,10 @@ def compute_scores(allocators, results):
 
         raw_overall = wmean_cat(per_category)
 
-        done = sum(1 for t in all_tests if t in results[a])
-        miss = total_tests - done
-        comp = done / total_tests if total_tests > 0 else 1.0
+        done = sum(1 for (t, thr) in all_unit_keys
+                   if get_row(results, a, t, thr) is not None)
+        miss = total_units - done
+        comp = done / total_units if total_units > 0 else 1.0
         missing_tests[a] = miss
         completeness[a] = comp
 
@@ -564,20 +857,23 @@ def compute_scores(allocators, results):
 # ---------------------------------------------------------------------------
 # Overview builders
 # ---------------------------------------------------------------------------
-def build_normalized_overview(allocators, all_tests, results, color_map):
-    labels = []
-    ratios_per_alloc = {a: [] for a in allocators}
-    metric_per_label = []
+def build_normalized_overview(allocators: list[str],
+                              all_units: list[LabeledUnit],
+                              results: Results,
+                              color_map: dict[str, str]) -> Chart | None:
+    labels: list[str] = []
+    ratios_per_alloc: dict[str, list[float | None]] = {a: [] for a in allocators}
+    metric_per_label: list[str] = []
 
-    for test in all_tests:
-        times = {}
-        tputs = {}
+    for (test, thr, label) in all_units:
+        times: dict[str, float] = {}
+        tputs: dict[str, float] = {}
         for a in allocators:
-            row = results[a].get(test)
+            row = get_row(results, a, test, thr)
             if not row:
                 continue
             t = precise_mean_ns(row)
-            o = fnum(row.get("ops_per_sec"))
+            o = ops_per_sec(row)
             if t > 0:
                 times[a] = t
             if o > 0:
@@ -585,13 +881,13 @@ def build_normalized_overview(allocators, all_tests, results, color_map):
 
         if times:
             best = min(times.values())
-            labels.append(test)
+            labels.append(label)
             metric_per_label.append("time")
             for a in allocators:
                 ratios_per_alloc[a].append(times[a] / best if a in times else None)
         elif tputs:
             best = max(tputs.values())
-            labels.append(test)
+            labels.append(label)
             metric_per_label.append("throughput")
             for a in allocators:
                 ratios_per_alloc[a].append(best / tputs[a] if a in tputs else None)
@@ -601,7 +897,7 @@ def build_normalized_overview(allocators, all_tests, results, color_map):
     if not labels:
         return None
 
-    datasets = [{
+    datasets: list[SeriesDataset] = [{
         "label": a,
         "data": ratios_per_alloc[a],
         "borderColor": color_map[a],
@@ -626,12 +922,13 @@ def build_normalized_overview(allocators, all_tests, results, color_map):
     }
 
 
-def build_rss_overview(allocators, all_tests, results, color_map):
-    datasets = []
+def build_rss_overview(allocators: list[str], all_units: list[LabeledUnit],
+                       results: Results, color_map: dict[str, str]) -> Chart:
+    datasets: list[SeriesDataset] = []
     for a in allocators:
-        data = []
-        for t in all_tests:
-            row = results[a].get(t)
+        data: list[float | None] = []
+        for (t, thr, _) in all_units:
+            row = get_row(results, a, t, thr)
             data.append(fnum(row["peak_rss_kb"]) if row else None)
         datasets.append({
             "label": a,
@@ -643,7 +940,7 @@ def build_rss_overview(allocators, all_tests, results, color_map):
         "id": "chart_ovw_rss",
         "title": "Peak RSS - all tests (KB, lower is better)",
         "kind": "vbar",
-        "labels": all_tests,
+        "labels": [u[2] for u in all_units],
         "datasets": datasets,
         "yLabel": "KB",
         "logY": True,
@@ -654,13 +951,15 @@ def build_rss_overview(allocators, all_tests, results, color_map):
     }
 
 
-def build_drss_overview(allocators, all_tests, results, color_map):
-    datasets = []
+def build_drss_overview(allocators: list[str], all_units: list[LabeledUnit],
+                        results: Results,
+                        color_map: dict[str, str]) -> Chart | None:
+    datasets: list[SeriesDataset] = []
     any_data = False
     for a in allocators:
-        data = []
-        for t in all_tests:
-            row = results[a].get(t)
+        data: list[float | None] = []
+        for (t, thr, _) in all_units:
+            row = get_row(results, a, t, thr)
             v = delta_rss_kb(row) if row else None
             data.append(v)
             if v is not None:
@@ -677,7 +976,7 @@ def build_drss_overview(allocators, all_tests, results, color_map):
         "id": "chart_ovw_drss",
         "title": "ΔRSS - retained memory per test (KB, lower is better)",
         "kind": "vbar",
-        "labels": all_tests,
+        "labels": [u[2] for u in all_units],
         "datasets": datasets,
         "yLabel": "ΔRSS (KB)",
         "logY": False,
@@ -688,23 +987,24 @@ def build_drss_overview(allocators, all_tests, results, color_map):
     }
 
 
-def build_category_charts(allocators, tests_by_category, results, color_map):
-    charts = []
-    unmeasurable = []
+def build_category_charts(allocators: list[str],
+                          tests_by_category: dict[str, list[str]],
+                          results: Results,
+                          color_map: dict[str, str]
+                          ) -> tuple[list[Chart], list[str]]:
+    charts: list[Chart] = []
+    unmeasurable: list[str] = []
 
     for cat, tests in sorted(tests_by_category.items()):
         for test in sorted(tests):
             tcs = thread_counts_for(test, allocators, results)
 
             if len(tcs) >= 2:
-                datasets = []
+                datasets: list[SeriesDataset] = []
                 for a in allocators:
-                    data = []
+                    data: list[float | None] = []
                     for tc in tcs:
-                        row = next(
-                            (results[a][t] for t in results[a]
-                             if t == test and int(results[a][t]["threads"]) == tc),
-                            None)
+                        row = get_row(results, a, test, tc)
                         data.append(precise_mean_ns(row) if row else None)
                     datasets.append({
                         "label": a, "data": data,
@@ -712,7 +1012,7 @@ def build_category_charts(allocators, tests_by_category, results, color_map):
                         "backgroundColor": color_map[a] + "33",
                     })
 
-                flat = [v for d in datasets for v in d["data"] if v]
+                flat = [v for d in datasets for v in d.get("data", []) if v is not None]
                 if not flat or max(flat) <= 0:
                     unmeasurable.append(test)
                     continue
@@ -732,14 +1032,17 @@ def build_category_charts(allocators, tests_by_category, results, color_map):
                 })
                 continue
 
-            time_pairs = []
-            tput_pairs = []
+            # (allocator, value, color)
+            time_pairs: list[tuple[str, float, str]] = []
+            tput_pairs: list[tuple[str, float, str]] = []
             for a in allocators:
-                if test not in results[a]:
+                if not tcs:
                     continue
-                row = results[a][test]
+                row = get_row(results, a, test, tcs[0])
+                if row is None:
+                    continue
                 t = precise_mean_ns(row)
-                o = fnum(row.get("ops_per_sec"))
+                o = ops_per_sec(row)
                 if t > 0:
                     time_pairs.append((a, t, color_map[a]))
                 if o > 0:
@@ -791,12 +1094,13 @@ def build_category_charts(allocators, tests_by_category, results, color_map):
     return charts, unmeasurable
 
 
-def build_ts_charts(allocators, timeseries, color_map):
-    all_keys = set()
+def build_ts_charts(allocators: list[str], timeseries: Timeseries,
+                    color_map: dict[str, str]) -> list[Chart]:
+    all_keys: set[Unit] = set()
     for a in allocators:
         all_keys.update(timeseries.get(a, {}).keys())
 
-    def sort_key(key):
+    def sort_key(key: Unit) -> tuple[int, int]:
         test, thr = key
         prio = 0
         if "scaling" in test or "contention" in test:
@@ -809,24 +1113,24 @@ def build_ts_charts(allocators, timeseries, color_map):
             prio = 5
         return (-prio, -thr)
 
-    ts_charts = []
+    ts_charts: list[Chart] = []
     for (test, threads) in sorted(all_keys, key=sort_key):
         if len(ts_charts) >= 12:
             break
-        samples_by_alloc = {a: timeseries.get(a, {}).get((test, threads))
-                            for a in allocators}
-        samples_by_alloc = {a: s for a, s in samples_by_alloc.items() if s}
+        candidates = {a: timeseries.get(a, {}).get((test, threads))
+                      for a in allocators}
+        samples_by_alloc = {a: s for a, s in candidates.items() if s}
         if len(samples_by_alloc) < 2:
             continue
         max_samples = max(len(s) for s in samples_by_alloc.values())
 
         if max_samples < 3:
-            datasets = []
+            peak_datasets: list[SeriesDataset] = []
             for a in allocators:
                 if a not in samples_by_alloc:
                     continue
                 peak = max(s["rss_kb"] for s in samples_by_alloc[a])
-                datasets.append({
+                peak_datasets.append({
                     "label": a,
                     "data": [peak],
                     "borderColor": color_map[a],
@@ -837,7 +1141,7 @@ def build_ts_charts(allocators, timeseries, color_map):
                 "title": f"Peak RSS - {test} (threads={threads}) - test too fast to sample",
                 "kind": "ts_line",
                 "labels": ["Peak RSS"],
-                "datasets": datasets,
+                "datasets": peak_datasets,
                 "yLabel": "RSS (KB)",
                 "unit": "KB",
                 "metric": "peak_rss_kb",
@@ -846,11 +1150,11 @@ def build_ts_charts(allocators, timeseries, color_map):
             })
             continue
 
-        datasets = []
+        point_datasets: list[PointDataset] = []
         for a in allocators:
             if a not in samples_by_alloc:
                 continue
-            datasets.append({
+            point_datasets.append({
                 "label": a,
                 "data": [{"x": s["t_ms"], "y": s["rss_kb"]}
                          for s in samples_by_alloc[a]],
@@ -861,7 +1165,7 @@ def build_ts_charts(allocators, timeseries, color_map):
             "id": f"ts_{test}_{threads}",
             "title": f"RSS over time - {test} (threads={threads})",
             "kind": "ts_line",
-            "datasets": datasets,
+            "datasets": point_datasets,
             "yLabel": "RSS (KB)",
             "xLabel": "Time (ms)",
             "unit": "KB",
@@ -872,7 +1176,7 @@ def build_ts_charts(allocators, timeseries, color_map):
     return ts_charts
 
 
-def fmt_time_ns(v):
+def fmt_time_ns(v: float) -> str:
     if v <= 0:
         return "0"
     if v < 0.001:
@@ -893,9 +1197,9 @@ def fmt_time_ns(v):
 
 
 # ---------------------------------------------------------------------------
-# Scores -> HTML
+# Scores -> report data (rendered by template.jinja)
 # ---------------------------------------------------------------------------
-def _r(v, ndigits=1):
+def _r(v: float | None, ndigits: int = 1) -> float | None:
     if v is None:
         return None
     try:
@@ -904,9 +1208,12 @@ def _r(v, ndigits=1):
         return None
 
 
-def render_scores_html(scores, alloc_colors, allocators):
+def build_score_board(scores: Scores, alloc_colors: dict[str, str],
+                      allocators: list[str]) -> ScoreBoard | None:
+    """Data for the "Global scores" section; the markup lives in the
+    <template> elements of template.jinja."""
     if not scores or not scores.get("overall"):
-        return ""
+        return None
 
     cats_sorted = sorted(scores["category_importance"].keys(),
                          key=lambda c: -scores["category_importance"][c])
@@ -916,9 +1223,9 @@ def render_scores_html(scores, alloc_colors, allocators):
         key=lambda a: -(scores["overall"].get(a) or 0.0),
     )
 
-    tooltip_data = {}
+    rows: list[ScoreRow] = []
     for a in sorted_allocs:
-        entries = []
+        entries: list[CategoryEntry] = []
         for c in cats_sorted:
             cs   = scores["per_category"].get(c, {}).get(a)
             t_cs = scores["per_category_time"].get(c, {}).get(a)
@@ -927,7 +1234,7 @@ def render_scores_html(scores, alloc_colors, allocators):
             w    = scores["category_importance"].get(c, 1.0)
 
             tests = scores["tests_by_category"].get(c, [])
-            test_details = []
+            test_details: list[TestDetail] = []
             for t in tests:
                 test_details.append({
                     "name":  t,
@@ -951,241 +1258,190 @@ def render_scores_html(scores, alloc_colors, allocators):
                 "weight": round(float(w), 2),
                 "tests":  test_details,
             })
-        tooltip_data[a] = entries
-
-    tooltip_json = json.dumps(tooltip_data).replace("</", "<\\/")
+        rows.append({
+            "alloc":      a,
+            "color":      alloc_colors.get(a, "#89b4fa"),
+            "overall":    scores["overall"].get(a),
+            "pct":        max(0.0, min(100.0, scores["overall"].get(a) or 0.0)),
+            "missing":    scores.get("missing_tests", {}).get(a, 0),
+            "categories": entries,
+        })
 
     consts = scores.get("constants", {})
-    miss_pen = consts.get("MISSING_PENALTY", 0.30)
-    tw = consts.get("TIME_WEIGHT", 0.90)
-    rw = consts.get("RSS_WEIGHT", 0.10)
-
-    rows = []
-    for a in sorted_allocs:
-        overall = scores["overall"].get(a)
-        overall_str = f"{overall:.1f}" if overall is not None else "—"
-        color = alloc_colors.get(a, "#89b4fa")
-        pct = max(0.0, min(100.0, overall or 0.0))
-        miss = scores.get("missing_tests", {}).get(a, 0)
-        miss_badge = ""
-        if miss > 0:
-            miss_badge = (f'<span class="miss-badge" title="Tests manquants: '
-                          f'{miss}">⚠ {miss} manquant'
-                          f'{"s" if miss>1 else ""}</span>')
-        rows.append(f"""
-        <div class="score-row" data-alloc="{a}">
-          <div class="score-name" style="color:{color}">{a}{miss_badge}</div>
-          <div class="score-bar-wrap">
-            <div class="score-bar" style="width:{pct:.1f}%; background:{color}"></div>
-          </div>
-          <div class="score-value">{overall_str}<span class="score-max">/100</span></div>
-        </div>""")
-
-    formula = (
-        f"<strong>Temps = {int(tw*100)} % · RSS = {int(rw*100)} %</strong> "
-        f"sur <em>chaque</em> test, sans exception. "
-        f"Un allocateur plus de "
-        f"<strong>{consts.get('RATIO_MAX_TIME', 10):.0f}× plus lent</strong> "
-        f"qu'un autre sur un test obtient 0 sur le sous-score temps. "
-        f"Les {int(rw*100)} % mémoire se répartissent en 60 % peak RSS et "
-        f"40 % ΔRSS normalisé par le peak (fraction retenue). "
-        f"L'efficacité de scaling multi-thread est comptée dans la part temps. "
-        f"Pénalité de complétude : −{int(miss_pen*100)} % max si des tests "
-        f"n'ont pas tourné (crash, timeout)."
-    )
-
-    return """
-<section id="scores" class="scores-section">
-  <h2>Global scores</h2>
-  <p class="scores-note">
-    """ + formula + """
-    <br><strong>Survolez une ligne</strong> pour voir le détail par catégorie
-    <em>et par test</em>.
-  </p>
-  <div class="scores-list">""" + "".join(rows) + """</div>
-</section>
-<div id="score-tip" class="score-tip"></div>
-<style>
-.scores-section { margin: 32px 0; padding: 24px; background: #1e1e2e;
-                  border-radius: 12px; color: #cdd6f4; }
-.scores-section h2 { margin-top: 0; color: #cdd6f4; }
-.scores-note { color: #a6adc8; font-size: 0.9em; margin-bottom: 20px;
-               line-height: 1.55; }
-.scores-list { display: flex; flex-direction: column; gap: 10px; }
-.score-row { display: grid; grid-template-columns: 220px 1fr 100px;
-             align-items: center; gap: 12px;
-             padding: 8px 10px; border-radius: 8px;
-             transition: background 0.15s ease; cursor: default; }
-.score-row:hover { background: #313244; }
-.score-name { font-weight: 600; font-family: monospace; font-size: 1em;
-              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.miss-badge { display: inline-block; margin-left: 8px; padding: 1px 6px;
-              font-size: 0.75em; border-radius: 4px;
-              background: #45475a; color: #f9e2af; font-weight: 500;
-              vertical-align: middle; }
-.score-bar-wrap { background: #313244; border-radius: 6px; height: 20px;
-                  overflow: hidden; }
-.score-bar { height: 100%; border-radius: 6px; transition: width 0.4s ease; }
-.score-value { text-align: right; font-family: monospace; font-weight: 600;
-               font-size: 1.1em; }
-.score-max { font-size: 0.75em; color: #a6adc8; font-weight: 400;
-             margin-left: 2px; }
-.score-tip { display: none; position: fixed; z-index: 10000;
-             background: #181825; border: 1px solid #45475a;
-             border-radius: 8px; padding: 10px 14px;
-             box-shadow: 0 6px 24px rgba(0,0,0,0.75);
-             font-size: 0.82em; color: #cdd6f4;
-             min-width: 620px; max-width: 900px;
-             max-height: 80vh; overflow: auto;
-             pointer-events: none; }
-.score-tip table { border-collapse: collapse; width: 100%; }
-.score-tip th { text-align: left; color: #a6adc8; font-weight: 500;
-                padding: 3px 8px; border-bottom: 1px solid #45475a;
-                font-size: 0.9em; position: sticky; top: 0;
-                background: #181825; }
-.score-tip td { padding: 3px 8px; }
-.score-tip td.num { text-align: right; font-family: monospace; }
-.score-tip th.num { text-align: right; }
-.score-tip td.imp { color: #f9e2af; }
-.score-tip td.t   { color: #89b4fa; }
-.score-tip td.r   { color: #a6e3a1; }
-.score-tip td.d   { color: #94e2d5; }
-.score-tip td.s   { color: #f9e2af; font-weight: 600; }
-.score-tip .cat { margin-top: 8px; font-weight: 600; color: #cba6f7;
-                  border-top: 1px solid #313244; padding-top: 6px; }
-.score-tip .cat:first-child { margin-top: 0; border-top: none; padding-top: 0; }
-.score-tip details > summary { cursor: pointer; color: #a6adc8;
-                               font-size: 0.9em; padding: 2px 0; }
-.score-tip .test-tbl { margin: 4px 0 8px 12px; font-size: 0.95em; }
-.score-tip .test-tbl th { font-size: 0.85em; }
-</style>
-<script>
-(function () {
-  var TIP_DATA = """ + tooltip_json + """;
-  var tip = document.getElementById('score-tip');
-  var PAD = 14;
-
-  function f(v) {
-    return (v === null || v === undefined) ? '—' : v.toFixed(1);
-  }
-
-  function buildHtml(entries) {
-    var h = '';
-    for (var i = 0; i < entries.length; i++) {
-      var e = entries[i];
-      h += '<div class="cat">' + e.label
-         + ' &nbsp;<span style="color:#6c7086;font-weight:400">×'
-         + e.weight.toFixed(2) + '</span></div>';
-      h += '<table><thead><tr>'
-         + '<th class="num">Temps</th>'
-         + '<th class="num">RSS</th>'
-         + '<th class="num">ΔRSS</th>'
-         + '<th class="num">Score</th>'
-         + '</tr></thead><tbody><tr>'
-         + '<td class="num t">' + f(e.time) + '</td>'
-         + '<td class="num r">' + f(e.rss)  + '</td>'
-         + '<td class="num d">' + f(e.drss) + '</td>'
-         + '<td class="num s">' + f(e.score)+ '</td>'
-         + '</tr></tbody></table>';
-
-      var td = e.tests || [];
-      if (td.length) {
-        h += '<details><summary>Détail par test (' + td.length + ')</summary>';
-        h += '<table class="test-tbl"><thead><tr>'
-           + '<th>Test</th>'
-           + '<th class="num">Temps</th>'
-           + '<th class="num">RSS</th>'
-           + '<th class="num">ΔRSS</th>'
-           + '<th class="num">Score</th>'
-           + '<th class="num">Imp.</th>'
-           + '</tr></thead><tbody>';
-        for (var j = 0; j < td.length; j++) {
-          var t = td[j];
-          h += '<tr><td>' + t.name + '</td>'
-             + '<td class="num t">' + f(t.time) + '</td>'
-             + '<td class="num r">' + f(t.rss)  + '</td>'
-             + '<td class="num d">' + f(t.drss) + '</td>'
-             + '<td class="num s">' + f(t.score)+ '</td>'
-             + '<td class="num imp">×' + t.importance.toFixed(2) + '</td></tr>';
-        }
-        h += '</tbody></table></details>';
-      }
+    return {
+        "rows":           rows,
+        "time_pct":       int(consts.get("TIME_WEIGHT", 0.90) * 100),
+        "rss_pct":        int(consts.get("RSS_WEIGHT", 0.10) * 100),
+        "ratio_max_time": f"{consts.get('RATIO_MAX_TIME', 10):.0f}",
+        "drss_noise_kb":  DRSS_NOISE_KB,
+        "drss_floor_pct": f"{DRSS_FLOOR_FRAC * 100:.0f}",
+        "miss_pct":       int(consts.get("MISSING_PENALTY", 0.30) * 100),
     }
-    return h;
-  }
-
-  function place(ev) {
-    var w = tip.offsetWidth, h = tip.offsetHeight;
-    var x = ev.clientX + PAD;
-    var y = ev.clientY + PAD;
-    if (x + w > window.innerWidth - 8)  x = ev.clientX - w - PAD;
-    if (y + h > window.innerHeight - 8) y = ev.clientY - h - PAD;
-    if (x < 8) x = 8;
-    if (y < 8) y = 8;
-    tip.style.left = x + 'px';
-    tip.style.top  = y + 'px';
-  }
-
-  document.querySelectorAll('.score-row').forEach(function (row) {
-    row.addEventListener('mouseenter', function (ev) {
-      var alloc = row.getAttribute('data-alloc');
-      tip.innerHTML = buildHtml(TIP_DATA[alloc] || []);
-      tip.style.display = 'block';
-      place(ev);
-    });
-    row.addEventListener('mousemove', function (ev) { place(ev); });
-    row.addEventListener('mouseleave', function () {
-      tip.style.display = 'none';
-    });
-  });
-})();
-</script>
-"""
 
 
-def inject_scores(html_doc, scores_html):
-    if not scores_html:
-        return html_doc
-    if "</body>" in html_doc:
-        return html_doc.replace("</body>", scores_html + "\n</body>", 1)
-    return html_doc + scores_html
+# ---------------------------------------------------------------------------
+# Test machine (only what matters to an allocator)
+# ---------------------------------------------------------------------------
+def _read(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def _bracketed(path: str) -> str | None:
+    """Active choice of a sysfs "a [b] c" file, e.g. THP mode."""
+    v = _read(path)
+    if v is None:
+        return None
+    i, j = v.find("["), v.find("]")
+    return v[i + 1:j] if 0 <= i < j else v
+
+
+def _fmt_bytes(n: int) -> str:
+    size = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if size < 1024 or unit == "TiB":
+            return f"{size:.0f} {unit}" if size == int(size) else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{n} B"
+
+
+def _cpu_model() -> str:
+    info = _read("/proc/cpuinfo") or ""
+    for key in ("model name", "Model", "Hardware", "cpu model"):
+        for line in info.splitlines():
+            k, _, v = line.partition(":")
+            if k.strip() == key and v.strip():
+                return v.strip()
+    return (_read("/sys/firmware/devicetree/base/model") or "").rstrip("\0") \
+        or platform.processor() or "unknown"
+
+
+def _cpu_topology() -> str:
+    logical = os.cpu_count() or 0
+    cpu_dir = "/sys/devices/system/cpu"
+    siblings = {_read(os.path.join(d, "topology", "thread_siblings_list"))
+                for d in glob.glob(os.path.join(cpu_dir, "cpu[0-9]*"))}
+    siblings.discard(None)
+    if not siblings:
+        return f"{logical} logical CPUs"
+    return f"{len(siblings)} cores / {logical} threads"
+
+
+def _caches() -> str | None:
+    parts: list[str] = []
+    for d in sorted(glob.glob("/sys/devices/system/cpu/cpu0/cache/index[0-9]*")):
+        level = _read(os.path.join(d, "level"))
+        ctype = _read(os.path.join(d, "type"))
+        size = _read(os.path.join(d, "size"))
+        if not level or not ctype or not size or ctype == "Instruction":
+            continue
+        if size[-1:] in ("K", "M"):
+            size = _fmt_bytes(int(size[:-1]) * (1024 if size[-1] == "K" else 1 << 20))
+        name = f"L{level}" + ("d" if ctype == "Data" else "")
+        line = _read(os.path.join(d, "coherency_line_size"))
+        parts.append(f"{name} {size}" + (f" ({line} B lines)" if name == "L1d" and line else ""))
+    return " · ".join(parts) or None
+
+
+def _mem_total() -> str | None:
+    for line in (_read("/proc/meminfo") or "").splitlines():
+        if line.startswith("MemTotal:"):
+            return _fmt_bytes(int(line.split()[1]) * 1024)
+    return None
+
+
+def collect_system_info() -> list[SpecItem]:
+    """Characteristics of the machine running the report that influence
+    allocator results. Read from /proc and /sys; entries that cannot be
+    read (non-Linux, sandbox) are skipped."""
+    items: list[SpecItem] = []
+
+    def add(label: str, value: str | int | None, hint: str = "") -> None:
+        if value is not None and value != "":
+            items.append({"label": label, "value": str(value), "hint": hint})
+
+    add("CPU", _cpu_model())
+    add("Arch", platform.machine())
+    add("Topology", _cpu_topology(),
+        "Physical cores vs. SMT threads: bounds multi-thread scaling.")
+    nodes = glob.glob("/sys/devices/system/node/node[0-9]*")
+    add("NUMA nodes", len(nodes) if nodes else None,
+        "More than one node makes memory placement matter.")
+    add("Caches", _caches(),
+        "Per-core L1d/L2 and shared L3: drive metadata locality and false sharing.")
+    add("Governor", _read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"),
+        "'performance' gives the most stable timings.")
+    add("RAM", _mem_total())
+    try:
+        add("Page size", _fmt_bytes(os.sysconf("SC_PAGE_SIZE")),
+            "Granularity of mmap/munmap/madvise.")
+    except (ValueError, OSError, AttributeError):
+        pass
+    thp = _bracketed("/sys/kernel/mm/transparent_hugepage/enabled")
+    defrag = _bracketed("/sys/kernel/mm/transparent_hugepage/defrag")
+    if thp:
+        add("THP", thp + (f" (defrag: {defrag})" if defrag else ""),
+            "Transparent huge pages: change RSS and page-fault cost of large arenas.")
+    oc = _read("/proc/sys/vm/overcommit_memory")
+    oc_name = {"0": "heuristic", "1": "always", "2": "strict"}.get(oc or "")
+    add("Overcommit", f"{oc} ({oc_name})" if oc and oc_name else oc,
+        "vm.overcommit_memory: can a large reserved arena fail up front?")
+    add("Max mappings", _read("/proc/sys/vm/max_map_count"),
+        "vm.max_map_count: upper bound on mmap regions per process.")
+    add("Kernel", f"{platform.system()} {platform.release()}")
+    libc, ver = platform.libc_ver()
+    add("System libc", f"{libc} {ver}" if libc else None,
+        "Version of the 'glibc' allocator baseline.")
+    return items
 
 
 # ---------------------------------------------------------------------------
 # Report building
 # ---------------------------------------------------------------------------
-def build_report(results, timeseries):
+def build_report(results: Results, timeseries: Timeseries) -> ReportContext:
     allocators = sorted(results.keys())
     color_map = build_color_map(allocators)
 
-    all_tests, seen = [], set()
+    all_tests: list[str] = []
+    seen: set[str] = set()
     for a in allocators:
         for t in results[a]:
             if t not in seen:
                 seen.add(t)
                 all_tests.append(t)
 
-    test_cat = {}
+    test_cat: dict[str, str] = {}
     for t in all_tests:
         for a in allocators:
             if t in results[a]:
-                test_cat[t] = results[a][t]["category"]
+                any_row = next(iter(results[a][t].values()))
+                test_cat[t] = any_row["category"]
                 break
     all_tests.sort(key=lambda t: (test_cat.get(t, "zzz"), t))
 
-    tests_by_category = defaultdict(list)
+    tests_by_category: defaultdict[str, list[str]] = defaultdict(list)
     for t in all_tests:
         tests_by_category[test_cat.get(t, "other")].append(t)
 
-    overview_charts = []
-    norm = build_normalized_overview(allocators, all_tests, results, color_map)
+    # (test, threads, label) for every measured thread count
+    units: list[LabeledUnit] = []
+    for t in all_tests:
+        tcs = thread_counts_for(t, allocators, results)
+        for thr in tcs:
+            units.append((t, thr, unit_label(t, thr, len(tcs) > 1)))
+
+    overview_charts: list[Chart] = []
+    norm = build_normalized_overview(allocators, units, results, color_map)
     if norm:
         overview_charts.append(norm)
     overview_charts.append(
-        build_rss_overview(allocators, all_tests, results, color_map))
-    drss = build_drss_overview(allocators, all_tests, results, color_map)
-    if drss:
-        overview_charts.append(drss)
+        build_rss_overview(allocators, units, results, color_map))
+    drss_chart = build_drss_overview(allocators, units, results, color_map)
+    if drss_chart:
+        overview_charts.append(drss_chart)
 
     category_charts, unmeasurable = build_category_charts(
         allocators, tests_by_category, results, color_map)
@@ -1200,11 +1456,11 @@ def build_report(results, timeseries):
     # `cls` is "best" / "worst" / "" and is used by the template to color
     # the cell text. The dark green / dark red colours themselves are
     # defined in the template's CSS via `--best` / `--worst`.
-    table_rows = []
-    for t in all_tests:
-        row_values = []
+    table_rows: list[TableRow] = []
+    for (t, thr, label) in units:
+        row_values: list[tuple[str, Row | None]] = []
         for a in allocators:
-            row = results[a].get(t)
+            row = get_row(results, a, t, thr)
             row_values.append((a, row))
 
         valid = [(a, precise_mean_ns(row))
@@ -1217,13 +1473,13 @@ def build_report(results, timeseries):
         # In that case we prefer "best" so the cell stays green.
         single_valid = (best_v is not None and best_v == worst_v)
 
-        cells = []
+        cells: list[TableCell | None] = []
         for a, row in row_values:
             if not row:
                 cells.append(None)
                 continue
             v = precise_mean_ns(row)
-            ops = fnum(row.get("ops_per_sec"))
+            ops = ops_per_sec(row)
             if v <= 0:
                 cls = ""
                 time_str = "< 0.001"
@@ -1246,13 +1502,13 @@ def build_report(results, timeseries):
                 "cls": cls,
             })
         table_rows.append({
-            "test": t,
+            "test": label,
             "cells": cells,
             "unmeasurable": t in unmeasurable_set,
         })
 
     scores = compute_scores(allocators, results)
-    scores_html = render_scores_html(scores, color_map, allocators)
+    score_board = build_score_board(scores, color_map, allocators)
 
     return {
         "allocators":        allocators,
@@ -1271,11 +1527,12 @@ def build_report(results, timeseries):
         "terms":             TERMS,
         "unmeasurable":      sorted(unmeasurable_set),
         "scores":            scores,
-        "scores_html":       scores_html,
+        "score_board":       score_board,
+        "system":            collect_system_info(),
     }
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate an HTML comparison report for allocator benchmarks.")
     parser.add_argument("--results-dir", default="results")
@@ -1296,14 +1553,15 @@ def main():
 
     print(f"Allocators detected: {', '.join(sorted(results.keys()))}")
     for a in sorted(results.keys()):
-        print(f"  - {a}: {len(results[a])} tests, "
+        print(f"  - {a}: {len(results[a])} tests "
+              f"({sum(len(v) for v in results[a].values())} rows), "
               f"{len(timeseries.get(a, {}))} timeseries")
 
     if args.template:
         template_path = args.template
     else:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        template_path = os.path.join(script_dir, "template.html")
+        template_path = os.path.join(script_dir, "template.jinja")
 
     if not os.path.isfile(template_path):
         sys.stderr.write(f"Error: template not found: {template_path}\n")
@@ -1311,14 +1569,12 @@ def main():
 
     env = Environment(
         loader=FileSystemLoader(os.path.dirname(template_path) or "."),
-        autoescape=select_autoescape(["html", "xml"]),
+        autoescape=select_autoescape(["html", "xml", "jinja"]),
     )
     template = env.get_template(os.path.basename(template_path))
 
     context = build_report(results, timeseries)
     html_doc = template.render(**context)
-
-    html_doc = inject_scores(html_doc, context["scores_html"])
 
     with open(args.output, "w", encoding="utf-8") as f:
         f.write(html_doc)
@@ -1339,10 +1595,12 @@ def main():
         tv = context["scores"]["overall_time"].get(a)
         rv = context["scores"]["overall_rss"].get(a)
         dv = context["scores"]["overall_drss"].get(a)
-        done = len(results[a])
-        total = len(context["scores"]["all_tests"])
+        miss = context["scores"]["missing_tests"].get(a, 0)
+        total = sum(len(thread_counts_for(t, context["allocators"], results))
+                    for t in context["scores"]["all_tests"])
+        done = total - miss
 
-        def _f(x):
+        def _f(x: float | None) -> str:
             return f"{x:8.1f}" if x is not None else "       —"
 
         print(f"{a:20s} {_f(ov)} {_f(tv)} {_f(rv)} {_f(dv)} "
@@ -1361,7 +1619,7 @@ def main():
     print(f"\nRaw scores JSON: {scores_path}")
 
     if context["unmeasurable"]:
-        print(f"\n⚠️  Tests with only ops/s data (no measurable ns/op): "
+        print(f"\n Tests with only ops/s data (no measurable ns/op): "
               f"{', '.join(context['unmeasurable'])}")
     print(f"\n✅ Report written: {args.output}")
 

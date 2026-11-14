@@ -175,6 +175,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HMALLOC_CHECK` rejects low/misaligned pointers and reports
   double frees; the padding slack is painted and verified on free
   to catch small overflows
+- `tests/standalone/malloc/`: functional harness for the allocator,
+  running the full API against a compile-time matrix
+  (release / debug4 / canary / check / encode / profile / nostats /
+  paranoid / all_on) with a pass/fail summary, plus a `test-leak`
+  demo covering every leak category
+- Benchmark report: a "Test machine" block listing the specs that
+  matter to an allocator (CPU, cores/threads, caches, NUMA, governor,
+  RAM, page size, THP, overcommit, `max_map_count`, kernel, libc)
+- `benchmark/malloc/analyze.py` is fully type-annotated
+  (`mypy --strict`, Python >= 3.10)
 
 ### Changed
 
@@ -197,6 +207,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Makefile` renamed to hajlibc, targets regrouped, and the
   debuginfo sources are part of both the archive and the preload
   library
+- `benchmark/malloc/Makefile` reorganized and translated to English:
+  per-allocator `LIB_*` / `MODE_*` / `LINK_*` / `PRELOAD_*` tables
+  replace the shell `if` chains; it also runs on aarch64, macOS
+  (`DYLD_INSERT_LIBRARIES`) and FreeBSD, and finds external
+  allocators in multiarch, `lib64`, `/usr/local` and Homebrew paths
+- `template.html` renamed to `template.jinja`; the score section
+  (markup, CSS, script) moved out of `analyze.py` into `<template>`
+  elements, and the report text is now English
+- `bench.c`: comments translated to English, tab indentation,
+  `workload_fn` renamed `workloadFn`, and small portability fixes
+  (`lseek`+`read` instead of `pread`, `size_t` casts for `CPU_SET`)
 
 ### Fixed
 

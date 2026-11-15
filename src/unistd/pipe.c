@@ -10,7 +10,7 @@
  * @file pipe.c
  * @brief Implementation of the pipe system call.
  * @Created: 2026/10/27 02:19:01 by Moutig
- * @Updated: 2026/10/27 02:24:37 by Moutig
+ * @Updated: 2026/11/12 13:37:13 by Moutig
  *
  * This file contains the implementation of the pipe system call,
  * which creates a unidirectional data channel that can be used for
@@ -24,7 +24,7 @@
 int pipe(int pipefd[2]) {
 	long r;
 
-	r = __haj_syscall1(SYS_pipe, (long)pipefd);
+	r = __haj_syscall1(SYS_pipe2, (long)pipefd);
 	if (r < 0) {
 		errno = (int)-r;
 		return (-1);

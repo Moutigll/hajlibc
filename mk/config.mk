@@ -36,7 +36,8 @@ endif
 # Start from the public interface (single source of truth), then add
 # cross-compilation extras and lib-specific warnings/optimisation.
 CPPFLAGS	:= $(HAJ_CPPFLAGS)	$(CROSS_CPPFLAGS)
-CFLAGS		:= $(HAJ_CFLAGS)	$(CROSS_CFLAGS) -Wall -Wextra -Wpedantic -O3
+CFLAGS		:= $(HAJ_CFLAGS)	$(CROSS_CFLAGS) -Wall -Wextra -Wpedantic -O3 \
+			   -fvisibility=hidden -fno-semantic-interposition
 LDFLAGS		:= $(HAJ_LDFLAGS)	$(CROSS_LDFLAGS)
 LDLIBS		:= $(HAJ_LIBS)
 

@@ -62,6 +62,9 @@
 # define HAJ_LOAD(p)		_mm256_loadu_si256((const __m256i *)(p))
 # define HAJ_STORE(p, v)	_mm256_storeu_si256((__m256i *)(p), (v))
 # define HAJ_TARGET			__HAJ_TARGET("avx2")
+# define HAJ_HALF_TYPE		__m128i
+# define HAJ_HALF_LOAD(p)	_mm_loadu_si128((const __m128i *)(p))
+# define HAJ_HALF_STORE(p, v)	_mm_storeu_si128((__m128i *)(p), (v))
 # include "../templates/memcpy.templ.inl"
 
 /* AVX-512 */
@@ -71,6 +74,9 @@
 # define HAJ_LOAD(p)		_mm512_loadu_si512((const void *)(p))
 # define HAJ_STORE(p, v)	_mm512_storeu_si512((void *)(p), (v))
 # define HAJ_TARGET			__HAJ_TARGET("avx512f,avx512bw,avx512vl")
+# define HAJ_HALF_TYPE		__m256i
+# define HAJ_HALF_LOAD(p)	_mm256_loadu_si256((const __m256i *)(p))
+# define HAJ_HALF_STORE(p, v)	_mm256_storeu_si256((__m256i *)(p), (v))
 # include "../templates/memcpy.templ.inl"
 
 #endif /* x86_64 */

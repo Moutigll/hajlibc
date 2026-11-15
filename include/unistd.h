@@ -10,9 +10,12 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/10/29 05:37:30 by Moutig
+ * @Updated: 2026/11/15 22:16:35 by Moutig
  *
- * @TODO: Add a description of the file.
+ * This header defines symbolic constants and types used in POSIX
+ * systems. It includes the necessary headers for fixed-width integer
+ * types, size-related types, and POSIX types. It also defines the
+ * POSIX minimum values for various system limits.
  */
 
 
@@ -371,6 +374,17 @@ off_t lseek(int fd, off_t offset, int whence);
  * @return The number of bytes placed in `buf` on success, or -1 on error (with errno set).
  */
 ssize_t readlink(const char *path, char *buf, size_t bufsiz);
+
+/**
+ * @brief Get the current working directory.
+ *
+ * @param buf  Destination buffer, or NULL to get a buffer allocated with
+ *             malloc() (of `size` bytes, or just large enough if 0).
+ * @param size Size of `buf` in bytes.
+ * @return `buf` (or the allocated buffer), or NULL with errno set
+ *         (ERANGE if `buf` is too small, ENOENT if unreachable).
+ */
+char	*getcwd(char *buf, size_t size);
 
 # ifdef __cplusplus
 }

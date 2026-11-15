@@ -40,16 +40,22 @@ HAJ_LDSCRIPT	:= $(HAJ_ROOT)/mk/hajlibc.ld
 # compiler would otherwise assume (builtins, stack protector, PIE, etc.).
 HAJ_COMMON_CFLAGS := \
 	-std=c11 \
-	-ffreestanding \
 	-fno-builtin \
+	-ffreestanding \
 	-fno-stack-protector \
-	-fno-asynchronous-unwind-tables \
-	-fno-unwind-tables \
 	-fno-pie \
 	-fno-pic \
 	-U_FORTIFY_SOURCE \
 	-D_FORTIFY_SOURCE=0 \
-	-fno-omit-frame-pointer
+	-flto \
+	-march=native -mtune=native \
+	-ffunction-sections -fdata-sections -fno-plt \
+	-fomit-frame-pointer
+
+HAJ_TARGET_MACHINE := $(shell $(CC) -dumpmachine 2>/dev/null)
+ifneq ($(filter aarch64% arm64%,$(HAJ_TARGET_MACHINE)),)
+  HAJ_COMMON_CFLAGS += -mno-outline-atomics
+endif
 
 # Optional feature toggle (must match how the lib was built).
 ifeq ($(HAJ_PTHREAD_PROCESS_SHARED),1)
@@ -63,5 +69,7 @@ HAJ_LDFLAGS		:= \
 	-nodefaultlibs \
 	-static \
 	-Wl,--build-id=none \
-	-T $(HAJ_LDSCRIPT)
+	-T $(HAJ_LDSCRIPT) \
+	-flto \
+	-Wl,--gc-sections -Wl,-O1 -Wl,-Bsymbolic-functions -Wl,-z,now -Wl,-z,relro
 HAJ_LIBS		:= $(HAJ_LIB)

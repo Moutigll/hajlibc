@@ -185,6 +185,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   RAM, page size, THP, overcommit, `max_map_count`, kernel, libc)
 - `benchmark/malloc/analyze.py` is fully type-annotated
   (`mypy --strict`, Python >= 3.10)
+- `strdup` / `strndup` (NULL-safe); also built into the LD_PRELOAD
+  allocator so their result is owned by hmalloc
+- `getcwd` (with `malloc`'ed buffer when `buf` is NULL)
+- `<sys/prctl.h>` and `prctl()` (Linux), with `PR_SET_THP_DISABLE` /
+  `PR_GET_THP_DISABLE`
+- `SYS_dup3` on Darwin, FreeBSD and Windows
+- `HAJ_OPAQUE_PTR()` in `<bits/compiler.h>`, to keep NULL checks on
+  `nonnull` pointers
+- Unaligned, aliasing scalar types (`__hajMemU64_t`, `__hajMemU32_t`,
+  `__hajMemU16_t`) in `<bits/types.h>`
 
 ### Changed
 
@@ -218,6 +228,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bench.c`: comments translated to English, tab indentation,
   `workload_fn` renamed `workloadFn`, and small portability fixes
   (`lseek`+`read` instead of `pread`, `size_t` casts for `CPU_SET`)
+- `memcpy` / `memset` templates: no more byte loops; small sizes use
+  overlapping stores from both ends (half-vector, 8/4/2-byte), large
+  sizes an aligned 4-vector loop with head/tail stores
+- Build flags: LTO, `-fno-plt`, `-fno-semantic-interposition`,
+  `-ffunction-sections`/`-fdata-sections` with `--gc-sections`,
+  `-march=native`, `-z now`/`relro`, `-Bsymbolic-functions`;
+  the lib is built with `-fvisibility=hidden`; unwind tables are no
+  longer disabled; `-mno-outline-atomics` on aarch64
+- The preload allocator builds as a dylib on Darwin
+- `mk/hajlibc.ld`: no hardcoded `OUTPUT_FORMAT` / `OUTPUT_ARCH`;
+  segments aligned on `MAXPAGESIZE` instead of 4096
+- `dup2` uses `dup3`, `pipe` uses `pipe2`, `readlink` uses
+  `readlinkat`
+- New allocator sources in the build: `bitmap.c`, `newdelete.c`,
+  `pagemap.c`, `posix.c`; `realpath.c` added to stdlib
 
 ### Fixed
 

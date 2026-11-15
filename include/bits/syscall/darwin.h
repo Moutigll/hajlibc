@@ -10,7 +10,7 @@
  * @file darwin.h
  * @brief Darwin (macOS, iOS) syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/11/12 13:28:25 by Moutig
  *
  * Source: <sys/syscall.h> from the XNU kernel.
  * Darwin prefixes every BSD-class syscall with 0x2000000.
@@ -85,6 +85,7 @@
 # define SYS_umask				SYS_BSD(60)
 # define SYS_dup				SYS_BSD(41)
 # define SYS_dup2				SYS_BSD(90)
+# define SYS_dup3				SYS_BSD(455)
 # define SYS_pipe				SYS_BSD(42)
 # define SYS_mknod				SYS_BSD(14)
 # define SYS_statfs				SYS_BSD(397)

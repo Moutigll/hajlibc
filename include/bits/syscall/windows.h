@@ -10,7 +10,7 @@
  * @file windows.h
  * @brief Windows pseudo-syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:15 by Moutig
+ * @Updated: 2026/11/12 13:28:37 by Moutig
  *
  * Windows has no stable syscall ABI. These numbers are used
  * only inside src/syscall/windows/__haj_syscall6.c to dispatch
@@ -34,6 +34,7 @@
 # define SYS_munmap				0x1000A
 # define SYS_dup				0x1000B
 # define SYS_dup2				0x1000C
+# define SYS_dup3				0x1000D
 # define SYS_getpid				0x1000D
 # define SYS_exit				0x1000E
 # define SYS_getcwd				0x1000F

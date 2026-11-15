@@ -10,7 +10,7 @@
  * @file types.h
  * @brief Internal fixed-width and POSIX-like types.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/02 14:55:55 by Moutig
+ * @Updated: 2026/11/15 22:11:02 by Moutig
  *
  * This header defines the real typedefs used across hajlib: the
  * fixed-width integer types, the size-related types, and the
@@ -472,5 +472,27 @@ typedef __haj_u64	rlim_t;
 #  define __rlim64_t_defined
 typedef __haj_u64	rlim64_t;
 # endif
+
+
+/* ----- Unaligned word type ----- */
+
+/**
+ * @brief A type that can be used to read/write unaligned words.
+ *
+ * - __HAJ_MAY_ALIAS: allows aliasing with unsigned char *
+ * - __HAJ_ALIGNED(1): tells the compiler the type can be at any
+ *   address, removing "cast increases alignment" warnings.
+ *
+ * Use:
+ *   typedef __HAJ_UNALIGNED_WORD size_t ...
+ */
+#ifndef HAJ_MEM_SCALAR_TYPES
+# define HAJ_MEM_SCALAR_TYPES
+/* Unaligned, aliasing scalar types for the overlapping small stores. */
+typedef __haj_u64 __HAJ_UNALIGNED_WORD	__hajMemU64_t;
+typedef __haj_u32 __HAJ_UNALIGNED_WORD	__hajMemU32_t;
+typedef __haj_u16 __HAJ_UNALIGNED_WORD	__hajMemU16_t;
+#endif
+
 
 #endif /* _BITS_TYPES_H */

@@ -146,10 +146,12 @@ STDLIB_SRCS := \
 	getenv.c \
 	setenv.c \
 	qsort.c \
+	realpath.c \
 
 MALLOC_SRCS := \
 	alloc.c \
 	arena.c \
+	bitmap.c \
 	bits.c \
 	block.c \
 	heap.c \
@@ -158,8 +160,11 @@ MALLOC_SRCS := \
 	malloc.c \
 	message.c \
 	meta.c \
+	newdelete.c \
 	options.c \
 	page.c \
+	pagemap.c \
+	posix.c \
 	profile.c \
 	random.c \
 	show.c \
@@ -184,8 +189,10 @@ STRING_SRCS := \
 	str/strrchr.c \
 	str/strchrnul.c \
 	str/strcpy.c \
+	str/strdup.c \
 	str/stpcpy.c \
 	str/strncpy.c \
+	str/strndup.c \
 	str/stpncpy.c \
 	str/strlcpy.c \
 	str/strcat.c \
@@ -207,6 +214,7 @@ SYS_SRCS := \
 	auxv.c \
 	getentropy.c \
 	getrandom.c \
+	prctl.c \
 	times.c \
 	waitpid.c \
 
@@ -259,6 +267,7 @@ UNISTD_SRCS := \
 	close.c \
 	dup2.c \
 	fork.c \
+	getcwd.c \
 	getids.c \
 	getpagesize.c \
 	lseek.c \
@@ -290,6 +299,10 @@ STAT_SRCS		:= $(addprefix $(STAT_DIR)/,$(STAT_SRCS))
 STDIO_SRCS		:= $(addprefix $(STDIO_DIR)/,$(STDIO_SRCS))
 STDLIB_SRCS		:= $(addprefix $(STDLIB_DIR)/,$(STDLIB_SRCS))
 MALLOC_SRCS		:= $(addprefix $(MALLOC_DIR)/,$(MALLOC_SRCS))
+
+# Non-allocator libc functions that the LD_PRELOAD allocator must also
+# export, so that their result is owned by hmalloc and not by the host libc.
+MALLOC_SO_EXTRA_SRCS	:= $(addprefix $(STRING_DIR)/,str/strdup.c str/strndup.c)
 STRING_SRCS		:= $(addprefix $(STRING_DIR)/,$(STRING_SRCS))
 SYS_SRCS		:= $(addprefix $(SYS_DIR)/,$(SYS_SRCS))
 THREAD_SRCS		:= $(addprefix $(THREAD_DIR)/,$(THREAD_SRCS))

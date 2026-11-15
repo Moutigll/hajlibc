@@ -96,8 +96,10 @@
  *	 pthread_create.
  */
 
-OUTPUT_FORMAT(elf64-x86-64)	/* aarch64: elf64-littleaarch64 */
-OUTPUT_ARCH(i386:x86-64)	/* aarch64: aarch64 */
+/*
+ * No OUTPUT_FORMAT / OUTPUT_ARCH: the linker keeps its default target,
+ * which is the one of the input objects (x86_64, aarch64...).
+ */
 ENTRY(_start)
 
 PHDRS
@@ -118,7 +120,7 @@ SECTIONS
 		/*
 		 * .text : executable code (+ legacy .init / .fini).
 		 */
-		.text : ALIGN(4096)
+		.text : ALIGN(CONSTANT(MAXPAGESIZE))
 		{
 				__text_start = .;
 				*(.text .text.*)
@@ -131,7 +133,7 @@ SECTIONS
 		 * .rodata : read-only data. Own PT_LOAD, R only, so any write
 		 * faults immediately.
 		 */
-		.rodata : ALIGN(4096)
+		.rodata : ALIGN(CONSTANT(MAXPAGESIZE))
 		{
 				*(.rodata .rodata.*)
 		} :rodata
@@ -139,9 +141,10 @@ SECTIONS
 		/*
 		 * The R/W segment must start on its own page: otherwise the last
 		 * page of .rodata would be shared with the data segment and end
-		 * up writable.
+		 * up writable. MAXPAGESIZE (4 KiB on x86_64, 64 KiB on
+		 * aarch64) keeps segments apart on kernels with large pages.
 		 */
-		. = ALIGN(4096);
+		. = ALIGN(CONSTANT(MAXPAGESIZE));
 
 		/*
 		 * .preinit_array : very early constructors (nothing emitted by

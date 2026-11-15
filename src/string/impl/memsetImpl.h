@@ -58,6 +58,9 @@
 # define HAJ_SET1(v)		_mm256_set1_epi8((char)(v))
 # define HAJ_STORE(p, w)	_mm256_storeu_si256((__m256i *)(p), (w))
 # define HAJ_TARGET			__HAJ_TARGET("avx2")
+# define HAJ_HALF_TYPE		__m128i
+# define HAJ_HALF_SET1(v)	_mm_set1_epi8((char)(v))
+# define HAJ_HALF_STORE(p, w)	_mm_storeu_si128((__m128i *)(p), (w))
 # include "../templates/memset.templ.inl"
 
 /* AVX-512 */
@@ -67,6 +70,9 @@
 # define HAJ_SET1(v)		_mm512_set1_epi8((char)(v))
 # define HAJ_STORE(p, w)	_mm512_storeu_si512((void *)(p), (w))
 # define HAJ_TARGET			__HAJ_TARGET("avx512f,avx512bw,avx512vl")
+# define HAJ_HALF_TYPE		__m256i
+# define HAJ_HALF_SET1(v)	_mm256_set1_epi8((char)(v))
+# define HAJ_HALF_STORE(p, w)	_mm256_storeu_si256((__m256i *)(p), (w))
 # include "../templates/memset.templ.inl"
 
 #endif /* x86_64 */

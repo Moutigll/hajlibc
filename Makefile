@@ -187,25 +187,37 @@ MALLOC_CFLAGS := \
 	-ffreestanding \
 	-fno-builtin \
 	-fno-stack-protector \
-	-fno-asynchronous-unwind-tables \
-	-fno-unwind-tables \
 	-DHMALLOC_SHARED_LIB -DHMALLOC_SHARED_LIB_EXPORT \
 	-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 \
 	-fPIC \
 	-fvisibility=hidden \
+	-fno-semantic-interposition \
+	-fno-plt \
+	-flto \
 	-fno-omit-frame-pointer \
 	-Wall -Wextra -Werror -Wpedantic \
 	-O3
 
+# ELF targets (Linux, FreeBSD; x86_64 and aarch64): plain -shared.
+# Darwin builds a dylib (loaded with DYLD_INSERT_LIBRARIES) and its
+# linker has no --build-id.
+ifeq ($(TARGET_OS),Darwin)
 MALLOC_LDFLAGS := \
+	-flto \
+	-dynamiclib \
+	-pthread
+else
+MALLOC_LDFLAGS := \
+	-flto \
 	-shared \
 	-pthread \
 	-Wl,--build-id=none
+endif
 
 MALLOC_TARGET	:= libft_malloc_$(HOSTTYPE).so
 MALLOC_LINK		:= libft_malloc.so
 
-$(MALLOC_TARGET): $(MALLOC_SRCS) $(DEBUGINFO_SRCS)
+$(MALLOC_TARGET): $(MALLOC_SRCS) $(MALLOC_SO_EXTRA_SRCS) $(DEBUGINFO_SRCS)
 	$(CC) $(MALLOC_CFLAGS) $(MALLOC_INC) -o $@ $^ $(MALLOC_LDFLAGS)
 
 $(MALLOC_LINK): $(MALLOC_TARGET)

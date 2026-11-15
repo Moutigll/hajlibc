@@ -10,7 +10,7 @@
  * @file compiler.h
  * @brief Compiler-specific macros and attributes.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/05 15:36:30 by Moutig
+ * @Updated: 2026/11/15 22:07:31 by Moutig
  *
  * This header provides portable macros for compiler-specific
  * features: TLS, attributes, and other extensions.
@@ -334,5 +334,24 @@
 #if defined(_GNU_SOURCE) || defined(_BSD_SOURCE) || defined(_POSIX_C_SOURCE) || defined(__HAJ_COMPILER_GNULIKE)
 # define __HAJ_SOURCE	1
 #endif
+
+/* ----- Opaque pointer macro ----- */
+/**
+ * @brief Hide a pointer from the compiler's optimizer.
+ *
+ * This macro is used to prevent the compiler from optimizing away
+ * NULL checks on pointers that are declared as nonnull in system
+ * headers. It uses an empty inline assembly statement to make the
+ * pointer appear to be modified, without actually changing it.
+ *
+ * Usage:
+ *   HAJ_OPAQUE_PTR(ptr);
+ */
+#if defined(__GNUC__) || defined(__clang__)
+# define HAJ_OPAQUE_PTR(x)	__asm__("" : "+r"(x))
+#else
+# define HAJ_OPAQUE_PTR(x)	((void)0)
+#endif
+
 
 #endif /* _BITS_COMPILER_H */

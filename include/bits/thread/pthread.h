@@ -152,7 +152,7 @@ _Static_assert(_Alignof(struct _hajThreadMutexAttr) == _Alignof(pthread_mutexatt
  */
 struct _hajThreadCond {
 	int	seq;	/* futex word: generation counter */
-	int	clock;	/* CLOCK_REALTIME or CLOCK_MONOTONIC */
+	int	clock;	/* low byte: clock id; upper bits: waiter count */
 #if HAJ_PTHREAD_PROCESS_SHARED
 	int	pshared;	/* non-zero if process-shared */
 #endif
@@ -164,6 +164,13 @@ _Static_assert(sizeof(struct _hajThreadCond) == sizeof(pthread_cond_t),
 _Static_assert(_Alignof(struct _hajThreadCond) == _Alignof(pthread_cond_t),
 			   "_hajThreadCond alignment exceeds pthread_cond_t "
 			   "(bump __ALIGNOF_PTHREAD_T)");
+
+/* `clock` packs the clock id (low byte) and the number of waiters. */
+# define HAJ_COND_CLOCK_MASK	0xff
+# define HAJ_COND_WAITER		0x100
+# define HAJ_COND_CLOCKID(c)	((c)->clock & HAJ_COND_CLOCK_MASK)
+# define HAJ_COND_HAS_WAITERS(c) \
+	((__haj_atomic_load(&(c)->clock) & ~HAJ_COND_CLOCK_MASK) != 0)
 
 # define HAJ_COND(p) \
 	((struct _hajThreadCond *)(void *)(p))

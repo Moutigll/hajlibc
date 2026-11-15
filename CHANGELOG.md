@@ -243,10 +243,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `readlinkat`
 - New allocator sources in the build: `bitmap.c`, `newdelete.c`,
   `pagemap.c`, `posix.c`; `realpath.c` added to stdlib
+- Condition variables count their waiters (upper bits of `clock`);
+  `pthread_cond_signal` / `pthread_cond_broadcast` skip the futex
+  wake syscall when nobody waits
+- Mutexes read the caller's TID from the TCB instead of calling
+  `gettid(2)`; the startup code caches the main thread's TID
 
 ### Fixed
 
-- Nothing yet
+- New threads get a full TLS area (`.tdata` copied, `.tbss` zeroed)
+  built like the main thread's, instead of a bare TCB
+- aarch64: `clone` receives the thread pointer of the TLS area
+  rather than the TCB address
+- `pthread_once` wakes every waiter, not just one
 
 ### Removed
 

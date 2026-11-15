@@ -10,7 +10,7 @@
  * @file tcb.c
  * @brief TLS areas and installation of the main thread's TCB.
  * @Created: 2026/10/02 08:53:32 by Moutig
- * @Updated: 2026/10/26 04:09:48 by Moutig
+ * @Updated: 2026/11/12 13:19:48 by Moutig
  *
  * Every thread owns a "TLS area": one contiguous, 64-byte aligned block
  * holding its TLS variables and its TCB. The linker script only
@@ -50,6 +50,7 @@
 #include <bits/crt.h>
 
 #include <bits/thread/tcb.h>
+#include <bits/thread/thread.h>
 #include <bits/syscall.h>
 #include <bits/symbols.h>
 #include <sys/auxv.h>
@@ -133,7 +134,9 @@ size_t __haj_tlsAreaSize(void)
 HAJ_NO_SSP
 struct __haj_tcb *__haj_tlsAreaInit(void *area)
 {
+#if defined(__x86_64__)
 		size_t				memsz = tlsMemSize();
+#endif
 		size_t				filesz = (size_t)(__tdata_end - __tdata_start);
 		char				*blk;
 		struct __haj_tcb	*tcb;
@@ -222,6 +225,9 @@ void __hajSetThreadRegister(void)
 		 *	installed so that no function ever sees it change.
 		 */
 		tcb->stackCanary = mainCanary();
+
+		/* Cache the kernel TID (read by the mutexes without a syscall). */
+		tcb->tid = __haj_gettid();
 
 		/*
 		 * 3. Publish the TCB pointer for code paths that don't have

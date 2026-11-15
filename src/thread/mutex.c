@@ -57,7 +57,22 @@
 #include <time.h>
 #include <bits/thread/thread.h>
 #include <bits/thread/pthread.h>
+#include <bits/thread/tcb.h>
 #include <bits/syscall.h>
+
+/*
+ * Kernel TID of the calling thread, read from the TCB (the kernel fills
+ * tcb->tid through CLONE_PARENT_SETTID; the startup code and fork() fill
+ * it for the main thread). Falls back to gettid(2) when unknown.
+ */
+static __HAJ_INLINE int selfTid(void)
+{
+	struct __haj_tcb	*tcb = __haj_tcbSelf();
+
+	if (tcb != NULL && tcb->tid > 0)
+		return (tcb->tid);
+	return (__haj_gettid());
+}
 
 /*
  * The futex word has three states:
@@ -649,7 +664,7 @@ int pthread_mutex_lock(pthread_mutex_t *mutex)
 		return (EINVAL);
 
 	m = HAJ_MUTEX(mutex);
-	tid = __haj_gettid();
+	tid = selfTid();
 
 #if HAJ_PTHREAD_PROCESS_SHARED
 	if (isRobust(m))
@@ -668,7 +683,7 @@ int pthread_mutex_trylock(pthread_mutex_t *mutex)
 		return (EINVAL);
 
 	m = HAJ_MUTEX(mutex);
-	tid = __haj_gettid();
+	tid = selfTid();
 
 #if HAJ_PTHREAD_PROCESS_SHARED
 	if (isRobust(m))
@@ -691,7 +706,7 @@ int pthread_mutex_timedlock(pthread_mutex_t *mutex,
 		return (EINVAL);
 
 	m = HAJ_MUTEX(mutex);
-	tid = __haj_gettid();
+	tid = selfTid();
 
 #if HAJ_PTHREAD_PROCESS_SHARED
 	if (isRobust(m))
@@ -712,7 +727,7 @@ int pthread_mutex_clocklock(pthread_mutex_t *mutex, clockid_t clockid,
 		return (EINVAL);
 
 	m = HAJ_MUTEX(mutex);
-	tid = __haj_gettid();
+	tid = selfTid();
 
 #if HAJ_PTHREAD_PROCESS_SHARED
 	if (isRobust(m))
@@ -730,7 +745,7 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex)
 		return (EINVAL);
 
 	m = HAJ_MUTEX(mutex);
-	tid = __haj_gettid();
+	tid = selfTid();
 
 #if HAJ_PTHREAD_PROCESS_SHARED
 	if (isRobust(m))

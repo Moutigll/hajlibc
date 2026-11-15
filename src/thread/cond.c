@@ -148,6 +148,11 @@ int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 	 * and we would sleep on the new value, which would
 	 * never be signaled again.
 	 */
+	/*
+	 * Announce the waiter before reading seq: a signaler that does not
+	 * see it bumped seq first, so the futex wait below returns at once.
+	 */
+	(void)__haj_atomic_add_fetch(&c->clock, HAJ_COND_WAITER);
 	seq = __haj_atomic_load(&c->seq);
 
 	pthread_mutex_unlock(mutex);
@@ -162,6 +167,7 @@ int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 	 * or signals.
 	 */
 	(void)waitSeq(c, seq, CLOCK_REALTIME, NULL);
+	(void)__haj_atomic_sub_fetch(&c->clock, HAJ_COND_WAITER);
 
 	/*
 	 * Re-acquire the mutex. POSIX requires the mutex to be
@@ -184,11 +190,17 @@ int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex, const s
 
 	c = HAJ_COND(cond);
 
+	/*
+	 * Announce the waiter before reading seq: a signaler that does not
+	 * see it bumped seq first, so the futex wait below returns at once.
+	 */
+	(void)__haj_atomic_add_fetch(&c->clock, HAJ_COND_WAITER);
 	seq = __haj_atomic_load(&c->seq);
 
 	pthread_mutex_unlock(mutex);
 
-	r = waitSeq(c, seq, c->clock, abstime);
+	r = waitSeq(c, seq, HAJ_COND_CLOCKID(c), abstime);
+	(void)__haj_atomic_sub_fetch(&c->clock, HAJ_COND_WAITER);
 
 	pthread_mutex_lock(mutex);
 
@@ -208,11 +220,17 @@ int pthread_cond_clockwait(pthread_cond_t *cond, pthread_mutex_t *mutex, clockid
 
 	c = HAJ_COND(cond);
 
+	/*
+	 * Announce the waiter before reading seq: a signaler that does not
+	 * see it bumped seq first, so the futex wait below returns at once.
+	 */
+	(void)__haj_atomic_add_fetch(&c->clock, HAJ_COND_WAITER);
 	seq = __haj_atomic_load(&c->seq);
 
 	pthread_mutex_unlock(mutex);
 
 	r = waitSeq(c, seq, clockid, abstime);
+	(void)__haj_atomic_sub_fetch(&c->clock, HAJ_COND_WAITER);
 
 	pthread_mutex_lock(mutex);
 
@@ -236,7 +254,9 @@ int pthread_cond_signal(pthread_cond_t *cond)
 	 * will be woken and re-check.
 	 */
 	__haj_atomic_add_fetch(&c->seq, 1);
-	__haj_futexWakeOp(&c->seq, 1, HAJ_COND_IS_SHARED(c));
+	/* No waiter: skip the futex syscall. */
+	if (HAJ_COND_HAS_WAITERS(c))
+		__haj_futexWakeOp(&c->seq, 1, HAJ_COND_IS_SHARED(c));
 	return (0);
 }
 
@@ -250,6 +270,7 @@ int pthread_cond_broadcast(pthread_cond_t *cond)
 	c = HAJ_COND(cond);
 
 	__haj_atomic_add_fetch(&c->seq, 1);
-	__haj_futexWakeOp(&c->seq, 0x7fffffff, HAJ_COND_IS_SHARED(c));
+	if (HAJ_COND_HAS_WAITERS(c))
+		__haj_futexWakeOp(&c->seq, 0x7fffffff, HAJ_COND_IS_SHARED(c));
 	return (0);
 }

@@ -66,6 +66,12 @@ void	hmallocPrimMemInit(t_hmallocOsMemConfig *config);
 int		hmallocPrimAdviseHuge(void *addr, size_t size);
 
 /**
+ * @brief Ask the OS not to back a region with transparent huge pages.
+ * @return 0 on success (or when THP is not available), -1 on failure.
+ */
+int		hmallocPrimAdviseNoHuge(void *addr, size_t size);
+
+/**
  * @brief Return the current time in milliseconds since the epoch.
  *
  * This function returns the current time in milliseconds since the epoch.
@@ -118,6 +124,12 @@ int		hmallocPrimFree(void *addr, size_t size);
  * @return 0 on success, -1 on failure.
  */
 int		hmallocPrimDecommit(void *addr, size_t size, bool *needsRecommit);
+
+/**
+ * @brief Commit (make readable and writable) a reserved memory region.
+ * @return 0 on success, -1 on failure.
+ */
+int		hmallocPrimCommit(void *addr, size_t size);
 
 /**
  * @struct s_hmallocProcessInfo
@@ -228,18 +240,51 @@ void	hmallocPrimThreadYield(void);
 # else
 extern HMALLOC_THREAD_LOCAL		HMALLOC_TLS_IE uintptr_t	_hmallocThreadIdHelper;
 
+/*
+ * As mimalloc: the thread id is the thread pointer (one load, no TLS
+ * offset). It points to the thread control block, so it is unique per
+ * live thread and its low bits are zero (they hold the page flags).
+ */
+#  if !defined(__APPLE__) && !defined(__CYGWIN__) \
+	&& ((defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 11 \
+			&& (defined(__x86_64__) || defined(__aarch64__))) \
+		|| (defined(__clang_major__) && __clang_major__ >= 14 \
+			&& (defined(__x86_64__) || defined(__aarch64__))))
+#   define HMALLOC_THREAD_POINTER()	((uintptr_t)__builtin_thread_pointer())
+#  elif defined(__GNUC__) && defined(__x86_64__) && !defined(__APPLE__)
+static inline uintptr_t	hmallocPrimThreadPointer(void)
+{
+	uintptr_t	tp;
+
+	__asm__ ("movq %%fs:0, %0" : "=r" (tp));
+	return (tp);
+}
+#   define HMALLOC_THREAD_POINTER()	hmallocPrimThreadPointer()
+#  elif defined(__GNUC__) && defined(__aarch64__) && !defined(__APPLE__)
+static inline uintptr_t	hmallocPrimThreadPointer(void)
+{
+	uintptr_t	tp;
+
+	__asm__ ("mrs %0, tpidr_el0" : "=r" (tp));
+	return (tp);
+}
+#   define HMALLOC_THREAD_POINTER()	hmallocPrimThreadPointer()
+#  endif
+
 /**
- * @brief Return a unique value per thread.
+ * @brief Return a unique value per thread (used to recognise page owners).
  *
- * The value is the address of a thread-local variable, which
- * is guaranteed to be distinct for each thread. It is used as
- * the allocator's thread identifier everywhere the owner of a
- * page must be recognised.
+ * The thread pointer when available, otherwise the address of a
+ * thread-local variable (also distinct for each thread).
  * @return Opaque thread identifier.
  */
 static inline uintptr_t	hmallocPrimThreadId(void)
 {
+#  if defined(HMALLOC_THREAD_POINTER)
+	return (HMALLOC_THREAD_POINTER());
+#  else
 	return ((uintptr_t)&_hmallocThreadIdHelper);
+#  endif
 }
 # endif
 

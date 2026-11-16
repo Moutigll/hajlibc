@@ -10,7 +10,7 @@
  * @file hmTypes.h
  * @brief Type definitions for the memory allocator.
  * @Created: 2026/10/05 15:26:28 by Moutig
- * @Updated: 2026/10/29 05:59:48 by Moutig
+ * @Updated: 2026/11/16 15:22:31 by Moutig
  *
  * This file contains the type definitions used by the hajlibc memory allocator.
  * It includes definitions for pages, blocks, arenas, heaps, and other
@@ -25,77 +25,45 @@
 # include "../../../../include/malloc.h"
 
 # include "hmBits.h"
+# include "hmBitmap.h"
 # include "hmAtomic.h"
-
-/* ----- Arena geometry ----- */
-
-/*
- * 256 MiB aligned arena, fixed size. It is then cut into 64 KiB slices,
- * each slice containing a single page.
- * - Slice 0 is reserved for the arena's metadata.
- * - Slice 1 contains the struct t_hmallocArena + metas[] + bitmaps
- * - Slice 2..N < 4095 are used for pages.
- *
- * Three categories of pages are supported:
- * - Tiny,	64 KiB	-> 1 slice,		for small allocations (<= ~10 KiB)
- * - Small,	512 KiB	-> 8 slices,	for medium allocations (<= ~86 KiB)
- * - Large,	4 MiB	-> 64 slices,	for large allocations (<= 2 MiB)
- *
- * Each category has its own dedicated arena list to avoid fragmentation.
- *
- * The arena uses three bitmaps(table where 1bit = a slice) to track free slices:
- * - slicesFree: a 2-level bitmap of free slices, used to find a free slice in O(1).
- * 		- chunkmap: 1 bit per 512 slices, set if any slice in that chunk is free.
- * 		- chunkmapBins: tags each chunk with a bin (small/medium/large/huge/other/none) for O(1) category selection.
- * 		- chunks[8]: each chunk has 512 bits, one per slice, set if the slice is free.
- * - pagesAbandoned: a bitmap per bin, set if the page is abandoned (freed by another thread).
- * - purgeBitmap: a bitmap of slices that are eligible for purging (not used for a while).
- */
-# ifndef HMALLOC_ARENA_SIZE
-#  define HMALLOC_ARENA_SIZE	(256 * HMALLOC_MIB)	/* 256 MiB */
-# endif
-
-/**
- * @brief Mask for the arena size.
- * This is used to extract the arena offset from an address.
- */
-# define HMALLOC_ARENA_MASK		(HMALLOC_ARENA_SIZE - 1)
-
-/**
- * @brief Shift for the slice size.
- * This is used to calculate the slice size.
- */
-# ifndef HMALLOC_SLICE_SHIFT
-#  define HMALLOC_SLICE_SHIFT	16					/* 64 KiB */
-# endif
-
-# define HMALLOC_SLICE_SIZE			((size_t)1 << HMALLOC_SLICE_SHIFT)
-# define HMALLOC_ARENA_SLICE_COUNT	(HMALLOC_ARENA_SIZE >> HMALLOC_SLICE_SHIFT)
-# define HMALLOC_MAX_EMPTY_ARENAS	4u
-# define HMALLOC_MAX_ARENAS			64
 
 /* -----  Page classes ----- */
 
-/* AFTER */
 /*
- * Category boundaries, chosen so that the worst-case page holds at
- * least 100 blocks:
+ * Page kinds follow a size-proportional layout:
  *
- * 	TINY  : 1 .. 1 KiB		-> 128 KiB page → ~127 blocks
- * 	SMALL : 1 KiB+1 .. 4 K	-> 512 KiB page → ~127 blocks
- * 	LARGE : > 4 KiB		-> dedicated mmap
+ * 	TINY  : up to 10 KiB  -> 64 KiB page
+ * 	SMALL : up to 64 KiB  -> 512 KiB page
+ * 	LARGE : up to 512 KiB -> 4 MiB page
+ *
+ * This keeps at least six blocks per page while reducing the amount
+ * stranded in large pages for medium-sized allocations.
  */
-# define HMALLOC_TINY_MAX_OBJ_SIZE		(1u * 1024u)		/* n = 1 KiB */
-# define HMALLOC_SMALL_MAX_OBJ_SIZE		(4u * 1024u)		/* m = 4 KiB */
+# define HMALLOC_TINY_MAX_OBJ_SIZE		((HMALLOC_TINY_PAGE_SIZE - (4u * 1024u)) / 6u)
+# define HMALLOC_SMALL_MAX_OBJ_SIZE		(HMALLOC_MEDIUM_PAGE_SIZE / 8u)
+/*
+ * Direct page table: one entry per machine word of request size, up to
+ * HMALLOC_SMALL_WSIZE_MAX words (1 KiB on 64-bit), plus room for the
+ * padding words and the zero-size entry. Index is the word count of
+ * (size + HMALLOC_PADDING_SIZE).
+ * HMALLOC_PADDING_WSIZE must match HMALLOC_PADDING_SIZE (hmPrivate.h).
+ */
+# define HMALLOC_SMALL_WSIZE_MAX		128u
+# define HMALLOC_SMALL_SIZE_MAX			(HMALLOC_SMALL_WSIZE_MAX * sizeof(size_t))
+# if HMALLOC_CANARY
+#  define HMALLOC_PADDING_WSIZE			1u
+# else
+#  define HMALLOC_PADDING_WSIZE			0u
+# endif
+# define HMALLOC_DIRECT_MAX_SIZE		HMALLOC_SMALL_SIZE_MAX
+# define HMALLOC_DIRECT_PAGES			(HMALLOC_SMALL_WSIZE_MAX + HMALLOC_PADDING_WSIZE + 1u)
 
-# define HMALLOC_TINY_PAGE_SIZE			(128u * 1024u)		/* N = 128 KiB */
+# define HMALLOC_TINY_PAGE_SIZE			(64u * 1024u)		/* N = 64 KiB */
 # define HMALLOC_MEDIUM_PAGE_SIZE		(512u * 1024u)		/* M = 512 KiB */
 
-/* LARGE = mmap on its own, no fixed page size. The 4 MiB constant
- * below is only used as an upper bound for the slicesFree bitmap
- * (largest contiguous run that can be expressed in a chunk). */
 # define HMALLOC_LARGE_PAGE_SIZE		(4u * 1024u * 1024u)	/* 4 MiB */
-# define HMALLOC_LARGE_MAX_OBJ_SIZE		(HMALLOC_LARGE_PAGE_SIZE / 2)
+# define HMALLOC_LARGE_MAX_OBJ_SIZE		(HMALLOC_LARGE_PAGE_SIZE / 8u)
 # define HMALLOC_LARGE_MAX_OBJ_WSIZE	(HMALLOC_LARGE_MAX_OBJ_SIZE / 8)
 
 /* Historical SMALL bound, anything <= this goes to TINY or SMALL, above goes to LARGE. */
@@ -184,9 +152,14 @@ typedef struct s_hmallocPage {
 	uint16_t	capacity;		/* Total number of blocks this page can hold */
 	uint16_t	reserved;		/* Number of blocks reserved for this page (may be less than capacity) */
 	uint16_t	used;			/* Number of blocks currently allocated */
+# if HMALLOC_PROFILE
+	uint16_t	allocCount;		/* Blocks handed out (wraps), for the sample countdown */
+	uint16_t	lastAlloc;		/* allocCount at the last countdown update */
+# endif
 	uint8_t		retireExpire;	/* Number of cycles until this page can be retired */
 	bool		freeIsZero;		/* True if the free-list is zeroed (no uninitialized memory) */
-	uint64_t	_pad_hot[2];	/* Padding to align the next field to a cache line boundary */
+	/* Pad the hot fields to one cache line (48 bytes, +4 when profiling). */
+	char		_pad_hot[64 - (5 * 8 + 3 * 2 + 2 + (HMALLOC_PROFILE ? 4 : 0))];
 
 	/* Cache line 1 : xthreadFree isolated (avoids false sharing). */
 	_Atomic uintptr_t	xthreadFree;			/* Free-list of blocks freed by other threads (cross-thread free) */
@@ -196,10 +169,14 @@ typedef struct s_hmallocPage {
 	uintptr_t				keys[2];	/* Random keys for XOR obfuscation of free-list pointers */
 	struct s_hmallocTheap	*theap;		/* Pointer to the owning thread heap (theap) */
 	struct s_hmallocHeap	*heap;		/* Pointer to the owning heap (may be NULL if abandoned) */
+	struct s_hmallocHeap	*abandonedHeap; /* Heap charged for this abandoned page */
 	struct s_hmallocArena	*arena;		/* Pointer to the arena this page belongs to */
 	struct s_hmallocPage	*next;		/* Next page in the bin's linked list */
 	struct s_hmallocPage	*prev;		/* Previous page in the bin's linked list */
-	char					_pad_cold[8];
+	void					*_reserved0;	/* Keeps sizeof(t_hmallocPage) a multiple of 64 */
+	void					*osBase;	/* Start of the OS mapping of an OS allocated block */
+	size_t					osBlockSize; /* Mapping size for individually mapped blocks */
+	char					_pad_cold[40];
 } t_hmallocPage;
 
 _Static_assert(offsetof(t_hmallocPage, xthreadFree) % 64 == 0,
@@ -236,6 +213,7 @@ typedef struct s_hmallocPageQueue {
 	t_hmallocPage	*last;
 	size_t			count;
 	size_t			blockSize;
+	size_t			xcollectScore;	/* How often full pages here are revived by remote frees */
 } t_hmallocPageQueue;
 
 /* ----- Memory ID (origin tracking) ----- */
@@ -295,22 +273,22 @@ typedef struct s_hmallocArena		t_hmallocArena;
  * information if enabled.
  */
 struct s_hmallocTheap {
-	t_hmallocPage	*pagesFreeDirect[HMALLOC_PAGES_DIRECT];	/* Direct free pages for small bins (O(1) allocation) */
-	t_hmallocArena	*arenaHint[3];							/* Arena hint for each category (tiny, small, large) */
+	t_hmallocPage	*pagesFreeDirect[HMALLOC_DIRECT_PAGES];	/* Direct free pages for small bins (O(1) allocation) */
 
 	t_hmallocTld				*tld;						/* Pointer to the thread-local data (TLD) for this thread */
 	_Atomic(t_hmallocHeap *)	heap;						/* Pointer to the owning heap (may be NULL if abandoned) */
 	_Atomic(t_hmallocSubproc *)	subproc;					/* Pointer to the owning subproc (may be NULL if abandoned) */
 
 	long				pageFullRetain;	/* Number of full pages to retain before retiring */
-	unsigned long long	heartbeat;		/* Heartbeat counter for the theap, used for retire expiration */
+	unsigned long long	heartbeat;		/* Generic allocations since the last admin cycle */
+	unsigned long long	genericCollectCount;	/* Generic allocations since the last full collect */
 
 	uint16_t	pagesFullCount[HMALLOC_BIN_COUNT];	/* Count of full pages per bin (O(1) allocation) */
 
-	uint16_t	pagesRetiredCount[HMALLOC_BIN_COUNT];	/* Count of retired pages per bin (O(1) allocation) */
 	uint16_t	retiredMinBin;	/* Minimum bin index with retired pages */
 	uint16_t	retiredMaxBin;	/* Maximum bin index with retired pages */
 	uint16_t	_pad_retired;	/* Padding to align the next field to a cache line boundary */
+	t_hmallocPage	*hugeCached;	/* One empty huge page kept for reuse (retire delay) */
 
 	t_hmallocTheap	*tnext;	/* Next theap in the thread's list of theaps */
 	t_hmallocTheap	*tprev;	/* Previous theap in the thread's list of theaps */
@@ -357,13 +335,23 @@ struct s_hmallocHeap {
 	t_hmallocMemId	memid;	/* Memory ID for the heap's memory region */
 
 # if HMALLOC_STATS
-	t_hmallocStats	*stats;
+	t_hmallocStats	statsStorage;	/* Stats of heaps created with hmHeapNew */
+	t_hmallocStats	*stats;			/* statsStorage, or g_hmalloc.statsHeapMain */
 # endif
 
 # if HMALLOC_PROFILE
 	t_hmallocProfiler	*profiler;
 # endif
 };
+
+/**
+ * @typedef t_hmMsecs
+ * @brief A type representing milliseconds as a signed 64-bit integer.
+ *
+ * This type is used to represent time in milliseconds, allowing for
+ * high-resolution timing and duration measurements in the memory allocator.
+ */
+typedef int64_t	t_hmMsecs;
 
 /**
  * @struct s_hmallocSubproc
@@ -376,6 +364,7 @@ struct s_hmallocHeap {
  */
 struct s_hmallocSubproc {
 	_Atomic size_t				arenaCount;					/* Count of arenas managed by this subproc */
+	t_hmallocLock				arenaReserveLock;			/* Serialises arena creation (readers are lock-free) */
 	_Atomic(t_hmallocArena *)	arenas[HMALLOC_MAX_ARENAS];	/* Array of pointers to arenas managed by this subproc */
 
 	_Atomic(t_hmallocHeap *)	heapMain;	/* Pointer to the main heap for this subproc */
@@ -383,7 +372,10 @@ struct s_hmallocSubproc {
 	t_hmallocLock				heapsLock;	/* Lock for thread-safe access to the heaps list */
 
 	_Atomic size_t			threadCount;	/* Count of threads managed by this subproc */
+	_Atomic size_t			threadTotalCount;	/* Threads ever created (source of tld->threadSeq) */
 	_Atomic size_t			heapCount;		/* Count of heaps managed by this subproc */
+
+	_Atomic t_hmMsecs		purgeExpire;	/* Earliest arena purge expiration (0: none pending) */
 
 	t_hmallocMemId	memid;	/* Memory ID for the subproc's memory region */
 
@@ -401,10 +393,14 @@ struct s_hmallocSubproc {
  */
 struct s_hmallocTld {
 	t_hmallocThreadId	threadId;	/* Thread ID for this thread */
+	size_t				threadSeq;	/* Creation sequence number, spaces out bitmap searches */
 	t_hmallocSubproc	*subproc;	/* Pointer to the subproc this thread belongs to */
 	t_hmallocTheap		*theaps;	/* Pointer to the list of theaps (per-thread heaps) for this thread */
 
 	uint64_t	rng[2];		/* Random number generator state for this thread */
+
+	size_t		forkEpoch;	/* Fork epoch at creation: older means the thread is dead in a forked child */
+	bool		inProfiler;	/* Inside a profiler callback: do not sample (no recursion) */
 
 	t_hmallocMemId	memid;	/* Memory ID for the TLD's memory region */
 };
@@ -432,72 +428,7 @@ typedef enum e_hmallocCategory {
  */
 # define HMALLOC_PAGE_META_COUNT	HMALLOC_ARENA_SLICE_COUNT
 
-/* Two-level bitmap: chunkmap + chunkmapBins + chunks. */
-# ifndef HMALLOC_BCHUNK_BITS
-#  define HMALLOC_BCHUNK_BITS	512u
-# endif
-
-# define HMALLOC_BCHUNK_WORDS	(HMALLOC_BCHUNK_BITS / 64u)
-# define HMALLOC_BCHUNK_COUNT	(HMALLOC_ARENA_SLICE_COUNT / HMALLOC_BCHUNK_BITS)
-# define HMALLOC_CHUNKMAP_WORDS	((HMALLOC_BCHUNK_COUNT + 63u) / 64u)
-
-/**
- * @enum e_hmChunkBin
- * @brief An enumeration of the different bins for chunked memory allocations.
- *
- * This enum is used to categorize chunks of memory into different bins
- * based on their size. Each bin corresponds to a specific range of sizes,
- * allowing for efficient allocation and deallocation of memory blocks.
- */
-typedef enum e_hmChunkBin {
-	HMALLOC_CBIN_SMALL	= 0,
-	HMALLOC_CBIN_MEDIUM	= 1,
-	HMALLOC_CBIN_LARGE	= 2,
-	HMALLOC_CBIN_HUGE	= 3,
-	HMALLOC_CBIN_OTHER	= 4,
-	HMALLOC_CBIN_NONE	= 5,
-	HMALLOC_CBIN_COUNT	= 6
-} t_hmChunkBin;
-
-/**
- * @struct s_hmBChunk
- * @brief A chunk of memory in the arena's bitmap.
- *
- * Each chunk contains a fixed number of bits (HMALLOC_BCHUNK_BITS) that
- * represent the allocation status of slices in the arena. The fields array
- * is an atomic array of 64-bit words, where each bit corresponds to a slice.
- */
-typedef struct s_hmBChunk {
-	_Atomic uint64_t	fields[HMALLOC_BCHUNK_WORDS];
-} t_hmBChunk;
-
-/**
- * @struct s_hmBBitmap
- * @brief A bitmap representing the allocation status of chunks in the arena.
- *
- * The bitmap is composed of a chunkmap, which tracks the allocation status of each chunk,
- * and a set of chunkmapBins, which group chunks into different bins based on their size.
- * The chunks array contains the actual chunks of memory.
- */
-typedef struct s_hmBBitmap {
-	_Atomic uint64_t	chunkmap[HMALLOC_CHUNKMAP_WORDS];	/* 1 bit per chunk, set if any slice in that chunk is free */
-	/* 1 bit per chunk, set if any slice in that chunk is free, grouped by bin */
-	_Atomic uint64_t	chunkmapBins[HMALLOC_CBIN_COUNT - 1][HMALLOC_CHUNKMAP_WORDS];
-	t_hmBChunk			chunks[HMALLOC_BCHUNK_COUNT];		/* 1 bit per slice, set if the slice is free */
-} t_hmBBitmap;
-
-
-
 /* ----- Time ----- */
-
-/**
- * @typedef t_hmMsecs
- * @brief A type representing milliseconds as a signed 64-bit integer.
- *
- * This type is used to represent time in milliseconds, allowing for
- * high-resolution timing and duration measurements in the memory allocator.
- */
-typedef int64_t	t_hmMsecs;
 
 /**
  * @brief Get the current time in milliseconds.
@@ -538,14 +469,13 @@ struct s_hmallocArena {
 	/* Count of abandoned pages per bin (O(1) allocation) */
 	_Atomic size_t		abandonedCount[HMALLOC_BIN_COUNT];
 
-	t_hmallocLock		sliceLock;	/* Lock for thread-safe access to the arena's slices */
-	t_hmallocArena		*next;		/* Pointer to the next arena in the subproc's arenas list */
 	t_hmallocCategory	category;	/* Category of the arena (tiny, small, large) */
 
 	t_hmBBitmap			slicesFree;	/* Bitmap of free slices in the arena */
-	/* Bitmap of slices that are abandoned (freed by another thread) for each bin */
-	_Atomic uint64_t	pagesAbandoned[HMALLOC_BIN_COUNT]
-									  [HMALLOC_ARENA_BITMAP_WORDS];
+	/* Slices that have ever been handed out (no longer known to be zero) */
+	t_hmBitmap			slicesDirty;
+	/* Per bin: slices holding an abandoned page that can be reclaimed */
+	t_hmBitmap			pagesAbandoned[HMALLOC_BIN_COUNT];
 
 	_Atomic t_hmMsecs	purgeExpire;	/* Expiration time for purging the arena's slices (in milliseconds) */
 	/* Bitmap of slices that are eligible for purging (not used for a while) */

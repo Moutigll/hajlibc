@@ -10,7 +10,7 @@
  * @file hmBits.h
  * @brief Bit manipulation helpers and size geometry.
  * @Created: 2026/10/05 16:20:18 by Moutig
- * @Updated: 2026/10/19 11:47:05 by Moutig
+ * @Updated: 2026/11/08 04:32:44 by Moutig
  *
  * Population count, count-leading/trailing zeros, bit rotations,
  * and the small size/architecture constants the allocator needs.
@@ -148,19 +148,6 @@ static inline size_t	hmallocClz(size_t x)
 # else
 	return (x != 0 ? _hmallocClzGeneric(x) : HMALLOC_SIZE_BITS);
 # endif
-}
-
-/**
- * @brief Bit-scan reverse: index of the most significant set bit.
- *
- * Equivalent to floor(log2(x)). Used by the binning code.
- *
- * @param x Value to inspect. Must be non-zero.
- * @return Index of the highest set bit.
- */
-static inline size_t	hmallocBsr(size_t x)
-{
-	return (HMALLOC_SIZE_BITS - 1 - hmallocClz(x));
 }
 
 /* ----- Rotations ----- */

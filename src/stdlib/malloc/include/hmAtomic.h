@@ -10,7 +10,7 @@
  * @file hmAtomic.h
  * @brief Atomic primitives, spinlock and TLS qualifier.
  * @Created: 2026/10/05 15:27:35 by Moutig
- * @Updated: 2026/10/19 14:17:56 by Moutig
+ * @Updated: 2026/11/16 15:06:03 by Moutig
  *
  * C11 <stdatomic.h> is the single source of atomics. It is
  * available on every compiler hajlibc supports (GCC, Clang,
@@ -131,6 +131,17 @@ static inline void	hmallocLockAcquire(t_hmallocLock *l)
 	}
 }
 
+/**
+ * @brief Try to acquire a spinlock once, without waiting.
+ * @return true if the lock is now held by the caller.
+ */
+static inline bool	hmallocLockTryAcquire(t_hmallocLock *l)
+{
+	int	expected = 0;
+
+	return (atomic_compare_exchange_strong_explicit(&l->lock, &expected, 1,
+		memory_order_acquire, memory_order_relaxed));
+}
 
 /**
  * @brief Release a spinlock.

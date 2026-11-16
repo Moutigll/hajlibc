@@ -10,7 +10,7 @@
  * @file hmInternal.h
  * @brief Internal definitions and utilities for the hajmalloc allocator.
  * @Created: 2026/10/05 16:24:44 by Moutig
- * @Updated: 2026/10/29 08:56:18 by Moutig
+ * @Updated: 2026/11/16 15:30:41 by Moutig
  *
  * This header file contains internal definitions, macros, and utility functions
  * used by the hajmalloc allocator. It includes alignment utilities, overflow checks,
@@ -84,7 +84,7 @@ void	_hmallocAssertFail(const char *expr, const char *file, unsigned line, const
 /* ----- Options ----- */
 
 # ifndef HMALLOC_OPTIONS_MAX
-#  define HMALLOC_OPTIONS_MAX	16
+#  define HMALLOC_OPTIONS_MAX	32
 # endif
 
 /**
@@ -104,6 +104,7 @@ typedef struct s_hmallocTs {
 	uint16_t		binRangeStart[HMALLOC_BIN_COUNT];
 	uint16_t		binRangeEnd[HMALLOC_BIN_COUNT];
 	pthread_once_t	binRangeOnce;	/* Once control for initializing the bin-range cache */
+	pthread_once_t	pageMapOnce;	/* Once control for initializing the page map */
 } t_hmallocTs;
 
 /**
@@ -129,8 +130,8 @@ typedef struct s_hmallocGlobal {
 	t_hmallocTheap		theapEmpty;	/* Sentinel theap for new threads that have never allocated */
 	t_hmallocPage		pageEmpty;	/* Sentinel page for new threads that have never allocated */
 
-	t_hmallocArena		*arenas[3];			/* Array of pointers to arenas for each category (tiny, small, large) */
-	_Atomic(t_hmallocArena *)	spareLarge;	/* Pointer to a spare large arena for reuse */
+	_Atomic(struct s_hmallocPageMap *)	pageMap;			/* Address -> page map (see hmPageMap.h) */
+	_Atomic size_t						pageMapCommitted;	/* Committed page map entries (0 before init) */
 
 	void	*metaCur;	/* Current metadata allocation pointer */
 	size_t	metaLeft;	/* Remaining bytes in the current metadata allocation */
@@ -146,8 +147,11 @@ typedef struct s_hmallocGlobal {
 	t_hmDeferredFreeFun	*deferredFun;	/* Deferred free function for the allocator */
 	void				*deferredArg;	/* Argument for the deferred free function */
 
-	_Atomic long	options[HMALLOC_OPTIONS_MAX];
-	bool			initialized;	/* Indicates if the allocator has been initialized */
+	_Atomic long		options[HMALLOC_OPTIONS_MAX];
+	_Atomic uintptr_t	arenaPurgeGuard;	/* Non-zero while a thread purges the arenas */
+	size_t				forkEpoch;			/* Incremented in each forked child */
+	_Atomic size_t		forkPending;		/* Dead theaps of a fork remain to be abandoned */
+	_Atomic bool		initialized;	/* Indicates if the allocator has been initialized */
 
 # if HMALLOC_STATS
 	t_hmallocStats	statsSubproc;
@@ -296,7 +300,6 @@ void	_hmallocOptionsInit(void);
  * This function performs any necessary post-initialization steps for the
  * hmalloc options after they have been set.
  */
-void	_hmallocOptionsPostInit(void);
 
 /**
  * @brief Emit an error message.
@@ -412,9 +415,23 @@ t_hmallocTheap	*_hmallocThreadInit(void);
  */
 void			_hmallocThreadDone(t_hmallocTheap *theap);
 
+/* ----- Fork ----- */
+
+/* Register the fork child handler (at process init). */
+void			_hmallocForkInit(void);
+
+/* Child handler: only marks the other threads' theaps as dead. */
+void			_hmallocForkChild(void);
+
+/*
+ * Abandon the pages of the dead theaps after a fork. Cheap when there is
+ * nothing to do; retried later when a lock is busy (a dead thread may
+ * have held it). Called at thread init and on the generic path.
+ */
+void			_hmallocForkChildTryCollect(void);
+
 # if HMALLOC_STATS
 void	_hmallocStatsInit(void);
-void	_hmallocStatsMergeInto(t_hmallocStats *to, t_hmallocStats *from);
 # else
 #  define _hmallocStatsInit()					((void)0)
 #  define _hmallocStatsMergeInto(to, from)		((void)0)
@@ -423,27 +440,83 @@ void	_hmallocStatsMergeInto(t_hmallocStats *to, t_hmallocStats *from);
 void	_hmallocRandomInit(t_hmallocTld *tld);
 size_t	_hmallocRandomNext(t_hmallocTld *tld);
 
+/**
+ * @brief Generate a random key for memory allocation.
+ *
+ * This function generates a random key for use in memory allocation and
+ * management. The key is used to enhance security and prevent certain types
+ * of attacks on the allocator.
+ *
+ * @param tld Pointer to the thread-local data for the memory allocator.
+ * @param fallback A fallback value to use if random generation fails.
+ * @return A random key, or the fallback value if random generation fails.
+ */
+static inline uintptr_t	hmallocPageKeyNext(t_hmallocTld *tld, uintptr_t fallback)
+{
+	uintptr_t	k = (tld != NULL) ? (uintptr_t)_hmallocRandomNext(tld) : 0;
+
+	return ((k != 0) ? k : fallback);
+}
+
+/* ----- Statistics ----- */
+
 #if HMALLOC_STATS
+
+void	_hmallocStatUpdate(t_hmallocStatCount *stat, int64_t amount);
+void	_hmallocStatUpdateMt(t_hmallocStatCount *stat, int64_t amount);
+
+/* Add `src` into `to` (atomically) and clear `src`. */
+void	_hmallocStatsMergeInto(t_hmallocStats *to, t_hmallocStats *src);
+
+/* Stats charged to a heap (NULL: the main heap). */
+t_hmallocStats	*_hmallocHeapStats(t_hmallocHeap *heap);
+
+# define hmStatsSubprocIncrease(stat, n) \
+	_hmallocStatUpdateMt(&g_hmalloc.statsSubproc.stat, (int64_t)(n))
+# define hmStatsSubprocDecrease(stat, n) \
+	_hmallocStatUpdateMt(&g_hmalloc.statsSubproc.stat, -(int64_t)(n))
+# define hmStatsSubprocCounter(stat, n) \
+	((void)__atomic_fetch_add(&g_hmalloc.statsSubproc.stat.total, (int64_t)(n), \
+		__ATOMIC_RELAXED))
+
+# define hmStatsHeapIncrease(heap, stat, n) \
+	_hmallocStatUpdateMt(&_hmallocHeapStats(heap)->stat, (int64_t)(n))
+# define hmStatsHeapDecrease(heap, stat, n) \
+	_hmallocStatUpdateMt(&_hmallocHeapStats(heap)->stat, -(int64_t)(n))
+# define hmStatsHeapCounter(heap, stat, n) \
+	((void)__atomic_fetch_add(&_hmallocHeapStats(heap)->stat.total, (int64_t)(n), \
+		__ATOMIC_RELAXED))
+
+/* Theap stats: only the owning thread updates them, no atomics. */
+# define hmStatsTheapCounter(th, stat, n) do { \
+		if ((th) != NULL && (th)->stats != NULL) \
+			(th)->stats->stat.total += (int64_t)(n); \
+	} while (0)
 
 void	hmStatsOnHugeAlloc(t_hmallocTheap *th, size_t blockSize, size_t padded);
 void	hmStatsOnNormalAlloc(t_hmallocTheap *th, size_t padded, size_t bin);
 void	hmStatsOnPageAlloc(size_t blockSize, size_t zoneSize);
-void	hmStatsOnFree(t_hmallocTheap *th, size_t padded);
+void	hmStatsOnFree(t_hmallocTheap *th, size_t blockSize);
 void	hmStatsOnPageFree(size_t blockSize, size_t zoneSize);
 void	hmStatsOnMmap(void);
 void	hmStatsOnArenaCreate(void);
-void	hmStatsOnArenaDestroy(void);
 
 #else /* !HMALLOC_STATS */
 
+# define hmStatsSubprocIncrease(stat, n)			((void)0)
+# define hmStatsSubprocDecrease(stat, n)			((void)0)
+# define hmStatsSubprocCounter(stat, n)				((void)0)
+# define hmStatsHeapIncrease(heap, stat, n)			((void)(heap))
+# define hmStatsHeapDecrease(heap, stat, n)			((void)(heap))
+# define hmStatsHeapCounter(heap, stat, n)			((void)(heap))
+# define hmStatsTheapCounter(th, stat, n)			((void)(th))
 # define hmStatsOnHugeAlloc(th, blockSize, padded)	((void)0)
 # define hmStatsOnNormalAlloc(th, padded, bin)		((void)0)
 # define hmStatsOnPageAlloc(blockSize, zoneSize)	((void)0)
-# define hmStatsOnFree(th, padded)					((void)0)
+# define hmStatsOnFree(th, blockSize)				((void)0)
 # define hmStatsOnPageFree(blockSize, zoneSize)		((void)0)
 # define hmStatsOnMmap()							((void)0)
 # define hmStatsOnArenaCreate()						((void)0)
-# define hmStatsOnArenaDestroy()					((void)0)
 
 #endif /* HMALLOC_STATS */
 

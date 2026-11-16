@@ -10,7 +10,7 @@
  * @file hmPrivate.h
  * @brief Internal definitions and utilities for the hajmalloc allocator.
  * @Created: 2026/10/05 17:11:05 by Moutig
- * @Updated: 2026/10/20 14:20:42 by Moutig
+ * @Updated: 2026/11/16 15:46:09 by Moutig
  *
  * This header file contains internal definitions, macros, and utility functions
  * used by the hajmalloc allocator. It includes alignment utilities, overflow checks,
@@ -34,7 +34,7 @@
 
 /* ----- Tuning ----- */
 
-# define HMALLOC_HEARTBEAT_TICKS		10000
+# define HMALLOC_HEARTBEAT_TICKS		1000
 # define HMALLOC_MAX_ALLOC \
 	((size_t)(PTRDIFF_MAX - HMALLOC_PAGE_HEADER_SIZE - HMALLOC_PADDING_SIZE))
 # define HMALLOC_RETIRE_CYCLES_TINY		16u
@@ -42,29 +42,22 @@
 # define HMALLOC_RETIRE_MAX_PER_BIN		3u
 # define HMALLOC_FULL_RECLAIM_SCAN		4u
 # define HMALLOC_PAGE_MAX_CANDIDATES	4u
+/* Adaptive full-page retention (bonus = score >> shift, at most 8 pages). */
+# define HMALLOC_XCOLLECT_SCORE_MAX		256u	/* saturation of `xcollectScore` */
+# define HMALLOC_XCOLLECT_SCORE_SHIFT	5u
+# define HMALLOC_XCOLLECT_SCORE_INC		8u		/* a revived page saves an abandon/reclaim */
 
 
 
-/**
- * @brief Get the page associated with a given pointer.
- * @param p The pointer to the memory location.
- * @return The page associated with the pointer, or NULL if not found.
- */
+# include "hmPageMap.h"
+
+void			hmallocOsBlockFree(t_hmallocPage *page);
+
+/* Page of any pointer, or NULL if the pointer is not in a page (O(1)). */
 static __HAJ_INLINE _hmInlineUnused
 t_hmallocPage *hmallocPageMapGet(const void *p)
 {
-	uintptr_t a = (uintptr_t)p;
-
-	if (a == 0)
-		return (NULL);
-
-	uintptr_t	base = a & ~(uintptr_t)HMALLOC_ARENA_MASK;
-	size_t		idx = (a >> HMALLOC_SLICE_SHIFT) & (HMALLOC_ARENA_SLICE_COUNT - 1);
-
-	t_hmallocArena	*arena = (t_hmallocArena *)base;
-	t_hmallocPage	*page  = (t_hmallocPage *)atomic_load_explicit(
-		&arena->metas[idx], memory_order_acquire);
-	return (page);
+	return (hmallocCheckedPtrPage(p));
 }
 
 static __HAJ_INLINE _hmInlineUnused
@@ -89,18 +82,6 @@ size_t hmallocPageSliceIdx(const t_hmallocPage *p)
  */
 t_hmallocArena	*hmallocArenaCreate(size_t zoneSize, t_hmallocCategory cat);
 
-/**
- * @brief Schedule a purge of the arena's slices after a delay.
- *
- * This function sets the purge expiration time for the specified arena, indicating
- * that the arena's slices should be purged after a certain delay. The purge is
- * scheduled to occur after HMALLOC_PURGE_DELAY_MS milliseconds, multiplied by
- * HMALLOC_PURGE_MULT. If the purge expiration time is already set, it will not
- * be updated.
- *
- * @param a The arena to schedule for purging.
- */
-void			hmallocArenaListAdd(t_hmallocArena **list, t_hmallocArena *arena);
 
 /**
  * @brief Allocate slices from the arena.
@@ -128,7 +109,25 @@ bool			hmallocArenaAllocSlices(t_hmallocArena *a, size_t n, size_t *idx);
  * @param sliceIdx A pointer to store the index of the first allocated slice.
  * @return A pointer to the found arena, or NULL if no suitable arena is found.
  */
-t_hmallocArena	*hmallocArenaFind(t_hmallocCategory cat, size_t nSlices, size_t *sliceIdx);
+t_hmallocArena	*hmallocArenaFind(t_hmallocCategory cat, size_t nSlices,
+								   size_t *sliceIdx, t_hmallocArena *skip);
+
+/**
+ * @brief Allocate slices, reserving a fresh arena if none has room.
+ *
+ * Lock-free search first; only arena creation takes
+ * subproc->arenaReserveLock (one creator at a time).
+ */
+t_hmallocArena	*hmallocArenaTryAlloc(t_hmallocCategory cat, size_t nSlices,
+									  size_t *sliceIdx, t_hmallocArena *skip);
+
+/**
+ * @brief Copy the arenas of a category, sorted by address, into `out`.
+ *
+ * @param out Array of at least HMALLOC_MAX_ARENAS entries.
+ * @return The number of arenas stored.
+ */
+size_t			hmallocArenaSnapshot(t_hmallocCategory cat, t_hmallocArena **out);
 
 /**
  * @brief Free slices from the arena.
@@ -140,15 +139,6 @@ t_hmallocArena	*hmallocArenaFind(t_hmallocCategory cat, size_t nSlices, size_t *
  * @param n The number of slices to free.
  */
 void			hmallocArenaFreeSlices(t_hmallocArena *a, size_t idx, size_t n);
-
-/**
- * @brief Destroy an arena.
- *
- * This function destroys the specified arena, freeing all associated resources.
- *
- * @param a The arena to destroy.
- */
-void			hmallocArenaDestroy(t_hmallocArena *a);
 
 /**
  * @brief Set the page range for an arena.
@@ -163,62 +153,29 @@ void			hmallocArenaDestroy(t_hmallocArena *a);
  */
 bool			hmallocArenaSetPageRange(t_hmallocArena *a, size_t sliceIdx, size_t nSlices, t_hmallocPage *page);
 
-/**
- * @brief Mark an arena as abandoned.
- *
- * This function marks the specified arena as abandoned.
- *
- * @param a The arena to mark as abandoned.
- * @param bin The bin to which the arena belongs.
- * @param sliceIdx The index of the first slice in the abandoned range.
- */
-void			hmallocArenaMarkAbandoned(t_hmallocArena *a, size_t bin, size_t sliceIdx);
 
 /**
- * @brief Find an abandoned slice in an arena.
+ * @brief Find an abandoned page of a bin and claim it.
  *
- * This function finds an abandoned slice in the specified arena.
+ * Clears a set bit in the bin's abandoned bitmap and calls `claim`. If the
+ * claim fails, the bit is restored unless `claim` cleared `*keepSet`.
  *
- * @param a The arena to search.
- * @param bin The bin to which the arena belongs.
- * @param from The index of the first slice to search from.
- * @return The index of the found abandoned slice, or SIZE_MAX if none is found.
+ * @param sliceIdx Set to the slice index of the claimed page.
+ * @return true if a page was claimed.
  */
-size_t			hmallocArenaFindAbandonedFrom(t_hmallocArena *a, size_t bin, size_t from);
+bool			hmallocArenaTryFindAndClaimAbandoned(t_hmallocArena *a, size_t bin,
+					t_hmClaimFun *claim, void *arg, size_t *sliceIdx);
 
 /**
- * @brief Find an abandoned slice in an arena.
- *
- * This function finds an abandoned slice in the specified arena.
- *
- * @param a The arena to search.
- * @param bin The bin to which the arena belongs.
- * @return The index of the found abandoned slice, or SIZE_MAX if none is found.
+ * @brief Map an owned abandoned page so allocating threads can claim it.
+ * @return true if the page is now mapped (false if not an arena page or already mapped).
  */
-size_t			hmallocArenaFindAbandoned(t_hmallocArena *a, size_t bin);
+bool			hmallocArenaPageAbandonMapped(t_hmallocPage *page, t_hmallocHeap *heap);
 
 /**
- * @brief Claim an abandoned slice in an arena.
- *
- * This function claims an abandoned slice in the specified arena.
- *
- * @param a The arena to search.
- * @param bin The bin to which the arena belongs.
- * @param sliceIdx The index of the slice to claim.
- * @return true if the claim is successful, false otherwise.
+ * @brief Remove an owned page from the abandoned map (no-op if not mapped).
  */
-bool			hmallocArenaClaimAbandoned(t_hmallocArena *a, size_t bin, size_t sliceIdx);
-
-/**
- * @brief Restore an abandoned slice in an arena.
- *
- * This function restores an abandoned slice in the specified arena.
- *
- * @param a The arena to search.
- * @param bin The bin to which the arena belongs.
- * @param sliceIdx The index of the slice to restore.
- */
-void			hmallocArenaRestoreAbandoned(t_hmallocArena *a, size_t bin, size_t sliceIdx);
+void			hmallocArenaPageUnabandon(t_hmallocPage *page);
 
 /**
  * @brief Get the count of abandoned slices in an arena.
@@ -243,13 +200,16 @@ size_t			hmallocArenaAbandonedCount(t_hmallocArena *a, size_t bin);
 void			hmallocArenaSchedulePurge(t_hmallocArena *a, size_t idx, size_t n);
 
 /**
- * @brief Try to purge an arena.
+ * @brief Purge the arenas whose purge delay has expired.
  *
- * This function attempts to purge the specified arena.
+ * Cheap when nothing is due (one load of subproc->purgeExpire). Only one
+ * thread purges at a time. `force` purges pending ranges even if not yet
+ * expired; `visitAll` visits every arena instead of a quarter of them.
  *
- * @param a The arena to purge.
+ * @param tseq Thread sequence number, spreads the starting arena.
  */
-void			hmallocArenaTryPurge(t_hmallocArena *a);
+void			hmallocArenasTryPurge(bool force, bool visitAll,
+					t_hmallocSubproc *subproc, size_t tseq);
 
 /* ----- Allocation ----- */
 
@@ -263,6 +223,9 @@ void			hmallocArenaTryPurge(t_hmallocArena *a);
  */
 void	*hmallocAllocInternal(size_t size);
 
+/* Allocate from an explicit, initialised theap of the calling thread. */
+void	*hmallocTheapMalloc(t_hmallocTheap *th, size_t size);
+
 /**
  * @brief Free memory internally.
  *
@@ -271,6 +234,11 @@ void	*hmallocAllocInternal(size_t size);
  * @param ptr A pointer to the memory to free.
  */
 void	hmallocFreeInternal(void *ptr);
+
+/**
+ * @brief Free a pointer from an allocation of at most HMALLOC_SMALL_SIZE_MAX bytes.
+ */
+void	hmallocFreeSmallInternal(void *ptr);
 
 /* ----- Thread / heap lifecycle ----- */
 
@@ -521,6 +489,14 @@ void			hmallocPageCollectRetired(t_hmallocTheap *th, bool force);
 void			hmallocPageToFull(t_hmallocTheap *th, t_hmallocPage *p);
 
 /**
+ * @brief Abandon an owned page that is no longer in a queue.
+ *
+ * Frees it if empty; maps it in the arena abandoned map if it is a
+ * non-full arena page; then releases ownership.
+ */
+void			hmallocPageAbandon(t_hmallocPage *p);
+
+/**
  * @brief Mark a page as unfull.
  *
  * This function marks the specified page as unfull, indicating that it has
@@ -530,6 +506,32 @@ void			hmallocPageToFull(t_hmallocTheap *th, t_hmallocPage *p);
  * @param p The page to mark as unfull.
  */
 void			hmallocPageUnfull(t_hmallocTheap *th, t_hmallocPage *p);
+
+/**
+ * @brief Push a page at the front of a bin queue (updates count and direct table).
+ */
+void			hmallocPageQueuePush(t_hmallocTheap *th, size_t bin, t_hmallocPage *p);
+void			hmallocPageQueueMoveToBack(t_hmallocTheap *th, size_t bin, t_hmallocPage *p);
+
+/* Is more than (1 - 1/n) of the page in use? */
+static inline bool hmallocPageIsUsedAtFrac(const t_hmallocPage *page,
+												 size_t n)
+{
+	size_t frac = page->reserved / n;
+
+	return ((size_t)page->reserved - page->used <= frac);
+}
+
+static inline bool hmallocPageIsMostlyUsed(const t_hmallocPage *page)
+{
+	return (hmallocPageIsUsedAtFrac(page, 8));
+}
+
+
+/**
+ * @brief Remove a page from a bin queue (updates count and direct table).
+ */
+void			hmallocPageQueueRemove(t_hmallocTheap *th, size_t bin, t_hmallocPage *p);
 
 /* ----- Blocks ----- */
 
@@ -557,6 +559,24 @@ void			hmallocBlockSplit(t_hmallocPage *page, size_t size);
 void			hmallocBlockCoalesce(t_hmallocPage *page);
 
 /**
+ * @brief Collect `xthreadFree` and `localFree` into the page free list.
+ *
+ * @param force If true, also append `localFree` when `free` is not empty.
+ * @return true if a non-empty `xthreadFree` list was collected.
+ */
+bool			hmallocPageFreeCollect(t_hmallocPage *page, bool force);
+
+/**
+ * @brief Collect `xthreadFree` past a known `head` without atomics.
+ *
+ * Only valid for the page owner. `head` is left in the shared list
+ * unless it is the last used block.
+ *
+ * @return The expected `xthreadFree` block, or NULL if fully collected.
+ */
+t_hmallocBlock	*hmallocPageFreeCollectPartly(t_hmallocPage *page, t_hmallocBlock *head);
+
+/**
  * @brief Get the starting block of a page for a given user pointer.
  *
  * This function returns the starting block of the specified page that
@@ -572,6 +592,36 @@ t_hmallocBlock	*hmallocBlockStart(const t_hmallocPage *page, const void *user);
 /* ----- Bins ----- */
 
 /**
+ * @brief Table of bin sizes in words.
+ *
+ * This table defines the number of words (8 bytes each) for each bin
+ * in the allocator. The bins are used to categorize different block
+ * sizes for efficient memory management. The last two entries are
+ * reserved for huge allocations, which are treated specially.
+ */
+static const uint32_t g_hmallocBinsWords[HMALLOC_BIN_COUNT] = {
+	0,			0,
+	2,			4,			6,			8,
+	10,			12,			14,			16,
+	20,		24,		28,		32,
+	40,		48,		56,		64,
+	80,		96,		112,		128,
+	160,		192, 		224,		256,
+	320,		384, 		448,		512,
+	640,		768, 		896,		1024,
+	1280,		1536,		1792,		2048,
+	2560,		3072,		3584,		4096,
+	5120,		6144,		7168,		8192,
+	10240,		12288,		14336,		16384,
+	20480,		24576,		28672,		32768,
+	40960,		49152,		57344,		65536,
+	81920,		98304,		114688,	131072,	/* 640 KiB, 768 KiB, 896 KiB, 1 MiB */
+	163840,	196608,	229376,	262144,	/* 1.25 MiB, 1.5 MiB, 1.75 MiB, 2 MiB */
+	[HMALLOC_BIN_HUGE]	 = 262144,
+	[HMALLOC_BIN_HUGE + 1] = 262144,
+};
+
+/**
  * @brief Get the bin index for a given block size.
  *
  * This function calculates the bin index that corresponds to the specified
@@ -581,7 +631,21 @@ t_hmallocBlock	*hmallocBlockStart(const t_hmallocPage *page, const void *user);
  * @param size The size of the block.
  * @return The bin index corresponding to the block size.
  */
-size_t	hmallocBinOf(size_t size);
+static __HAJ_INLINE _hmInlineUnused
+size_t hmallocBinOf(size_t size)
+{
+	size_t w, b, q;
+	if (size == 0) return (2);
+	w = (size + 7) >> 3;
+	if (w <= 1) return (2);
+	if (w <= 8) return (((w - 1) >> 1) + 2);
+	if (w > HMALLOC_LARGE_MAX_OBJ_WSIZE) return (HMALLOC_BIN_HUGE);
+	w--;
+	b = (HMALLOC_SIZE_BITS - 1 - hmallocClz(w));
+	q = w >> (b - 2);
+	return (((b - 2) << 2) + q - 2);
+}
+
 
 /**
  * @brief Get the block size for a given bin index.
@@ -593,7 +657,12 @@ size_t	hmallocBinOf(size_t size);
  * @param bin The bin index.
  * @return The block size corresponding to the bin index.
  */
-size_t	hmallocBinSize(size_t bin);
+static __HAJ_INLINE _hmInlineUnused
+size_t hmallocBinSize(size_t bin)
+{
+	if (bin >= HMALLOC_BIN_COUNT) return 0;
+	return ((size_t)g_hmallocBinsWords[bin] * 8u);
+}
 
 /* ----- Padding / canary ----- */
 
@@ -630,6 +699,67 @@ void	hmallocPadCheck(t_hmallocPage *page, const void *ptr);
 #  define hmMaybePadSet(page, ptr, req)	((void)0)
 #  define hmMaybePadCheck(page, ptr)	((void)0)
 #  define hmMaybePadGet(page, ptr)		((page)->blockSize - HMALLOC_PADDING_SIZE)
+# endif
+
+_Static_assert(HMALLOC_PADDING_WSIZE * sizeof(size_t) >= HMALLOC_PADDING_SIZE,
+	"HMALLOC_PADDING_WSIZE must cover HMALLOC_PADDING_SIZE");
+
+/* ----- Size helpers for the public API ----- */
+
+/* true (and *total = SIZE_MAX) if count * size overflows. */
+static __HAJ_INLINE _hmInlineUnused
+bool	hmallocCountSizeOverflow(size_t count, size_t size, size_t *total)
+{
+	if (count == 1) {
+		*total = size;
+		return (false);
+	}
+	if (hmLikely(!__builtin_mul_overflow(count, size, total)))
+		return (false);
+	*total = SIZE_MAX;
+	return (true);
+}
+
+static __HAJ_INLINE _hmInlineUnused
+bool	hmIsPow2Strict(size_t x)
+{
+	return (x != 0 && (x & (x - 1)) == 0);
+}
+
+/* Round `v` up to a multiple of `a` (a power of two). */
+static __HAJ_INLINE _hmInlineUnused
+size_t	hmAlignUp(size_t v, size_t a)
+{
+	return ((v + a - 1) & ~(a - 1));
+}
+
+/* ----- Symbol aliases ----- */
+
+/*
+ * HM_FORWARDn(fun, args...) is placed after a function declarator: the
+ * function becomes an alias of `fun` (defined in the same translation
+ * unit, same signature), exported with default visibility. Where aliases
+ * are not available (Mach-O, PE) it expands to a forwarding body instead.
+ */
+# if (defined(__GNUC__) || defined(__clang__)) && !defined(__APPLE__) && !defined(_WIN32)
+#  if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 9
+#   define HM_FORWARD(fun)	__attribute__((alias(#fun), used, visibility("default"), copy(fun)));
+#  else
+#   define HM_FORWARD(fun)	__attribute__((alias(#fun), used, visibility("default")));
+#  endif
+#  define HM_FORWARD1(fun, x)			HM_FORWARD(fun)
+#  define HM_FORWARD2(fun, x, y)		HM_FORWARD(fun)
+#  define HM_FORWARD3(fun, x, y, z)		HM_FORWARD(fun)
+#  define HM_FORWARD0(fun, x)			HM_FORWARD(fun)
+#  define HM_FORWARD02(fun, x, y)		HM_FORWARD(fun)
+#  define HM_FORWARD03(fun, x, y, z)	HM_FORWARD(fun)
+# else
+#  define HM_FORWARD1(fun, x)			{ return (fun(x)); }
+#  define HM_FORWARD2(fun, x, y)		{ return (fun(x, y)); }
+#  define HM_FORWARD3(fun, x, y, z)		{ return (fun(x, y, z)); }
+#  define HM_FORWARD0(fun, x)			{ fun(x); }
+#  define HM_FORWARD02(fun, x, y)		{ fun(x, y); }
+#  define HM_FORWARD03(fun, x, y, z)	{ fun(x, y, z); }
 # endif
 
 #endif /* HMALLOC_PRIVATE_H */

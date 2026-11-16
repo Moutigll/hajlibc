@@ -259,6 +259,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats are built from `HMALLOC_STAT_FIELDS()` with
   `t_hmallocStatCount` / `t_hmallocStatCounter`
   (`HMALLOC_STATS_VERSION` 1 → 2)
+- Allocator internals aligned on mimalloc:
+  - arenas sit in a fixed `subproc->arenas[]` array, read without a
+    lock, and are never destroyed (no more per-category arena lists,
+    spare large arena or empty-arena cap)
+  - new address → page map (`hmPageMap.h`) used by checked `free`;
+    unchecked `free` reads the page pointer at the start of the
+    aligned region
+  - concurrent two-level bitmaps for arena slices (`hmBitmap.h`)
+  - retired pages stay at the head of their bin queue, bounded by
+    `retiredMinBin` / `retiredMaxBin` (no more retired list)
+  - page geometry: 64 KiB tiny pages; tiny / small / large maximum
+    object sizes derived from the page sizes; direct table up to
+    128 words (`HMALLOC_DIRECT_PAGES`)
+  - fork handling: theaps left by a fork are abandoned in the child
+  - fast thread ID through `__builtin_thread_pointer()` (or `fs` /
+    `tpidr_el0`)
+  - per-subproc / heap / theap stats macros; `HMALLOC_OPTIONS_MAX`
+    16 → 32
 
 ### Fixed
 

@@ -7,29 +7,45 @@
  */
 
 /**
- * @file hmalloc.h
+ * @file malloc.h
  * @brief Public API of the hmalloc allocator.
  * @Created: 2026/10/05 15:16:12 by Moutig
- * @Updated: 2026/10/29 05:59:02 by Moutig
+ * @Updated: 2026/11/16 14:51:27 by Moutig
  *
- * hmalloc is the dynamic memory allocator shipped with
- * hajlibc. It backs the standard `malloc`, `free`, `realloc`
- * and `calloc` symbols, and exposes additional entry points
- * (`h*` prefix) that give the caller control over alignment,
- * usable size, heaps, statistics and profiling.
+ * hmalloc is the dynamic memory allocator of hajlibc. It implements the
+ * standard allocation functions (malloc, free, posix_memalign, operator
+ * new, ...) and this extended API.
  *
- * The allocator is built on top of `mmap`/`munmap` only: it
- * never calls the host `malloc`, so it can be used to
- * implement it. Its fast path is lock-free and syscall-free.
+ * It is built either into the standalone static libc, or as a shared
+ * library loaded with LD_PRELOAD on top of glibc, where it replaces every
+ * allocation entry point of the host libc and of the C++ runtime.
  *
- * Statistics and profiling are compile-time optional
- * (see <hmConfig.h>): the API always links, but when
- * HMALLOC_STATS / HMALLOC_PROFILE are 0 the corresponding
- * calls are stubs returning false / doing nothing.
+ * The allocator is built on top of `mmap`/`munmap` only: it never calls
+ * the host `malloc`, so it can be used to implement it (LD_PRELOAD).
+ * Its fast path is lock-free and syscall-free.
  *
- * This header is intended to be included from user code that
- * wants the extended API. Programs that only need the POSIX
- * allocator should include `<stdlib.h>` instead.
+ * Contents
+ * --------
+ *   1. Standard allocation      hmalloc hcalloc hrealloc hfree hfreeSize
+ *   2. Extended allocation      hzalloc hmallocn hmallocAligned
+ *   3. Block sizes              husableSize hgoodSize hexpand
+ *   4. Platform extensions      malloc_usable_size malloc_size
+ *                               malloc_good_size cfree vfree _aligned_malloc
+ *   5. Leak tracking            hmLeak* hmReportLeaks
+ *   6. Statistics types         t_hmallocStats, bin geometry, chunk bins
+ *   7. Heaps                    hmHeap* hmHeapOf hmHeapVisitBlocks
+ *                               hmSubprocMain hmTheapGetDefault
+ *   8. Global helpers           hmCollect hmIsRedirected hmProcessInfo
+ *   9. Callbacks                hmRegister*
+ *  10. 42 project               show_alloc_mem show_alloc_mem_ex
+ *  11. Options                  hmOptionSet hmOptionGet
+ *  12. Statistics               hmStats* hmSubprocStats* hmTheapStats*
+ *                               (stubs when HMALLOC_STATS == 0)
+ *  13. Profiling                hmProfile* (stubs when HMALLOC_PROFILE == 0)
+ *
+ * Statistics and profiling are compile-time optional (see <hmConfig.h>):
+ * the API always links, but when HMALLOC_STATS / HMALLOC_PROFILE are 0
+ * the corresponding calls are stubs returning false / doing nothing.
  */
 
 #ifndef HMALLOC_H
@@ -199,21 +215,19 @@ void	hfree(void *p)
 		_hmAttrNoexcept;
 
 /**
- * @brief Allocate a block with a specific alignment.
+ * @brief Free a block whose size is known.
  *
- * The alignment must be a power of two. Values below 16 are
- * rounded up to the platform's natural alignment. The block
- * must be released with `hfree`.
+ * Equivalent to `hfree(p)` but allows runtime size checks
+ * when HMALLOC_CHECK is enabled.
  *
- * @param size      Size in bytes.
- * @param alignment Required alignment (power of two).
- * @return Pointer to the aligned block, or NULL on failure
- *         (errno = EINVAL or ENOMEM).
+ * @param p    Block to free, or NULL.
+ * @param size Size originally requested.
  */
-_hmDeclNodiscard _hmDeclExport _hmDeclRestrict
-void	*hmallocAligned(size_t size, size_t alignment)
-		_hmAttrNoexcept _hmAttrMalloc
-		_hmAttrAllocSize(1) _hmAttrAllocAlign(2);
+_hmDeclExport
+void	hfreeSize(void *p, size_t size)
+		_hmAttrNoexcept;
+
+/* ----- 2. Extended allocation ----- */
 
 /**
  * @brief Allocate and zero-initialise a block.
@@ -241,6 +255,25 @@ void	*hmallocn(size_t count, size_t size)
 		_hmAttrNoexcept _hmAttrMalloc _hmAttrAllocSize2(1,2);
 
 /**
+ * @brief Allocate a block with a specific alignment.
+ *
+ * The alignment must be a power of two. Values below 16 are
+ * rounded up to the platform's natural alignment. The block
+ * must be released with `hfree`.
+ *
+ * @param size      Size in bytes.
+ * @param alignment Required alignment (power of two).
+ * @return Pointer to the aligned block, or NULL on failure
+ *         (errno = EINVAL or ENOMEM).
+ */
+_hmDeclNodiscard _hmDeclExport _hmDeclRestrict
+void	*hmallocAligned(size_t size, size_t alignment)
+		_hmAttrNoexcept _hmAttrMalloc
+		_hmAttrAllocSize(1) _hmAttrAllocAlign(2);
+
+/* ----- 3. Block sizes ----- */
+
+/**
  * @brief Return the usable size of a block.
  *
  * @param p Previously allocated block, or NULL.
@@ -249,20 +282,6 @@ void	*hmallocn(size_t count, size_t size)
 _hmDeclNodiscard _hmDeclExport
 size_t	husableSize(const void *p)
 		_hmAttrNoexcept;
-
-/**
- * @brief Return the usable size of a block allocated by malloc.
- *
- * This function returns the usable size of a block of memory
- * allocated by `malloc`, `calloc`, or `realloc`. The usable size may be larger than the requested size, and it is guaranteed
- * to be at least as large as the size requested during allocation.
- *
- * @param ptr Pointer to the allocated block.
- * @return The usable size of the block, or 0 if ptr is NULL.
- */
-_hmDeclExport size_t	malloc_usable_size(void *ptr)
-		_hmAttrNoexcept;
-
 
 /**
  * @brief Round a size up to the next allocatable bucket.
@@ -286,20 +305,55 @@ _hmDeclExport
 void	*hexpand(void *p, size_t newsize)
 		_hmAttrNoexcept;
 
-/**
- * @brief Free a block whose size is known.
+/* ----- 4. Platform extensions ----- */
+
+/*
+ * Non-standard names provided for compatibility with other platforms.
+ * The standard and POSIX ones (malloc ... free_aligned_sized,
+ * posix_memalign, memalign, valloc, pvalloc, reallocarray, reallocf,
+ * reallocarr, strdup, strndup, realpath) are declared in <stdlib.h> and
+ * <string.h>, under their usual names only.
  *
- * Equivalent to `hfree(p)` but allows runtime size checks
- * when HMALLOC_CHECK is enabled.
- *
- * @param p    Block to free, or NULL.
- * @param size Size originally requested.
+ * In the LD_PRELOAD build the allocator also exports the glibc internal
+ * entry points (__libc_malloc, __libc_calloc, __libc_realloc, __libc_free,
+ * __libc_cfree, __libc_memalign, __libc_valloc, __libc_pvalloc,
+ * __posix_memalign) and, in every build, the C++ operators new / delete
+ * (all variants) through their mangled names; none needs a declaration.
  */
-_hmDeclExport
-void	hfreeSize(void *p, size_t size)
+
+/**
+ * @brief Return the usable size of a block allocated by malloc.
+ *
+ * This function returns the usable size of a block of memory
+ * allocated by `malloc`, `calloc`, or `realloc`. The usable size may be larger than the requested size, and it is guaranteed
+ * to be at least as large as the size requested during allocation.
+ *
+ * @param ptr Pointer to the allocated block.
+ * @return The usable size of the block, or 0 if ptr is NULL.
+ */
+_hmDeclExport size_t	malloc_usable_size(void *ptr)
 		_hmAttrNoexcept;
 
-/* ----- Leak API ----- */
+/** @brief Usable size of a block (macOS). Same as husableSize. */
+_hmDeclExport size_t	malloc_size(const void *p)
+		_hmAttrNoexcept;
+
+/** @brief Usable size a request of `size` bytes gets (macOS). Same as hgoodSize. */
+_hmDeclExport size_t	malloc_good_size(size_t size)
+		_hmAttrNoexcept;
+
+/** @brief Release a block (legacy Unix names). Same as free. */
+_hmDeclExport void	cfree(void *p)
+		_hmAttrNoexcept;
+_hmDeclExport void	vfree(void *p)
+		_hmAttrNoexcept;
+
+/** @brief Aligned allocation (Windows CRT name). Same as hmallocAligned. */
+_hmDeclNodiscard _hmDeclExport _hmDeclRestrict
+void	*_aligned_malloc(size_t size, size_t alignment)
+		_hmAttrNoexcept _hmAttrMalloc _hmAttrAllocSize(1) _hmAttrAllocAlign(2);
+
+/* ----- 5. Leak tracking ----- */
 
 /**
  * @brief Classification of a leaked block.
@@ -402,7 +456,7 @@ void	hmLeakOnFree(void *ptr);
  */
 void	hmReportLeaks(void);
 
-/* ----- Stats API ----- */
+/* ----- 6. Statistics types ----- */
 
 /* ----- Bin geometry ----- */
 
@@ -417,10 +471,10 @@ void	hmReportLeaks(void);
 # define HMALLOC_BIN_COUNT		(HMALLOC_BIN_FULL + 1)
 
 /**
- * @brief Maximum size for a "tiny" allocation.
+ * @brief Maximum size covered by the direct allocation table.
  *
  * Allocations under this size follow a "fast-path" allocation strategy using a direct index table.
- * Allocations larger than this size are handled differently by the allocator.
+ * Larger allocations use the generic allocation path.
  */
 # ifndef HMALLOC_TINY_MAX_SIZE
 #  define HMALLOC_TINY_MAX_SIZE	4096
@@ -434,41 +488,123 @@ void	hmReportLeaks(void);
  */
 # define HMALLOC_PAGES_DIRECT	((HMALLOC_TINY_MAX_SIZE >> 3) + 2)
 
+/* ----- Chunk bins ----- */
+
+/**
+ * @brief Size class of a 512-slice chunk of an arena.
+ *
+ * Each chunk of the free-slice bitmap is reserved for one class of
+ * allocation so that small pages do not fragment the space needed by
+ * larger ones. Reported per class in t_hmallocStats::chunkBins.
+ */
+typedef enum e_hmallocChunkBin {
+	HMALLOC_CBIN_SMALL	= 0,	/* slice count == 1 */
+	HMALLOC_CBIN_OTHER	= 1,	/* any other count up to a chunk */
+	HMALLOC_CBIN_MEDIUM	= 2,	/* slice count == 8 */
+	HMALLOC_CBIN_LARGE	= 3,	/* slice count == 64 */
+	HMALLOC_CBIN_HUGE	= 4,	/* slice count > 512 */
+	HMALLOC_CBIN_NONE	= 5,	/* no class yet (chunk completely free) */
+	HMALLOC_CBIN_COUNT	= 6
+} t_hmallocChunkBin;
+
 /* ----- Stats snapshot ----- */
 
-# define HMALLOC_STATS_VERSION	1
+/* Increased on every incompatible change of t_hmallocStats. */
+# define HMALLOC_STATS_VERSION	2
+
+/** @brief A quantity over time (bytes, pages, threads...). */
+typedef struct s_hmallocStatCount {
+	int64_t	total;		/* Sum of all increases */
+	int64_t	peak;		/* Highest `current` ever reached */
+	int64_t	current;	/* Current value */
+} t_hmallocStatCount;
+
+/** @brief A counter that only increases. */
+typedef struct s_hmallocStatCounter {
+	int64_t	total;
+} t_hmallocStatCounter;
+
+/*
+ * The statistic fields, in mimalloc order. HMALLOC_STAT_COUNT fields are
+ * t_hmallocStatCount, HMALLOC_STAT_COUNTER fields t_hmallocStatCounter.
+ * Defining both macros lets code iterate over every field.
+ */
+# define HMALLOC_STAT_FIELDS() \
+	HMALLOC_STAT_COUNT(pages)				/* pages in use */ \
+	HMALLOC_STAT_COUNT(reserved)			/* reserved bytes */ \
+	HMALLOC_STAT_COUNT(committed)			/* committed bytes */ \
+	HMALLOC_STAT_COUNTER(reset)				/* reset bytes */ \
+	HMALLOC_STAT_COUNTER(purged)			/* purged bytes */ \
+	HMALLOC_STAT_COUNT(pageCommitted)		/* committed bytes inside pages */ \
+	HMALLOC_STAT_COUNT(pagesAbandoned)		/* abandoned pages */ \
+	HMALLOC_STAT_COUNT(threads)				/* threads */ \
+	HMALLOC_STAT_COUNT(allocated)			/* allocated bytes */ \
+	HMALLOC_STAT_COUNTER(mallocCount)		/* malloc calls */ \
+	HMALLOC_STAT_COUNTER(freeCount)			/* free calls */ \
+	HMALLOC_STAT_COUNTER(freed)				/* freed bytes */ \
+	HMALLOC_STAT_COUNTER(mallocRequested)	/* requested bytes */ \
+	\
+	HMALLOC_STAT_COUNTER(mmapCalls) \
+	HMALLOC_STAT_COUNTER(commitCalls) \
+	HMALLOC_STAT_COUNTER(resetCalls) \
+	HMALLOC_STAT_COUNTER(purgeCalls) \
+	HMALLOC_STAT_COUNTER(arenaCount)		/* arenas created */ \
+	HMALLOC_STAT_COUNTER(mallocGuardedCount)	/* allocations with guard pages */ \
+	\
+	/* internal statistics */ \
+	HMALLOC_STAT_COUNTER(arenaRollbackCount) \
+	HMALLOC_STAT_COUNTER(arenaPurges) \
+	HMALLOC_STAT_COUNTER(pagesExtended)		/* free-list extensions */ \
+	HMALLOC_STAT_COUNTER(pagesRetire)		/* pages retired */ \
+	HMALLOC_STAT_COUNTER(pageSearches)		/* pages examined to find a free page */ \
+	HMALLOC_STAT_COUNTER(pageSearchesCount)	/* searches for a free page */ \
+	HMALLOC_STAT_COUNT(heaps) \
+	HMALLOC_STAT_COUNT(theaps) \
+	HMALLOC_STAT_COUNT(pagesOsAbandoned)	/* abandoned pages outside arenas */ \
+	HMALLOC_STAT_COUNT(pagesOsAllocated)	/* pages allocated outside arenas */ \
+	HMALLOC_STAT_COUNTER(pagesReclaimOnAlloc) \
+	HMALLOC_STAT_COUNTER(pagesReclaimOnFree) \
+	HMALLOC_STAT_COUNTER(pagesReabandonFull) \
+	HMALLOC_STAT_COUNTER(pagesUnabandonBusyWait) \
+	HMALLOC_STAT_COUNTER(pagesUnownCasRetry) \
+	HMALLOC_STAT_COUNTER(heapsDeleteWait) \
+	HMALLOC_STAT_COUNTER(pagesStatUpdates) \
+	HMALLOC_STAT_COUNTER(pagesStatUpdateCount) \
+	HMALLOC_STAT_COUNTER(profileSamples)	/* sampled (profiled) allocations */ \
+	\
+	HMALLOC_STAT_COUNT(mallocNormal)		/* bytes in blocks <= HMALLOC_LARGE_MAX_OBJ_SIZE */ \
+	HMALLOC_STAT_COUNT(mallocHuge)			/* bytes in huge blocks */ \
+	HMALLOC_STAT_COUNTER(mallocNormalCount) \
+	HMALLOC_STAT_COUNTER(mallocHugeCount)
+
+# define HMALLOC_STAT_COUNT(stat)	t_hmallocStatCount		stat;
+# define HMALLOC_STAT_COUNTER(stat)	t_hmallocStatCounter	stat;
 
 /**
  * @brief Snapshot of the allocator statistics.
  *
- * The caller fills `size` and `version` before calling
- * hmStatsGet (hmStatsInit does this).
- *
- * When HMALLOC_STATS == 0, the collection code is not compiled
- * in, but the type is still available so the public API links.
+ * Initialise it with hmStatsInit (sets `size` and `version`, which the
+ * getters check). When HMALLOC_STATS == 0 the getters fail and nothing
+ * is collected, but the type is always available.
  */
 typedef struct s_hmallocStats {
 	size_t	size;		/* = sizeof(t_hmallocStats) */
-	int		version;	/* = HMALLOC_STATS_VERSION */
+	size_t	version;	/* = HMALLOC_STATS_VERSION */
 
-	size_t	total;		/* Total memory allocated by the allocator. */
-	size_t	peak;		/* Peak memory usage recorded by the allocator. */
-	size_t	current;	/* Current memory usage recorded by the allocator. */
+	__attribute__((aligned(8))) HMALLOC_STAT_FIELDS()
 
-	size_t	pages;		/* Total number of pages allocated by the allocator. */
-	size_t	reserved;	/* Total reserved memory by the allocator. */
-	size_t	committed;	/* Total committed memory by the allocator. */
-	size_t	mmapCalls;	/* Total number of mmap calls made by the allocator. */
-	size_t	arenaCount;	/* Total number of arenas created by the allocator. */
+	/* Room for future fields without changing the layout. */
+	t_hmallocStatCount		_statReserved[4];
+	t_hmallocStatCounter	_statCounterReserved[4];
 
-	size_t	mallocNormalCount;	/* Total number of normal malloc calls made by the allocator. */
-	size_t	mallocHugeCount;	/* Total number of huge malloc calls made by the allocator. */
-	size_t	mallocRequested;	/* Total number of bytes requested by malloc calls. */
-	size_t	errors;				/* Total number of errors encountered by the allocator. */
-
-	size_t	mallocBins[HMALLOC_BIN_COUNT];	/* Total number of allocations per bin size. */
-	size_t	pageBins[HMALLOC_BIN_COUNT];	/* Total number of pages allocated per bin size. */
+	/* Size segregated statistics. */
+	t_hmallocStatCount	mallocBins[HMALLOC_BIN_HUGE + 1];	/* allocations per size bin */
+	t_hmallocStatCount	pageBins[HMALLOC_BIN_HUGE + 1];		/* pages per size bin */
+	t_hmallocStatCount	chunkBins[HMALLOC_CBIN_COUNT];		/* arena chunks per class */
 } t_hmallocStats;
+
+# undef HMALLOC_STAT_COUNT
+# undef HMALLOC_STAT_COUNTER
 
 /**
  * @brief Zero-initialise a stats snapshot and set the header.
@@ -484,8 +620,10 @@ static inline void	hmStatsInit(t_hmallocStats *s)
 	s->version = HMALLOC_STATS_VERSION;
 }
 
+/** @brief Declare and initialise a t_hmallocStats variable. */
+# define hmStatsDecl(name)	t_hmallocStats name; hmStatsInit(&name)
 
-/* ----- Heap API ----- */
+/* ----- 7. Heaps ----- */
 
 /**
  * @brief Opaque handle to an allocator heap.
@@ -495,6 +633,34 @@ static inline void	hmStatsInit(t_hmallocStats *s)
  * ones to isolate unrelated workloads and free them at once.
  */
 typedef struct s_hmallocHeap	t_hmallocHeap;
+
+/**
+ * @brief Opaque handle to a thread-local heap: the part of a heap owned
+ *        by one thread.
+ */
+typedef struct s_hmallocTheap	t_hmallocTheap;
+
+/**
+ * @brief Abstract identifier of a sub-process (a set of heaps and arenas).
+ */
+typedef struct s_hmSubprocId {
+	void	*_hmSubprocId;
+} t_hmSubprocId;
+
+/** @brief The main sub-process. */
+_hmDeclExport
+t_hmSubprocId	hmSubprocMain(void)
+		_hmAttrNoexcept;
+
+/** @brief The main (default) heap. */
+_hmDeclNodiscard _hmDeclExport
+t_hmallocHeap	*hmHeapMain(void)
+		_hmAttrNoexcept;
+
+/** @brief The calling thread's theap of the main heap. */
+_hmDeclExport
+t_hmallocTheap	*hmTheapGetDefault(void)
+		_hmAttrNoexcept;
 
 /**
  * @brief Create a new, empty heap.
@@ -547,8 +713,84 @@ _hmDeclNodiscard _hmDeclExport _hmDeclRestrict
 void	*hmHeapMalloc(t_hmallocHeap *heap, size_t size)
 		_hmAttrNoexcept _hmAttrMalloc _hmAttrAllocSize(2);
 
+/* ----- Heap of a block ----- */
 
-/* ----- Global helpers ----- */
+/**
+ * @brief Heap owning a block.
+ *
+ * @param p Any pointer.
+ * @return The heap of the page holding `p`, or NULL if `p` was not
+ *         allocated by hmalloc.
+ */
+_hmDeclNodiscard _hmDeclExport
+t_hmallocHeap	*hmHeapOf(const void *p)
+		_hmAttrNoexcept;
+
+/**
+ * @brief Whether `p` belongs to `heap` (NULL: the main heap).
+ */
+_hmDeclNodiscard _hmDeclExport
+bool	hmHeapContains(const t_hmallocHeap *heap, const void *p)
+		_hmAttrNoexcept;
+
+/**
+ * @brief Whether `p` points into memory managed by hmalloc (any heap).
+ */
+_hmDeclNodiscard _hmDeclExport
+bool	hmAnyHeapContains(const void *p)
+		_hmAttrNoexcept;
+
+/* ----- Visiting blocks ----- */
+
+/**
+ * @brief An area of a heap: one page and its blocks.
+ */
+typedef struct s_hmHeapArea {
+	void	*blocks;		/* Start of the blocks of the area */
+	size_t	reserved;		/* Bytes reserved for this area (virtual) */
+	size_t	committed;		/* Bytes of blocks currently available */
+	size_t	used;			/* Number of allocated blocks */
+	size_t	blockSize;		/* Usable size of each block */
+	size_t	fullBlockSize;	/* Size of a block including padding and metadata */
+	void	*reserved1;		/* Internal */
+} t_hmHeapArea;
+
+/**
+ * @brief Visitor called for each area, then for each live block.
+ *
+ * Called once per area with `block == NULL`, then (if blocks are
+ * visited) once per allocated block. Return false to stop.
+ */
+typedef bool (_hmCdecl t_hmBlockVisitFun)(const t_hmallocHeap *heap,
+										  const t_hmHeapArea *area,
+										  void *block, size_t blockSize,
+										  void *arg);
+
+/**
+ * @brief Visit the areas (and optionally blocks) of a heap.
+ *
+ * No other thread may use the heap meanwhile (thread exit excepted).
+ * Pages of blocks allocated directly from the OS (larger than an
+ * arena) are not visited.
+ *
+ * @param heap        Heap to visit, NULL for the main heap.
+ * @param visitBlocks Also call `visitor` for every live block.
+ * @return false if the visitor stopped the walk.
+ */
+_hmDeclExport
+bool	hmHeapVisitBlocks(t_hmallocHeap *heap, bool visitBlocks,
+						  t_hmBlockVisitFun *visitor, void *arg);
+
+/**
+ * @brief Like hmHeapVisitBlocks, but only the abandoned pages of the heap
+ *        (pages whose owning thread has exited).
+ */
+_hmDeclExport
+bool	hmHeapVisitAbandonedBlocks(t_hmallocHeap *heap, bool visitBlocks,
+								   t_hmBlockVisitFun *visitor, void *arg);
+
+
+/* ----- 8. Global helpers ----- */
 
 /**
  * @brief Run garbage collection on the default heap.
@@ -590,7 +832,7 @@ void	hmProcessInfo(size_t *elapsedMsecs, size_t *userMsecs,
 					  size_t *peakCommit, size_t *pageFaults)
 		_hmAttrNoexcept;
 
-/* ----- Callbacks ----- */
+/* ----- 9. Callbacks ----- */
 
 /**
  * @brief Callback used to emit a textual message.
@@ -634,7 +876,7 @@ _hmDeclExport
 void	hmRegisterDeferredFree(t_hmDeferredFreeFun *fn, void *arg)
 		_hmAttrNoexcept;
 
-/* ----- 42 project ----- */
+/* ----- 10. 42 project ----- */
 
 /**
  * @brief Print the state of all allocated blocks.
@@ -664,7 +906,7 @@ void	show_alloc_mem(void);
 _hmDeclExport
 void	show_alloc_mem_ex(void);
 
-/* ----- Options ----- */
+/* ----- 11. Options ----- */
 
 /**
  * @brief Runtime options of the allocator.
@@ -677,13 +919,20 @@ typedef enum e_hmallocOption {
 	HMALLOC_OPT_SHOW_STATS,
 	HMALLOC_OPT_VERBOSE,
 	HMALLOC_OPT_PURGE_DELAY,
-	HMALLOC_OPT_ARENA_RESERVE,
 	HMALLOC_OPT_PAGE_FULL_RETAIN,
 	HMALLOC_OPT_GUARDED_SAMPLE_RATE,
 	HMALLOC_OPT_PERTURB,
 	HMALLOC_OPT_CHECK,
 	HMALLOC_OPT_TRACE,
 	HMALLOC_OPT_CHECK_LEAKS,
+	HMALLOC_OPT_PAGE_RECLAIM_ON_FREE,			/* -1 off, 0 originating theap only, 1 also cross-thread */
+	HMALLOC_OPT_PAGE_MAX_RECLAIM,				/* max pages per bin when reclaiming into the originating theap (-1: unlimited) */
+	HMALLOC_OPT_PAGE_CROSS_THREAD_MAX_RECLAIM,	/* max pages per bin when reclaiming across threads */
+	HMALLOC_OPT_GENERIC_COLLECT,				/* full theap collect every N generic allocations */
+	HMALLOC_OPT_ARENA_PURGE_MULT,				/* arena purge delay = purge_delay * this */
+	HMALLOC_OPT_ALLOW_THP,						/* 0 disable THP, 1 allow, 2 allow and purge by whole huge pages */
+	HMALLOC_OPT_ARENA_PURGE_MIN_SIZE,			/* minimal purge size in KiB (0: huge page with THP, else OS page) */
+	HMALLOC_OPT_ARENA_PURGE_IMMEDIATE_SIZE,		/* ranges of at least this size (KiB) are purged right away */
 	HMALLOC_OPT_LAST
 } t_hmallocOption;
 
@@ -703,7 +952,16 @@ void	hmOptionSet(t_hmallocOption opt, long value);
 _hmDeclExport
 long	hmOptionGet(t_hmallocOption opt);
 
-/* ----- Statistics ----- */
+/**
+ * @brief Get an option holding a size, in bytes.
+ *
+ * Size options (HMALLOC_OPT_ARENA_PURGE_MIN_SIZE, ...) are stored in KiB;
+ * this returns the value * 1024, saturated, and 0 for negative values.
+ */
+_hmDeclNodiscard _hmDeclExport
+size_t	hmOptionGetSize(t_hmallocOption opt);
+
+/* ----- 12. Statistics ----- */
 
 # if HMALLOC_STATS
 
@@ -785,6 +1043,46 @@ _hmDeclExport
 void	hmStatsMerge(void)
 		_hmAttrNoexcept;
 
+/* ----- Sub-process, heap and theap statistics ----- */
+
+/**
+ * @brief Statistics of a sub-process aggregated with all its heaps.
+ * @return false on a bad header (size/version) or subproc.
+ */
+_hmDeclNodiscard _hmDeclExport
+bool	hmSubprocStatsGet(t_hmSubprocId subprocId, t_hmallocStats *stats)
+		_hmAttrNoexcept;
+
+/**
+ * @brief Send the aggregated statistics of a sub-process to a callback
+ *        (NULL: the default output).
+ */
+_hmDeclExport
+void	hmSubprocStatsPrintOut(t_hmSubprocId subprocId,
+							   t_hmOutputFun *out, void *arg)
+		_hmAttrNoexcept;
+
+/**
+ * @brief Add the statistics of a heap (NULL: main heap) to its
+ *        sub-process and clear them.
+ */
+_hmDeclExport
+void	hmHeapStatsMergeToSubproc(t_hmallocHeap *heap);
+
+/**
+ * @brief Statistics of one theap, not yet merged into its heap.
+ */
+_hmDeclNodiscard _hmDeclExport
+bool	hmTheapStatsGet(t_hmallocTheap *theap, t_hmallocStats *stats)
+		_hmAttrNoexcept;
+
+/**
+ * @brief Add the statistics of a theap to its heap and clear them.
+ */
+_hmDeclExport
+void	hmTheapStatsMergeToHeap(t_hmallocTheap *theap)
+		_hmAttrNoexcept;
+
 # else /* HMALLOC_STATS == 0 */
 
 /*
@@ -809,16 +1107,19 @@ static inline void	hmHeapStatsPrintOut(t_hmallocHeap *h,
 	{ (void)h; (void)out; (void)arg; }
 static inline void	hmStatsReset(void)				{}
 static inline void	hmStatsMerge(void)				{}
+static inline bool	hmSubprocStatsGet(t_hmSubprocId id, t_hmallocStats *s)
+	{ (void)id; (void)s; return (false); }
+static inline void	hmSubprocStatsPrintOut(t_hmSubprocId id,
+										   t_hmOutputFun *out, void *arg)
+	{ (void)id; (void)out; (void)arg; }
+static inline void	hmHeapStatsMergeToSubproc(t_hmallocHeap *h)		{ (void)h; }
+static inline bool	hmTheapStatsGet(t_hmallocTheap *t, t_hmallocStats *s)
+	{ (void)t; (void)s; return (false); }
+static inline void	hmTheapStatsMergeToHeap(t_hmallocTheap *t)		{ (void)t; }
 
 # endif /* HMALLOC_STATS */
 
-/* ----- Profiling ----- */
-
-/*
- * The profiler is an optional, sampling-based instrumented
- * hook. When HMALLOC_PROFILE is 0 the API is still declared
- * so callers can link, but every call is a no-op stub.
- */
+/* ----- 13. Profiling ----- */
 
 /* Forward declaration so the API below is always legal. */
 struct s_hmallocProfiler;

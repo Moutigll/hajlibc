@@ -187,6 +187,59 @@ void	*pvalloc(size_t size);
 void	*reallocarray(void *ptr, size_t count, size_t size);
 
 /**
+ * @brief Resize a block, freeing it if the resize fails (BSD).
+ *
+ * @param ptr  Previously allocated block, or NULL.
+ * @param size New size in bytes.
+ * @return Pointer to the resized block, or NULL (and `ptr` is freed).
+ */
+void	*reallocf(void *ptr, size_t size);
+
+/**
+ * @brief Resize an array in place (NetBSD).
+ *
+ * @param ptrp  Address of the block pointer, updated on success.
+ * @param count Number of elements.
+ * @param size  Size of each element in bytes.
+ * @return 0 on success, or EINVAL / EOVERFLOW / ENOMEM.
+ */
+int		reallocarr(void *ptrp, size_t count, size_t size);
+
+/* ----- C23 sized deallocation ----- */
+
+/**
+ * @brief Release a block whose requested size is known.
+ *
+ * @param ptr  Block to free, or NULL.
+ * @param size Size passed to the allocation function.
+ */
+void	free_sized(void *ptr, size_t size);
+
+/**
+ * @brief Release an aligned block whose alignment and size are known.
+ *
+ * @param ptr       Block to free, or NULL.
+ * @param alignment Alignment passed to aligned_alloc().
+ * @param size      Size passed to aligned_alloc().
+ */
+void	free_aligned_sized(void *ptr, size_t alignment, size_t size);
+
+/* ----- Paths ----- */
+
+/**
+ * @brief Resolve a path to its canonical absolute form.
+ *
+ * Follows every symbolic link and removes ".", ".." and repeated slashes.
+ * All the components must exist.
+ *
+ * @param path     The path to resolve.
+ * @param resolved Destination buffer of PATH_MAX bytes, or NULL to get a
+ *                 buffer allocated with malloc().
+ * @return `resolved` (or the allocated buffer), or NULL with errno set.
+ */
+char	*realpath(const char *restrict path, char *restrict resolved);
+
+/**
  * @brief Sort an array using the pattern-defeating quicksort algorithm.
  *
  * @param base  Pointer to the first element of the array.

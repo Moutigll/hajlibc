@@ -384,6 +384,25 @@ char	*strsep(char **__HAJ_RESTRICT stringp, const char *__HAJ_RESTRICT delim);
  */
 char *strerror(int errnum);
 
+/* ----- Duplication (POSIX) ----- */
+
+/**
+ * @brief Duplicate a string; the copy must be released with free().
+ *
+ * @param s The string to duplicate.
+ * @return The copy, or NULL on allocation failure.
+ */
+char	*strdup(const char *s);
+
+/**
+ * @brief Duplicate at most `n` characters of a string (always terminated).
+ *
+ * @param s The string to duplicate.
+ * @param n Maximum number of characters to copy.
+ * @return The copy, or NULL on allocation failure.
+ */
+char	*strndup(const char *s, size_t n);
+
 /**
  * @brief The strerror_r function.
  *

@@ -195,6 +195,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `nonnull` pointers
 - Unaligned, aliasing scalar types (`__hajMemU64_t`, `__hajMemU32_t`,
   `__hajMemU16_t`) in `<bits/types.h>`
+- `realpath` (symlinks, `.` / `..`, `SYMLOOP_MAX` 40)
+- `<stdlib.h>` declares `reallocf`, `reallocarr`, C23 `free_sized` /
+  `free_aligned_sized` and `realpath`; `<string.h>` declares
+  `strdup` / `strndup`
+- `<malloc.h>`: `malloc_size`, `malloc_good_size`, `cfree`, `vfree`,
+  `_aligned_malloc`; subproc / heap / theap API (`hmSubprocMain`,
+  `hmHeapMain`, `hmHeapOf`, `hmHeapContains`, `hmHeapVisitBlocks`...);
+  per-subproc and per-theap stats
 
 ### Changed
 
@@ -248,8 +256,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wake syscall when nobody waits
 - Mutexes read the caller's TID from the TCB instead of calling
   `gettid(2)`; the startup code caches the main thread's TID
+- Stats are built from `HMALLOC_STAT_FIELDS()` with
+  `t_hmallocStatCount` / `t_hmallocStatCounter`
+  (`HMALLOC_STATS_VERSION` 1 → 2)
 
 ### Fixed
+
+- `strstr` missed matches past the first ~512 bytes of the haystack
 
 - New threads get a full TLS area (`.tdata` copied, `.tbss` zeroed)
   built like the main thread's, instead of a bare TCB

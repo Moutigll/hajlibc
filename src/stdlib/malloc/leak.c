@@ -503,8 +503,13 @@ static size_t collectLive(t_lkLive *out, size_t cap)
 	size_t	n = 0;
 	int		cat;
 
+	hmallocLockAcquire(&g_hmallocTs.lock);
 	for (cat = 0; cat < 3; cat++) {
-		for (t_hmallocArena *a = g_hmalloc.arenas[cat]; a != NULL; a = a->next) {
+		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
+		size_t			nArenas = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
+
+		for (size_t ai = 0; ai < nArenas; ai++) {
+			t_hmallocArena *a = arenas[ai];
 			uintptr_t start = (uintptr_t)a->start;
 			uintptr_t lastPageStart = 0;
 
@@ -555,6 +560,7 @@ static size_t collectLive(t_lkLive *out, size_t cap)
 			}
 		}
 	}
+	hmallocLockRelease(&g_hmallocTs.lock);
 	qsort(out, n, sizeof(*out), cmpPtr);
 	return (n);
 }
@@ -827,14 +833,20 @@ void hmReportLeaks(void)
 
 	cap = 1024;
 	hmallocLockAcquire(&g_hmallocTs.lock);
-	for (int cat = 0; cat < 3; cat++)
-		for (t_hmallocArena *a = g_hmalloc.arenas[cat]; a != NULL; a = a->next)
+	for (int cat = 0; cat < 3; cat++) {
+		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
+		size_t			nArenas = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
+
+		for (size_t ai = 0; ai < nArenas; ai++) {
+			t_hmallocArena *a = arenas[ai];
 			for (size_t i = 0; i < a->sliceCount; i++) {
 				uintptr_t		addr	= (uintptr_t)a->start + (i << HMALLOC_SLICE_SHIFT);
 				t_hmallocPage	*p		= hmallocPageMapGet((void *)addr);
 				if (p != NULL && p->capacity > 0)
 					cap += p->capacity;
 			}
+		}
+	}
 	hmallocLockRelease(&g_hmallocTs.lock);
 
 	{

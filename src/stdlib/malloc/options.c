@@ -10,7 +10,7 @@
  * @file options.c
  * @brief Option parsing for the hajlibc allocator.
  * @Created: 2026/10/19 10:48:42 by Moutig
- * @Updated: 2026/10/29 08:57:23 by Moutig
+ * @Updated: 2026/11/08 03:39:28 by Moutig
  *
  * The allocator supports a small set of options that can be set
  * via environment variables or programmatically. The options are
@@ -62,16 +62,29 @@ static const t_hmOptionDef	g_optionDefs[] = {
 	{ HMALLOC_OPT_SHOW_ERRORS,			"HMALLOC_SHOW_ERRORS",			0 },
 	{ HMALLOC_OPT_SHOW_STATS,			"HMALLOC_SHOW_STATS",			0 },
 	{ HMALLOC_OPT_VERBOSE,				"HMALLOC_VERBOSE",				0 },
-	{ HMALLOC_OPT_PURGE_DELAY,			"HMALLOC_PURGE_DELAY",			0 },
-	{ HMALLOC_OPT_ARENA_RESERVE,		"HMALLOC_ARENA_RESERVE",		0 },
-	{ HMALLOC_OPT_PAGE_FULL_RETAIN,	"HMALLOC_PAGE_FULL_RETAIN",	0 },
+	{ HMALLOC_OPT_PURGE_DELAY,			"HMALLOC_PURGE_DELAY",			1000 },
+	{ HMALLOC_OPT_PAGE_FULL_RETAIN,	"HMALLOC_PAGE_FULL_RETAIN",	2 },
 	{ HMALLOC_OPT_GUARDED_SAMPLE_RATE,	"HMALLOC_GUARDED_SAMPLE_RATE",	0 },
 	{ HMALLOC_OPT_PERTURB,				"HMALLOC_PERTURB",				0 },
 	{ HMALLOC_OPT_CHECK,				"HMALLOC_CHECK",				0 },
 	{ HMALLOC_OPT_CHECK_LEAKS,			"HMALLOC_CHECK_LEAKS",			0 },
+	{ HMALLOC_OPT_PAGE_RECLAIM_ON_FREE,	"HMALLOC_PAGE_RECLAIM_ON_FREE",	0 },
+	{ HMALLOC_OPT_PAGE_MAX_RECLAIM,		"HMALLOC_PAGE_MAX_RECLAIM",		-1 },
+	{ HMALLOC_OPT_PAGE_CROSS_THREAD_MAX_RECLAIM,
+		"HMALLOC_PAGE_CROSS_THREAD_MAX_RECLAIM",						32 },
+	{ HMALLOC_OPT_GENERIC_COLLECT,		"HMALLOC_GENERIC_COLLECT",		10000 },
+	{ HMALLOC_OPT_ARENA_PURGE_MULT,		"HMALLOC_ARENA_PURGE_MULT",		4 },
+	{ HMALLOC_OPT_ALLOW_THP,			"HMALLOC_ALLOW_THP",			2 },
+	{ HMALLOC_OPT_ARENA_PURGE_MIN_SIZE,	"HMALLOC_ARENA_PURGE_MIN_SIZE",	0 },
+	/* 8 * HMALLOC_LARGE_PAGE_SIZE = 32 MiB, in KiB */
+	{ HMALLOC_OPT_ARENA_PURGE_IMMEDIATE_SIZE,
+		"HMALLOC_ARENA_PURGE_IMMEDIATE_SIZE",						32768 },
 };
 
 #define HMOPT_DEF_COUNT	(sizeof(g_optionDefs) / sizeof(g_optionDefs[0]))
+
+_Static_assert(HMALLOC_OPT_LAST <= HMALLOC_OPTIONS_MAX,
+	"HMALLOC_OPTIONS_MAX too small for t_hmallocOption");
 
 /**
  * @brief Check if a character is a whitespace character.
@@ -216,37 +229,6 @@ void	_hmallocOptionsInit(void)
 	}
 }
 
-void	_hmallocOptionsPostInit(void)
-{
-	long	v;
-	size_t	limit;
-
-	v = hmOptLoad(HMALLOC_OPT_ARENA_RESERVE);
-	if (v <= 0)
-		return;
-
-	limit = g_hmalloc.addrLimit;
-	if (limit == 0 || limit == SIZE_MAX)
-		return;
-
-	/*
-	 * If the arena reserve is greater than 1/16th of the address limit,
-	 * reduce it to 1/16th of the address limit.
-	 */
-	{
-		size_t	bytes = (size_t)v * 1024;
-		size_t	cap = limit / 16;
-
-		if (bytes > cap) {
-			long	kv = (long)(cap / 1024);
-
-			if (kv < 1)
-				kv = 1;
-			hmOptStore(HMALLOC_OPT_ARENA_RESERVE, kv);
-		}
-	}
-}
-
 void	hmOptionSet(t_hmallocOption opt, long value)
 {
 	if ((int)opt < 0 || opt >= HMALLOC_OPT_LAST)
@@ -259,4 +241,13 @@ long	hmOptionGet(t_hmallocOption opt)
 	if ((int)opt < 0 || opt >= HMALLOC_OPT_LAST)
 		return (0);
 	return (hmOptLoad(opt));
+}
+
+size_t	hmOptionGetSize(t_hmallocOption opt)
+{
+	const long	x = hmOptionGet(opt);
+	size_t		size = (x < 0) ? 0 : (size_t)x;
+
+	/* Size options are kept in KiB. */
+	return ((size > SIZE_MAX / 1024u) ? SIZE_MAX : size * 1024u);
 }

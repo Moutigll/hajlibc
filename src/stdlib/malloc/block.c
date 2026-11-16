@@ -10,7 +10,7 @@
  * @file block.c
  * @brief Block management for the hajlibc allocator.
  * @Created: 2026/10/19 10:48:30 by Moutig
- * @Updated: 2026/10/29 12:13:54 by Moutig
+ * @Updated: 2026/11/16 19:20:57 by Moutig
  *
  * This file implements the block management for the hajlibc allocator.
  * It provides functions for splitting, coalescing, and managing blocks
@@ -39,6 +39,7 @@
 
 #include "include/hmPrivate.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -200,6 +201,13 @@ t_hmallocBlock	*hmallocBlockStart(const t_hmallocPage *page, const void *user)
 	return ((t_hmallocBlock *)(start + offset * page->blockSize));
 }
 
+/*
+ * Extend by at most this many bytes of blocks at a time: touching one or
+ * two OS pages keeps RSS low on pages that are only partially used.
+ */
+#define HMALLOC_MAX_EXTEND_SIZE	(8u * 1024u)
+#define HMALLOC_MIN_EXTEND		1u
+
 void	hmallocBlockSplit(t_hmallocPage *page, size_t size)
 {
 	t_hmallocBlock	*base;
@@ -212,14 +220,16 @@ void	hmallocBlockSplit(t_hmallocPage *page, size_t size)
 	if (page == NULL || size == 0)
 		return;
 	hmallocAssert(page->blockSize == size);
+	if (page->free != NULL)
+		return;
 	if (page->capacity >= page->reserved)
 		return;
 
-	maxExt = (page->blockSize >= 4096) ? 1U : (4096U / page->blockSize);
-	if (maxExt < 4U)
-		maxExt = 4U;
-	if (maxExt > page->reserved)
-		maxExt = page->reserved;
+	maxExt = (page->blockSize >= HMALLOC_MAX_EXTEND_SIZE)
+		? HMALLOC_MIN_EXTEND
+		: HMALLOC_MAX_EXTEND_SIZE / page->blockSize;
+	if (maxExt < HMALLOC_MIN_EXTEND)
+		maxExt = HMALLOC_MIN_EXTEND;
 
 	ext = hmallocMin(page->reserved - page->capacity, maxExt);
 	if (ext == 0)
@@ -238,62 +248,139 @@ void	hmallocBlockSplit(t_hmallocPage *page, size_t size)
 	}
 	page->free = base;
 	page->capacity += (uint16_t)ext;
+	hmStatsTheapCounter(page->theap, pagesExtended, 1);
+}
+
+/**
+ * @brief Coalesce the thread-free list into the local free list.
+ *
+ * This function collects the blocks from the thread-free list and appends
+ * them to the local free list of the page. It ensures that the number of
+ * blocks collected does not exceed the page's capacity and updates the
+ * used count accordingly.
+ *
+ * @param page The page containing the block.
+ * @param head The head of the thread-free list to coalesce.
+ */
+static void	hmallocPageThreadCollectToLocal(t_hmallocPage *page, t_hmallocBlock *head)
+{
+	size_t			maxCount;
+	size_t			count;
+	t_hmallocBlock	*last;
+	t_hmallocBlock	*next;
+
+	if (head == NULL)
+		return;
+
+	maxCount = page->capacity;
+	count = 1;
+	last = head;
+	while ((next = hmallocBlockNext(page, last)) != NULL && count <= maxCount) {
+		count++;
+		last = next;
+	}
+
+	if (hmUnlikely(count > maxCount)) {
+		_hmallocErrorMessage(EFAULT, "corrupted thread-free list "
+			"(possibly due to a cross-thread double free)\n");
+		return;
+	}
+	if (hmUnlikely(count > page->used)) {
+		_hmallocErrorMessage(EFAULT, "corrupted meta-data in thread-free list\n");
+		return;
+	}
+
+	hmallocBlockSetNext(page, last, page->localFree);
+	page->localFree = head;
+	page->used -= (uint16_t)count;
+}
+
+/**
+ * @brief Retire a page if it is empty.
+ *
+ * This function checks if the specified page is empty (i.e., all blocks
+ * are free) and retires it if so. It updates the page's metadata and
+ * returns true if the page was retired, false otherwise.
+ *
+ * @param th The thread-local data.
+ * @param bin The bin index for the page.
+ * @param page The page to check and potentially retire.
+ * @return true if the page was retired, false otherwise.
+ */
+static bool	hmallocPageThreadFreeCollect(t_hmallocPage *page)
+{
+	uintptr_t		tfree;
+	uintptr_t		tfreex;
+	t_hmallocBlock	*head;
+
+	tfree = atomic_load_explicit(&page->xthreadFree, memory_order_relaxed);
+	do {
+		head = (t_hmallocBlock *)(tfree & ~(uintptr_t)HMALLOC_XTHREAD_OWNED);
+		if (hmLikely(head == NULL))
+			return (false);
+		tfreex = tfree & (uintptr_t)HMALLOC_XTHREAD_OWNED;
+	} while (!atomic_compare_exchange_weak_explicit(&page->xthreadFree,
+				&tfree, tfreex, memory_order_acq_rel, memory_order_relaxed));
+
+	hmallocPageThreadCollectToLocal(page, head);
+	return (true);
+}
+
+bool	hmallocPageFreeCollect(t_hmallocPage *page, bool force)
+{
+	bool			collected;
+	t_hmallocBlock	*tail;
+	t_hmallocBlock	*next;
+
+	collected = hmallocPageThreadFreeCollect(page);
+
+	if (page->localFree != NULL) {
+		if (hmLikely(page->free == NULL)) {
+			page->free = page->localFree;
+			page->localFree = NULL;
+			page->freeIsZero = false;
+		}
+		else if (force) {
+			/* Append: linear, so only done when forced (shutdown). */
+			tail = page->localFree;
+			while ((next = hmallocBlockNext(page, tail)) != NULL)
+				tail = next;
+			hmallocBlockSetNext(page, tail, page->free);
+			page->free = page->localFree;
+			page->localFree = NULL;
+			page->freeIsZero = false;
+		}
+	}
+	return (collected);
+}
+
+t_hmallocBlock	*hmallocPageFreeCollectPartly(t_hmallocPage *page, t_hmallocBlock *head)
+{
+	t_hmallocBlock	*next;
+
+	if (head == NULL)
+		return (NULL);
+	next = hmallocBlockNext(page, head);
+	if (next != NULL) {
+		hmallocBlockSetNext(page, head, NULL);
+		hmallocPageThreadCollectToLocal(page, next);
+		if (page->localFree != NULL && page->free == NULL) {
+			page->free = page->localFree;
+			page->localFree = NULL;
+			page->freeIsZero = false;
+		}
+	}
+	if (page->used == 1) {
+		/* Only `head` is left: collect it too, the page becomes empty. */
+		hmallocPageFreeCollect(page, false);
+		return (NULL);
+	}
+	return (head);
 }
 
 void	hmallocBlockCoalesce(t_hmallocPage *page)
 {
-	uintptr_t		old;
-	t_hmallocBlock	*head;
-	t_hmallocBlock	*tail;
-	t_hmallocBlock	*next;
-	size_t			count;
-
 	if (page == NULL)
 		return;
-
-	old = atomic_load_explicit(&page->xthreadFree, memory_order_relaxed);
-	if ((old & ~(uintptr_t)HMALLOC_XTHREAD_OWNED) != 0) {
-		uintptr_t	newv;
-
-		do {
-			newv = old & (uintptr_t)HMALLOC_XTHREAD_OWNED;
-		} while (!atomic_compare_exchange_weak_explicit(
-					&page->xthreadFree, &old, newv,
-					memory_order_acq_rel, memory_order_relaxed));
-
-		/* If the remote free list was not empty, merge it into the local free list. */
-		head = (t_hmallocBlock *)(old & ~(uintptr_t)HMALLOC_XTHREAD_OWNED);
-		if (head != NULL) {
-			count = 0;
-			tail = head;
-			/* Count the number of blocks in the remote free list. */
-			while (tail != NULL && count <= page->capacity) {
-				count++;
-				next = hmallocBlockNext(page, tail);
-				if (next == NULL)
-					break;
-				tail = next;
-			}
-			/* Merge the remote free list into the local free list. */
-			if (tail != NULL) {
-				hmallocBlockSetNext(page, tail, page->localFree);
-				page->localFree = head;
-				if (count <= page->used)
-					page->used -= (uint16_t)count;
-				else
-					page->used = 0;
-			}
-		}
-	}
-
-	/* If the local free list is not empty and the main free list is empty,
-	 * move the local free list to the main free list. This avoids
-	 * unnecessary contention on the main free list when the page is
-	 * being used by a single thread.
-	 */
-	if (page->localFree != NULL && page->free == NULL) {
-		page->free = page->localFree;
-		page->localFree = NULL;
-		page->freeIsZero = false;
-	}
+	(void)hmallocPageFreeCollect(page, false);
 }

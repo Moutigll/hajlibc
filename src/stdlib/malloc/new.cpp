@@ -8,23 +8,25 @@
 
 /**
  * @file new.cpp
- * @brief Override the global operator new and delete to use hmalloc.
+ * @brief C++ operator new / delete implemented with hmalloc.
  * @Created: 2026/10/06 11:55:05 by Moutig
- * @Updated: 2026/10/06 11:55:05 by Moutig
+ * @Updated: 2026/11/10 12:00:00 by Moutig
  *
- * This file overrides the global operator new and operator
- * delete so that C++ code linked against hajlibc uses the
- * hmalloc allocator for every allocation.
+ * The complete set of replaceable global allocation operators:
  *
- * The overrides are compiled only when __cplusplus is defined,
- * so the file can sit in the normal source list without
- * affecting C builds. They are part of the public ABI: any C++
- * program that links against hajlibc's libc will call these.
+ *   new / new[]                      (throwing and nothrow)
+ *   delete / delete[]                (plain and nothrow)
+ *   sized delete                     (C++14)
+ *   aligned new, nothrow aligned new (C++17)
+ *   aligned, sized aligned and nothrow aligned delete (C++17)
  *
- * The declaration of the operators is in the header
- * <hmalloc.h>, under the `__cplusplus` guard, with the same
- * noexcept and alignment semantics. This file only provides
- * their definitions.
+ * Compiled as C++, operator new calls the new handler and throws
+ * std::bad_alloc on failure, as the standard requires.
+ *
+ * The allocator library itself (newdelete.c) already defines these
+ * operators from C through their mangled names. Compile this file only
+ * in a build where that is disabled (HMALLOC_OVERRIDE_CXX=0), otherwise
+ * the symbols are defined twice.
  */
 
 #include "../../../include/malloc.h"
@@ -34,191 +36,102 @@
 # include <new>
 # include <cstddef>
 
-/* ----- Plain new / delete ----- */
+/* ----- Allocation with the new handler ----- */
 
-/**
- * @brief Allocate memory for a single object.
- *
- * @param n Number of bytes to allocate.
- * @return Pointer to the allocated block.
- * @throws std::bad_alloc if the allocation fails.
+/*
+ * Retry with the new handler until the allocation succeeds; without a
+ * handler, throw std::bad_alloc.
  */
-void	*operator new(std::size_t n)
+static void	*hmallocCxxNew(std::size_t n)
 {
-	void	*p = hmalloc(n);
+	for (;;) {
+		void *p = hmalloc(n);
 
-	if (p == NULL)
-		throw std::bad_alloc();
-	return (p);
+		if (p != NULL)
+			return (p);
+		std::new_handler h = std::get_new_handler();
+		if (h == NULL)
+			throw std::bad_alloc();
+		h();
+	}
 }
 
-/**
- * @brief Allocate memory for an array of objects.
- *
- * @param n Number of bytes to allocate.
- * @return Pointer to the allocated block.
- * @throws std::bad_alloc if the allocation fails.
- */
-void	*operator new[](std::size_t n)
+static void	*hmallocCxxNewNothrow(std::size_t n) noexcept
 {
-	void	*p = hmalloc(n);
-
-	if (p == NULL)
-		throw std::bad_alloc();
-	return (p);
+	try {
+		return (hmallocCxxNew(n));
+	} catch (...) {
+		return (NULL);
+	}
 }
 
-/**
- * @brief Allocate memory for a single object without throwing.
- *
- * @param n Number of bytes to allocate.
- * @return Pointer to the allocated block, or NULL on failure.
- */
-void	*operator new(std::size_t n, const std::nothrow_t&) noexcept
-{
-	return (hmalloc(n));
-}
+/* ----- new / delete ----- */
 
-/**
- * @brief Allocate memory for an array without throwing.
- *
- * @param n Number of bytes to allocate.
- * @return Pointer to the allocated block, or NULL on failure.
- */
-void	*operator new[](std::size_t n, const std::nothrow_t&) noexcept
-{
-	return (hmalloc(n));
-}
+void	*operator new(std::size_t n)							{ return (hmallocCxxNew(n)); }
+void	*operator new[](std::size_t n)							{ return (hmallocCxxNew(n)); }
+void	*operator new(std::size_t n, const std::nothrow_t &) noexcept	{ return (hmallocCxxNewNothrow(n)); }
+void	*operator new[](std::size_t n, const std::nothrow_t &) noexcept	{ return (hmallocCxxNewNothrow(n)); }
 
-/**
- * @brief Release memory allocated by operator new.
- *
- * @param p Block to release, or NULL.
- */
-void	operator delete(void *p) noexcept
-{
-	hfree(p);
-}
-
-/**
- * @brief Release memory allocated by operator new[].
- *
- * @param p Block to release, or NULL.
- */
-void	operator delete[](void *p) noexcept
-{
-	hfree(p);
-}
-
-/**
- * @brief Release memory allocated by the nothrow new.
- *
- * @param p Block to release, or NULL.
- */
-void	operator delete(void *p, const std::nothrow_t&) noexcept
-{
-	hfree(p);
-}
-
-/**
- * @brief Release memory allocated by the nothrow new[].
- *
- * @param p Block to release, or NULL.
- */
-void	operator delete[](void *p, const std::nothrow_t&) noexcept
-{
-	hfree(p);
-}
+void	operator delete(void *p) noexcept								{ hfree(p); }
+void	operator delete[](void *p) noexcept							{ hfree(p); }
+void	operator delete(void *p, const std::nothrow_t &) noexcept		{ hfree(p); }
+void	operator delete[](void *p, const std::nothrow_t &) noexcept	{ hfree(p); }
 
 /* ----- Sized delete (C++14) ----- */
 
 # if __cplusplus >= 201402L
-
-/**
- * @brief Release memory, using the size stored by the compiler.
- *
- * @param p Block to release, or NULL.
- * @param n Size originally requested.
- */
-void	operator delete(void *p, std::size_t n) noexcept
-{
-	hfreeSize(p, n);
-}
-
-/**
- * @brief Release an array, using the size stored by the compiler.
- *
- * @param p Block to release, or NULL.
- * @param n Size originally requested.
- */
-void	operator delete[](void *p, std::size_t n) noexcept
-{
-	hfreeSize(p, n);
-}
-
-# endif /* C++14 */
+void	operator delete(void *p, std::size_t n) noexcept				{ hfreeSize(p, n); }
+void	operator delete[](void *p, std::size_t n) noexcept			{ hfreeSize(p, n); }
+# endif
 
 /* ----- Aligned new / delete (C++17) ----- */
 
 # if __cplusplus > 201402L && defined(__cpp_aligned_new)
 
-/**
- * @brief Allocate memory with an explicit alignment.
- *
- * @param n Number of bytes to allocate.
- * @param a Required alignment.
- * @return Pointer to the allocated block.
- * @throws std::bad_alloc if the allocation fails.
- */
-void	*operator new(std::size_t n, std::align_val_t a)
+static void	*hmallocCxxNewAligned(std::size_t n, std::size_t al)
 {
-	void	*p = hmallocAligned(n, (std::size_t)a);
+	for (;;) {
+		void *p = hmallocAligned(n, al);
 
-	if (p == NULL)
-		throw std::bad_alloc();
-	return (p);
+		if (p != NULL)
+			return (p);
+		std::new_handler h = std::get_new_handler();
+		if (h == NULL)
+			throw std::bad_alloc();
+		h();
+	}
 }
 
-/**
- * @brief Allocate an array with an explicit alignment.
- *
- * @param n Number of bytes to allocate.
- * @param a Required alignment.
- * @return Pointer to the allocated block.
- * @throws std::bad_alloc if the allocation fails.
- */
-void	*operator new[](std::size_t n, std::align_val_t a)
+static void	*hmallocCxxNewAlignedNothrow(std::size_t n, std::size_t al) noexcept
 {
-	void	*p = hmallocAligned(n, (std::size_t)a);
-
-	if (p == NULL)
-		throw std::bad_alloc();
-	return (p);
+	try {
+		return (hmallocCxxNewAligned(n, al));
+	} catch (...) {
+		return (NULL);
+	}
 }
 
-/**
- * @brief Release an aligned block.
- *
- * @param p Block to release, or NULL.
- * @param a Alignment used at allocation time.
- */
-void	operator delete(void *p, std::align_val_t a) noexcept
-{
-	(void)a;
-	hfree(p);
-}
+void	*operator new(std::size_t n, std::align_val_t al)
+	{ return (hmallocCxxNewAligned(n, static_cast<std::size_t>(al))); }
+void	*operator new[](std::size_t n, std::align_val_t al)
+	{ return (hmallocCxxNewAligned(n, static_cast<std::size_t>(al))); }
+void	*operator new(std::size_t n, std::align_val_t al, const std::nothrow_t &) noexcept
+	{ return (hmallocCxxNewAlignedNothrow(n, static_cast<std::size_t>(al))); }
+void	*operator new[](std::size_t n, std::align_val_t al, const std::nothrow_t &) noexcept
+	{ return (hmallocCxxNewAlignedNothrow(n, static_cast<std::size_t>(al))); }
 
-/**
- * @brief Release an aligned array.
- *
- * @param p Block to release, or NULL.
- * @param a Alignment used at allocation time.
- */
-void	operator delete[](void *p, std::align_val_t a) noexcept
-{
-	(void)a;
-	hfree(p);
-}
+void	operator delete(void *p, std::align_val_t al) noexcept
+	{ (void)al; hfree(p); }
+void	operator delete[](void *p, std::align_val_t al) noexcept
+	{ (void)al; hfree(p); }
+void	operator delete(void *p, std::size_t n, std::align_val_t al) noexcept
+	{ (void)n; (void)al; hfree(p); }
+void	operator delete[](void *p, std::size_t n, std::align_val_t al) noexcept
+	{ (void)n; (void)al; hfree(p); }
+void	operator delete(void *p, std::align_val_t al, const std::nothrow_t &) noexcept
+	{ (void)al; hfree(p); }
+void	operator delete[](void *p, std::align_val_t al, const std::nothrow_t &) noexcept
+	{ (void)al; hfree(p); }
 
 # endif /* C++17 */
 

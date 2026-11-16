@@ -8,15 +8,24 @@
 
 /**
  * @file malloc.c
- * @brief Public heap API, and libc symbols for LD_PRELOAD.
+ * @brief Standard C allocation functions and the extended hmalloc API.
  * @Created: 2026/10/06 14:56:09 by Moutig
- * @Updated: 2026/10/20 14:46:52 by Moutig
+ * @Updated: 2026/11/10 12:00:00 by Moutig
  *
- * This file implements the public heap API for the hajlibc allocator,
- * including functions for allocating, freeing, and reallocating memory.
- * It also provides the standard libc symbols for `malloc`, `free`, `realloc`,
- * and `calloc`, allowing the allocator to be used as a drop-in replacement
- * for the standard memory allocation functions.
+ * Sections:
+ *   - C standard           malloc calloc realloc free aligned_alloc
+ *                          free_sized free_aligned_sized
+ *   - h* aliases           hmalloc hcalloc hrealloc hfree hfreeSize
+ *   - legacy               cfree vfree
+ *   - glibc entry points   __libc_malloc __libc_calloc __libc_realloc
+ *                          __libc_free __libc_cfree (LD_PRELOAD build)
+ *   - extended API         hzalloc hmallocn hmallocAligned husableSize
+ *                          hgoodSize hexpand
+ *   - heap helpers         hmHeapMalloc hmCollect hmIsRedirected
+ *
+ * The h* names are kept as aliases (no extra call) of the standard
+ * functions. POSIX/BSD/GNU functions are in posix.c, the C++ operators in
+ * newdelete.c, strdup/strndup in src/string and realpath in src/stdlib.
  */
 
 #include "include/hmPrivate.h"
@@ -27,62 +36,14 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* ----- C standard ----- */
 
-/**
- * @brief Check for multiplication overflow when calculating total size.
- *
- * This function checks if the multiplication of `count` and `size` would
- * overflow, and if not, calculates the total size and stores it in `total`.
- *
- * @param count Number of elements.
- * @param size Size of each element.
- * @param total Pointer to store the total size.
- * @return true if overflow occurred, false otherwise.
- */
-static __HAJ_INLINE bool	hmallocCountSizeOverflow(size_t count, size_t size, size_t *total)
-{
-	if (count == 1) {
-		*total = size;
-		return (false);
-	}
-	if (hmLikely(!__builtin_mul_overflow(count, size, total)))
-		return (false);
-	*total = SIZE_MAX;
-	return (true);
-}
-
-/**
- * @brief Check if a number is a strict power of two.
- * @param x The number to check.
- * @return true if x is a strict power of two, false otherwise.
- */
-static __HAJ_INLINE bool hmIsPow2Strict(size_t x)
-{
-	return (x != 0 && (x & (x - 1)) == 0);
-}
-
-/**
- * @brief Align a value up to the nearest multiple of a given alignment.
- * @param v The value to align.
- * @param a The alignment (must be a power of two).
- * @return The aligned value.
- */
-static __HAJ_INLINE size_t hmAlignUp(size_t v, size_t a)
-{
-	return ((v + a - 1) & ~(a - 1));
-}
-
-void	*hmalloc(size_t size)
+_hmDeclExport void	*malloc(size_t size)
 {
 	return (hmallocAllocInternal(size));
 }
 
-void	hfree(void *ptr)
-{
-	hmallocFreeInternal(ptr);
-}
-
-void	*hcalloc(size_t count, size_t size)
+_hmDeclExport void	*calloc(size_t count, size_t size)
 {
 	size_t	total;
 	void	*p;
@@ -95,16 +56,24 @@ void	*hcalloc(size_t count, size_t size)
 	if (p == NULL)
 		return (NULL);
 
+	/*
+	 * Taking a block does not change page->freeIsZero, so the flag still
+	 * tells whether the block was zero before the allocation. A zero
+	 * block only holds its free-list link in the first word; the bytes
+	 * past `total` belong to the padding, which must not be touched.
+	 */
 	{
 		t_hmallocPage *page = hmallocPageMapGet(p);
-		if (page != NULL && page->freeIsZero)
+		if (page != NULL && page->freeIsZero) {
+			memset(p, 0, (total < sizeof(void *)) ? total : sizeof(void *));
 			return (p);
+		}
 	}
 	memset(p, 0, total);
 	return (p);
 }
 
-void	*hrealloc(void *ptr, size_t newsize)
+_hmDeclExport void	*realloc(void *ptr, size_t newsize)
 {
 	t_hmallocPage	*page;
 	t_hmallocBlock	*real;
@@ -124,12 +93,14 @@ void	*hrealloc(void *ptr, size_t newsize)
 	page = hmallocPageMapGet(ptr);
 	if (page == NULL) {
 		errno = EINVAL;
+		_hmallocErrorMessage(EINVAL, "realloc(): invalid pointer\n");
 		return (NULL);
 	}
 
 	real = hmallocBlockStart(page, ptr);
 	if (real == NULL) {
 		errno = EINVAL;
+		_hmallocErrorMessage(EINVAL, "realloc(): invalid pointer\n");
 		return (NULL);
 	}
 
@@ -144,13 +115,14 @@ void	*hrealloc(void *ptr, size_t newsize)
 	if (off == 0) {
 		avail = hmMaybePadGet(page, ptr);
 		if (newsize <= usable && newsize >= usable / 4) {
-			hmMaybePadSet(page, ptr, newsize);
+			hmMaybePadSet(page, real, newsize);
 			return (ptr);
 		}
 	} else {
 		avail = (off < usable) ? usable - off : 0;
 		if (newsize <= avail && newsize >= avail / 4) {
-			hmMaybePadSet(page, ptr, newsize);
+			/* Interior pointer: the requested end is real + off + newsize. */
+			hmMaybePadSet(page, real, off + newsize);
 			return (ptr);
 		}
 	}
@@ -160,15 +132,6 @@ void	*hrealloc(void *ptr, size_t newsize)
 	 * We check if the new size can fit in the same bin. If it can, we can reuse the page.
 	 * Otherwise, we allocate a new block and copy the data.
 	 */
-	if (newsize > usable && page->capacity < page->reserved) {
-		size_t newBin = hmallocBinOf(newsize + HMALLOC_PADDING_SIZE);
-		size_t curBin = hmallocBinOf(page->blockSize);
-		if (newBin == curBin) {
-			/* We can reuse the same page. */
-			(void)0;
-		}
-	}
-
 	q = hmallocAllocInternal(newsize);
 	if (q == NULL)
 		return (NULL);
@@ -176,6 +139,101 @@ void	*hrealloc(void *ptr, size_t newsize)
 	memcpy(q, ptr, (newsize < avail) ? newsize : avail);
 	hmallocFreeInternal(ptr);
 	return (q);
+}
+
+_hmDeclExport void	free(void *ptr)
+{
+	hmallocFreeInternal(ptr);
+}
+
+/*
+ * C11. As in mimalloc and glibc, `size` is not required to be a multiple
+ * of `alignment`.
+ */
+_hmDeclExport void	*aligned_alloc(size_t alignment, size_t size)
+{
+	return (hmallocAligned(size, alignment));
+}
+
+/* C23: free a block whose requested size is known. */
+_hmDeclExport void	free_sized(void *p, size_t size)
+{
+#if HMALLOC_CHECK
+	if (p != NULL) {
+		size_t	usable = husableSize(p);
+		if (usable == 0)
+			return;
+		if (size > usable) {
+			errno = EINVAL;
+			_hmallocErrorMessage(EINVAL,
+				"freeSize(): size larger than block\n");
+		}
+	}
+	free(p);
+#else
+	/* As mimalloc's sized free: small blocks are found by masking the pointer. */
+	if (size <= HMALLOC_SMALL_SIZE_MAX)
+		hmallocFreeSmallInternal(p);
+	else
+		free(p);
+#endif
+}
+
+/*
+ * C23: free an aligned block of known size. An aligned block is carved out
+ * of a larger allocation (size + alignment), which may not live in a small
+ * page, so the sized fast path cannot be used: plain free, as mimalloc.
+ */
+_hmDeclExport void	free_aligned_sized(void *p, size_t alignment, size_t size)
+{
+	(void)alignment;
+	(void)size;
+	free(p);
+}
+
+/* ----- h* aliases of the standard functions ----- */
+
+_hmDeclExport void	*hmalloc(size_t size)					HM_FORWARD1(malloc, size)
+_hmDeclExport void	*hcalloc(size_t count, size_t size)		HM_FORWARD2(calloc, count, size)
+_hmDeclExport void	*hrealloc(void *p, size_t newsize)		HM_FORWARD2(realloc, p, newsize)
+_hmDeclExport void	hfree(void *p)							HM_FORWARD0(free, p)
+_hmDeclExport void	hfreeSize(void *p, size_t size)			HM_FORWARD02(free_sized, p, size)
+
+/* ----- Legacy ----- */
+
+_hmDeclExport void	cfree(void *p)							HM_FORWARD0(free, p)
+_hmDeclExport void	vfree(void *p)							HM_FORWARD0(free, p)
+
+/* ----- glibc internal entry points (LD_PRELOAD build) ----- */
+
+/*
+ * Some programs and libraries call these directly; in the preloaded
+ * library they must reach hmalloc too, never the glibc allocator.
+ */
+#if defined(HMALLOC_SHARED_LIB) && defined(__linux__)
+_hmDeclExport void	*__libc_malloc(size_t size)				HM_FORWARD1(malloc, size)
+_hmDeclExport void	*__libc_calloc(size_t count, size_t size)	HM_FORWARD2(calloc, count, size)
+_hmDeclExport void	*__libc_realloc(void *p, size_t size)	HM_FORWARD2(realloc, p, size)
+_hmDeclExport void	__libc_free(void *p)					HM_FORWARD0(free, p)
+_hmDeclExport void	__libc_cfree(void *p)					HM_FORWARD0(free, p)
+#endif
+
+/* ----- Extended API ----- */
+
+void	*hzalloc(size_t size)
+{
+	return (calloc(1, size));
+}
+
+void	*hmallocn(size_t count, size_t size)
+{
+	size_t	total;
+
+	if (hmallocCountSizeOverflow(count, size, &total)) {
+		errno = ENOMEM;
+		return (NULL);
+	}
+	return (hmallocAllocInternal(total));
 }
 
 void	*hmallocAligned(size_t size, size_t alignment)
@@ -213,31 +271,17 @@ void	*hmallocAligned(size_t size, size_t alignment)
 	{
 		t_hmallocPage *page = hmallocPageMapGet(raw);
 		if (page == NULL) {
-			hmallocFreeInternal(raw);
+			free(raw);
 			errno = EINVAL;
 			return (NULL);
 		}
 		atomic_fetch_or_explicit(&page->xthreadId,
 			HMALLOC_PAGE_HAS_INTERIOR_POINTERS, memory_order_relaxed);
-		hmMaybePadSet(page, raw, size);
+		/* The user range is [aligned, aligned + size): the slack and canary
+		 * of the real block start after it, not after raw + size. */
+		hmMaybePadSet(page, raw, (size_t)((uintptr_t)aligned - (uintptr_t)raw) + size);
 	}
 	return (aligned);
-}
-
-void	*hzalloc(size_t size)
-{
-	return (hcalloc(1, size));
-}
-
-void	*hmallocn(size_t count, size_t size)
-{
-	size_t	total;
-
-	if (hmallocCountSizeOverflow(count, size, &total)) {
-		errno = ENOMEM;
-		return (NULL);
-	}
-	return (hmallocAllocInternal(total));
 }
 
 size_t	husableSize(const void *p)
@@ -247,8 +291,11 @@ size_t	husableSize(const void *p)
 	if (p == NULL)
 		return (0);
 	page = hmallocPageMapGet(p);
-	if (page == NULL)
+	if (page == NULL) {
+		errno = EINVAL;
+		_hmallocErrorMessage(EINVAL, "usableSize(): invalid pointer\n");
 		return (0);
+	}
 	return (page->blockSize - HMALLOC_PADDING_SIZE);
 }
 
@@ -277,48 +324,56 @@ size_t	hgoodSize(size_t size)
 void	*hexpand(void *p, size_t newsize)
 {
 	t_hmallocPage	*page;
+	void			*real;
+	size_t			off;
 	size_t			usable;
 
 	if (p == NULL)
 		return (hmallocAllocInternal(newsize));
 
 	page = hmallocPageMapGet(p);
-	if (page == NULL)
+	if (page == NULL) {
+		errno = EINVAL;
+		_hmallocErrorMessage(EINVAL, "expand(): invalid pointer\n");
 		return (NULL);
+	}
 
+	/* `p` may be an interior (aligned) pointer: pad the real block. */
+	real = hmallocBlockStart(page, p);
+	if (real == NULL) {
+		errno = EINVAL;
+		_hmallocErrorMessage(EINVAL, "expand(): invalid pointer\n");
+		return (NULL);
+	}
+	off = (size_t)((uintptr_t)p - (uintptr_t)real);
 	usable = page->blockSize - HMALLOC_PADDING_SIZE;
-	if (newsize <= usable) {
-		hmMaybePadSet(page, p, newsize);
+	if (off <= usable && newsize <= usable - off) {
+		hmMaybePadSet(page, real, off + newsize);
 		return (p);
 	}
 	return (NULL);
 }
 
-void	hfreeSize(void *p, size_t size)
-{
-#if HMALLOC_CHECK
-	if (p != NULL) {
-		size_t	usable = husableSize(p);
-		if (size > usable)
-			_hmallocErrorMessage(EINVAL,
-				"freeSize(): size larger than block\n");
-	}
-#else
-	(void)size;
-#endif
-	hfree(p);
-}
+/* ----- Heap helpers ----- */
 
 void	*hmHeapMalloc(t_hmallocHeap *heap, size_t size)
 {
 	t_hmallocTheap	*th;
 
-	th = hmallocHeapGetTheap(heap != NULL ? heap : &g_hmalloc.heapMain);
-	if (th == NULL) {
+	/* The thread must be set up before it can own a theap of `heap`. */
+	th = hmallocTheapDefaultGet();
+	if (th == NULL || th->tld == NULL) {
+		if (!atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire))
+			_hmallocAutoProcessInit();
+		th = _hmallocThreadInit();
+	}
+	if (th != NULL && th->tld != NULL)
+		th = hmallocHeapGetTheap(heap != NULL ? heap : &g_hmalloc.heapMain);
+	if (th == NULL || th->tld == NULL) {
 		errno = ENOMEM;
 		return (NULL);
 	}
-	return (hmallocAllocInternal(size));
+	return (hmallocTheapMalloc(th, size));
 }
 
 void	hmCollect(bool force)
@@ -326,83 +381,7 @@ void	hmCollect(bool force)
 	hmHeapCollect(&g_hmalloc.heapMain, force);
 }
 
-_hmDeclExport void	*malloc(size_t size)
-{
-	return (hmallocAllocInternal(size));
-}
-
-_hmDeclExport void	free(void *ptr)
-{
-	hmallocFreeInternal(ptr);
-}
-
-_hmDeclExport void	*calloc(size_t count, size_t size)
-{
-	return (hcalloc(count, size));
-}
-
-_hmDeclExport void	*realloc(void *ptr, size_t size)
-{
-	return (hrealloc(ptr, size));
-}
-
-_hmDeclExport int	posix_memalign(void **memptr, size_t alignment, size_t size)
-{
-	void	*p;
-
-	if (!hmIsPow2Strict(alignment) || alignment % sizeof(void *) != 0)
-		return (EINVAL);
-
-	p = hmallocAligned(size, alignment);
-	if (p == NULL)
-		return (ENOMEM);
-	*memptr = p;
-	return (0);
-}
-
-_hmDeclExport void	*aligned_alloc(size_t alignment, size_t size)
-{
-	if (!hmIsPow2Strict(alignment) || (size % alignment) != 0) {
-		errno = EINVAL;
-		return (NULL);
-	}
-	return (hmallocAligned(size, alignment));
-}
-
-_hmDeclExport void	*memalign(size_t alignment, size_t size)
-{
-	return (hmallocAligned(size, alignment));
-}
-
-_hmDeclExport void	*valloc(size_t size)
-{
-	return (hmallocAligned(size, g_hmalloc.pageSize));
-}
-
-_hmDeclExport void	*pvalloc(size_t size)
-{
-	size_t	rounded = hmAlignUp(size, g_hmalloc.pageSize);
-	return (hmallocAligned(rounded, g_hmalloc.pageSize));
-}
-
-_hmDeclExport void	*reallocarray(void *ptr, size_t count, size_t size)
-{
-	size_t	total;
-
-	if (hmallocCountSizeOverflow(count, size, &total)) {
-		errno = ENOMEM;
-		return (NULL);
-	}
-	return (hrealloc(ptr, total));
-}
-
-_hmDeclExport size_t	malloc_usable_size(void *ptr)
-{
-	return (husableSize(ptr));
-}
-
-
 bool	hmIsRedirected(void)
 {
-	return (g_hmalloc.initialized);
+	return (atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire));
 }

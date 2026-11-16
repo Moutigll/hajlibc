@@ -10,7 +10,7 @@
  * @file init.c
  * @brief Initialization functions for the hajlibc allocator.
  * @Created: 2026/10/19 10:45:07 by Moutig
- * @Updated: 2026/10/29 05:08:44 by Moutig
+ * @Updated: 2026/11/16 19:25:08 by Moutig
  *
  * This file implements the initialization functions for the hajlibc allocator.
  * It provides functions for setting up the allocator's internal structures,
@@ -20,16 +20,21 @@
 #include "include/hmPrivate.h"
 #include <stdlib.h>
 #include <string.h>
+#if !defined(_WIN32)
+# include <pthread.h>
+#endif
 
 HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	t_hmallocTheap	*_hmallocTheapDefault = NULL;
 HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	uintptr_t		_hmallocThreadIdHelper;
-HMALLOC_THREAD_LOCAL				t_hmallocTheap	*_hmallocTheapCached = NULL;
+HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	t_hmallocTheap	*_hmallocTheapCached = NULL;
 
 t_hmallocTs	g_hmallocTs = {
-	.lock = HMALLOC_LOCK_INITIALIZER,
-	.theapKey = 0,
-	.theapKeyOnce = PTHREAD_ONCE_INIT,
-	.theapKeyValid = false,
+	.lock			= HMALLOC_LOCK_INITIALIZER,
+	.theapKey		= 0,
+	.theapKeyOnce	= PTHREAD_ONCE_INIT,
+	.theapKeyValid	= false,
+	.binRangeOnce	= PTHREAD_ONCE_INIT,
+	.pageMapOnce	= PTHREAD_ONCE_INIT,
 };
 
 t_hmallocGlobal	g_hmalloc = {
@@ -46,9 +51,7 @@ static void	hmallocInitTheapSentinel(t_hmallocTheap *theap)
 	theap->tld = NULL;
 	theap->heap = &g_hmalloc.heapMain;
 	theap->subproc = &g_hmalloc.subprocMain;
-		theap->retiredMinBin = UINT16_MAX;
-	theap->retiredMaxBin = 0;
-	for (idx = 0; idx < HMALLOC_PAGES_DIRECT; ++idx)
+	for (idx = 0; idx < HMALLOC_DIRECT_PAGES; ++idx)
 		theap->pagesFreeDirect[idx] = &g_hmalloc.pageEmpty;
 }
 
@@ -74,15 +77,16 @@ size_t	_hmallocOsPageSize(void)
 
 void	_hmallocAutoProcessInit(void)
 {
-	if (g_hmalloc.initialized)
+	if (atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire))
 		return;
 	hmallocLockAcquire(&g_hmallocTs.lock);
-	if (g_hmalloc.initialized) {
+	if (atomic_load_explicit(&g_hmalloc.initialized, memory_order_relaxed)) {
 		hmallocLockRelease(&g_hmallocTs.lock);
 		return;
 	}
-	_hmallocOsInit();
+	/* Options first: the OS setup reads some of them (allow_thp). */
 	_hmallocOptionsInit();
+	_hmallocOsInit();
 
 	memset(&g_hmalloc.subprocMain, 0, sizeof(g_hmalloc.subprocMain));
 	memset(&g_hmalloc.heapMain, 0, sizeof(g_hmalloc.heapMain));
@@ -95,15 +99,19 @@ void	_hmallocAutoProcessInit(void)
 	g_hmalloc.pageEmpty.free = NULL;
 	g_hmalloc.pageEmpty.localFree = NULL;
 	hmallocInitTheapSentinel(&g_hmalloc.theapEmpty);
+	_hmallocStatsInit();
+	hmStatsSubprocIncrease(heaps, 1);	/* the main heap */
 	_hmallocTheapDefault = &g_hmalloc.theapEmpty;
 	_hmallocTheapCached = &g_hmalloc.theapEmpty;
 	hmallocPrimThreadInitAutoDone();
-	_hmallocOptionsPostInit();
-	g_hmalloc.initialized = true;
+	atomic_store_explicit(&g_hmalloc.initialized, true, memory_order_release);
 #if HMALLOC_LEAK_TRACE
 	hmLeakSetTrace(true);
 #endif
 	hmallocLockRelease(&g_hmallocTs.lock);
+
+	/* After the init lock: registering the handler may allocate. */
+	_hmallocForkInit();
 }
 
 t_hmallocTheap	*_hmallocThreadInit(void)
@@ -111,7 +119,7 @@ t_hmallocTheap	*_hmallocThreadInit(void)
 	t_hmallocTld	*tld;
 	t_hmallocTheap	*theap;
 
-	if (g_hmalloc.initialized == false)
+	if (!atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire))
 		_hmallocAutoProcessInit();
 	theap = hmallocTheapDefaultGet();
 	if (theap != NULL && theap != &g_hmalloc.theapEmpty && theap->tld != NULL)
@@ -126,6 +134,9 @@ t_hmallocTheap	*_hmallocThreadInit(void)
 	}
 	hmallocPrimThreadAssociateDefaultTheap(theap);
 	hmallocPrimThreadInitAutoDone();
+	hmStatsSubprocIncrease(threads, 1);
+	/* In a forked child, abandon the dead theaps before reusing their ids. */
+	_hmallocForkChildTryCollect();
 	return (theap);
 }
 
@@ -158,8 +169,102 @@ void	_hmallocThreadDone(t_hmallocTheap *theap)
 
 	hmallocPrimThreadAssociateDefaultTheap(&g_hmalloc.theapEmpty);
 	_hmallocMetaFree(&g_hmalloc.subprocMain, tld, tld->memid);
+	hmStatsSubprocDecrease(threads, 1);
 
 	if (g_hmalloc.subprocMain.threadCount > 0)
 		atomic_fetch_sub_explicit(&g_hmalloc.subprocMain.threadCount,
 								  1, memory_order_relaxed);
+}
+
+/* ----- Fork ----- */
+
+/*
+ * In a forked child only the forking thread exists: the theaps of the
+ * other threads are dead. Their threads may have been inside hmalloc at
+ * the time of the fork, so their lists can be inconsistent and their
+ * locks held. The handler therefore only bumps the fork epoch (the
+ * forking thread keeps the current one) and the pages of the dead theaps
+ * are abandoned later, with try-locks, from the allocation paths. A
+ * child that only calls exec or _exit never touches them.
+ */
+
+static bool	hmallocForkTheapIsDead(const t_hmallocTheap *theap)
+{
+	const t_hmallocTld	*tld = theap->tld;
+
+	return (tld != NULL && tld->forkEpoch != g_hmalloc.forkEpoch);
+}
+
+/* Abandon the dead theaps of a heap; their memory itself is not freed. */
+static bool	hmallocForkHeapAbandonDead(t_hmallocHeap *heap)
+{
+	t_hmallocTheap	*theap;
+
+	if (!hmallocLockTryAcquire(&heap->theapsLock))
+		return (false);
+	theap = heap->theaps;
+	while (theap != NULL) {
+		t_hmallocTheap	*next = theap->hnext;
+
+		if (hmallocForkTheapIsDead(theap)) {
+			if (theap->hnext != NULL)
+				theap->hnext->hprev = theap->hprev;
+			if (theap->hprev != NULL)
+				theap->hprev->hnext = theap->hnext;
+			else
+				heap->theaps = theap->hnext;
+			theap->hnext = NULL;
+			theap->hprev = NULL;
+			theap->tld = NULL;
+			hmallocTheapAbandonAll(theap);
+#if HMALLOC_STATS
+			if (theap->stats != NULL)
+				_hmallocStatsMergeInto(_hmallocHeapStats(heap), theap->stats);
+#endif
+			theap->heap = NULL;
+		}
+		theap = next;
+	}
+	hmallocLockRelease(&heap->theapsLock);
+	return (true);
+}
+
+void	_hmallocForkChildTryCollect(void)
+{
+	t_hmallocSubproc	*subproc = &g_hmalloc.subprocMain;
+	bool				done;
+
+	if (hmLikely(atomic_load_explicit(&g_hmalloc.forkPending, memory_order_relaxed) == 0))
+		return;
+	if (atomic_exchange_explicit(&g_hmalloc.forkPending, 0, memory_order_acq_rel) == 0)
+		return;
+	done = false;
+	if (hmallocLockTryAcquire(&subproc->heapsLock)) {
+		done = hmallocForkHeapAbandonDead(&g_hmalloc.heapMain);
+		for (t_hmallocHeap *heap = subproc->heaps; heap != NULL; heap = heap->next)
+			if (heap != &g_hmalloc.heapMain && !hmallocForkHeapAbandonDead(heap))
+				done = false;
+		hmallocLockRelease(&subproc->heapsLock);
+	}
+	if (!done)
+		atomic_store_explicit(&g_hmalloc.forkPending, 1, memory_order_release);
+}
+
+void	_hmallocForkChild(void)
+{
+	t_hmallocTheap	*theap;
+
+	g_hmalloc.forkEpoch++;
+	theap = hmallocTheapDefaultGet();
+	if (theap != NULL && theap->tld != NULL)
+		theap->tld->forkEpoch = g_hmalloc.forkEpoch;	/* the forking thread survives */
+	atomic_store_explicit(&g_hmalloc.forkPending, 1, memory_order_release);
+}
+
+void	_hmallocForkInit(void)
+{
+#if !defined(_WIN32)
+	if (pthread_atfork(NULL, NULL, &_hmallocForkChild) != 0)
+		_hmallocWarningMessage("unable to register the pthread fork handler\n");
+#endif
 }

@@ -136,7 +136,7 @@ static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page, size_t *total)
 			memory_order_relaxed) & ~(uintptr_t)1),
 		map, cap);
 
-	hmShowPuts(b, (page->blockSize <= HMALLOC_TINY_MAX_SIZE) ? "TINY : "
+	hmShowPuts(b, (page->blockSize <= HMALLOC_TINY_MAX_OBJ_SIZE) ? "TINY : "
 			  : (page->blockSize <= HMALLOC_SMALL_MAX_SIZE) ? "SMALL : "
 			  : "LARGE : ");
 	hmShowPutHex(b, zone);
@@ -208,10 +208,11 @@ void	show_alloc_mem(void)
 
 	for (cat = 0; cat < 3; cat++)
 	{
-		t_hmallocArena	*a;
+		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
+		size_t			n = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
 
-		for (a = g_hmalloc.arenas[cat]; a != NULL; a = a->next)
-			hmShowArena(&b, a, &total);
+		for (size_t i = 0; i < n; i++)
+			hmShowArena(&b, arenas[i], &total);
 	}
 
 	hmShowPuts(&b, "Total : ");
@@ -282,10 +283,11 @@ void	show_alloc_mem_ex(void)
 
 	for (cat = 0; cat < 3; cat++)
 	{
-		t_hmallocArena	*a;
+		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
+		size_t			n = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
 
-		for (a = g_hmalloc.arenas[cat]; a != NULL; a = a->next)
-			hmShowArena(&b, a, &total);
+		for (size_t i = 0; i < n; i++)
+			hmShowArena(&b, arenas[i], &total);
 	}
 
 	hmShowPuts(&b, "--- hexdump (limit=");
@@ -293,9 +295,12 @@ void	show_alloc_mem_ex(void)
 	hmShowPuts(&b, " bytes/block) ---");
 	hmShowNewline(&b);
 
-	for (t_hmallocArena *a = g_hmalloc.arenas[HMALLOC_CAT_LARGE];
-		 a != NULL; a = a->next)
+	t_hmallocArena	*large[HMALLOC_MAX_ARENAS];
+	size_t			nLarge = hmallocArenaSnapshot(HMALLOC_CAT_LARGE, large);
+
+	for (size_t li = 0; li < nLarge; li++)
 	{
+		t_hmallocArena	*a = large[li];
 		t_hmallocPage	*page = hmallocPageMapGet(a->start);
 
 		if (page == NULL || page->used == 0)

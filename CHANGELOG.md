@@ -277,6 +277,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `tpidr_el0`)
   - per-subproc / heap / theap stats macros; `HMALLOC_OPTIONS_MAX`
     16 → 32
+  - new options: `HMALLOC_PAGE_RECLAIM_ON_FREE`,
+    `PAGE_MAX_RECLAIM`, `PAGE_CROSS_THREAD_MAX_RECLAIM`,
+    `GENERIC_COLLECT`, `ARENA_PURGE_MULT`, `ARENA_PURGE_MIN_SIZE`,
+    `ARENA_PURGE_IMMEDIATE_SIZE`, `ALLOW_THP`
+  - THP control: `prctl(PR_SET_THP_DISABLE)` and `MADV_NOHUGEPAGE`
+    depending on `HMALLOC_ALLOW_THP`
+  - fork child handler registered with `pthread_atfork`
+  - C++ operators also defined in C by their mangled names
+    (`newdelete.c`), so the C-only library replaces them too
+  - POSIX / BSD / GNU / macOS entry points moved to `posix.c`, plus
+    the glibc aliases `__posix_memalign`, `__libc_memalign`,
+    `__libc_valloc`
 
 ### Fixed
 

@@ -10,7 +10,7 @@
  * @file page.c
  * @brief Page management for the hajlibc allocator.
  * @Created: 2026/10/19 10:46:03 by Moutig
- * @Updated: 2026/10/23 17:14:06 by Moutig
+ * @Updated: 2026/11/08 04:30:52 by Moutig
  *
  *
  * The allocator groups fixed-size blocks into pages. A page is a
@@ -20,67 +20,17 @@
  * empty.
  */
 #include "include/hmPrivate.h"
+#include "include/hmInternal.h"
 #include "include/hmBits.h"
 
 #include <string.h>
 
-#ifndef HMALLOC_PURGE_DELAY_MS
-# define HMALLOC_PURGE_DELAY_MS	 1000
-#endif
+#include <limits.h>
 
-#ifndef HMALLOC_PURGE_MULT
-# define HMALLOC_PURGE_MULT		 4
-#endif
 
-/**
- * @brief Table of bin sizes in words.
- *
- * This table defines the number of words (8 bytes each) for each bin
- * in the allocator. The bins are used to categorize different block
- * sizes for efficient memory management. The last two entries are
- * reserved for huge allocations, which are treated specially.
- */
-static const uint32_t g_hmallocBinsWords[HMALLOC_BIN_COUNT] = {
-	0,			0,
-	2,			4,			6,			8,
-	10,			12,			14,			16,
-	20,		24,		28,		32,
-	40,		48,		56,		64,
-	80,		96,		112,		128,
-	160,		192, 		224,		256,
-	320,		384, 		448,		512,
-	640,		768, 		896,		1024,
-	1280,		1536,		1792,		2048,
-	2560,		3072,		3584,		4096,
-	5120,		6144,		7168,		8192,
-	10240,		12288,		14336,		16384,
-	20480,		24576,		28672,		32768,
-	40960,		49152,		57344,		65536,
-	81920,		98304,		114688,	131072,	/* 640 KiB, 768 KiB, 896 KiB, 1 MiB */
-	163840,	196608,	229376,	262144,	/* 1.25 MiB, 1.5 MiB, 1.75 MiB, 2 MiB */
-	[HMALLOC_BIN_HUGE]	 = 262144,
-	[HMALLOC_BIN_HUGE + 1] = 262144,
-};
 
-size_t hmallocBinSize(size_t bin)
-{
-	if (bin >= HMALLOC_BIN_COUNT) return 0;
-	return ((size_t)g_hmallocBinsWords[bin] * 8u);
-}
 
-size_t hmallocBinOf(size_t size)
-{
-	size_t w, b, q;
-	if (size == 0) return (2);
-	w = (size + 7) >> 3;
-	if (w <= 1) return (2);
-	if (w <= 8) return (((w - 1) >> 1) + 2);
-	if (w > HMALLOC_LARGE_MAX_OBJ_WSIZE) return (HMALLOC_BIN_HUGE);
-	w--;
-	b = hmallocBsr(w);
-	q = w >> (b - 2);
-	return (((b - 2) << 2) + q - 2);
-}
+
 
 /**
  * @brief Determine the size of a page based on the block size.
@@ -91,7 +41,8 @@ static __HAJ_INLINE size_t hmallocPageKindSize(size_t blockSize)
 {
 	if (blockSize <= HMALLOC_TINY_MAX_OBJ_SIZE)		return (HMALLOC_TINY_PAGE_SIZE);
 	if (blockSize <= HMALLOC_SMALL_MAX_OBJ_SIZE)	return (HMALLOC_MEDIUM_PAGE_SIZE);
-	return (0);	/* LARGE: uses hmallocLargeAlloc, no fixed page size */
+	if (blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE)	return (HMALLOC_LARGE_PAGE_SIZE);
+	return (0);	/* Oversized blocks use hmallocLargeAlloc. */
 }
 
 /**
@@ -99,8 +50,8 @@ static __HAJ_INLINE size_t hmallocPageKindSize(size_t blockSize)
  *
  * This function determines the appropriate zone size for a given
  * block size. It first checks if the block size corresponds to a
- * predefined page kind (tiny or small). If so, it returns the
- * corresponding page size. If not, it calculates the required
+ * predefined page kind. If so, it returns the corresponding page size.
+ * If not, it calculates the required
  * zone size based on the block size and aligns it to the nearest
  * slice boundary.
  * @param blockSize The size of the blocks in the page.
@@ -118,164 +69,446 @@ static __HAJ_INLINE size_t hmallocZoneSize(size_t blockSize)
 
 size_t hmallocPageZoneSize(size_t blockSize) { return (hmallocZoneSize(blockSize)); }
 
-static size_t hmallocPageReservedCapacity(size_t zoneSize, size_t blockSize)
+/* ----- First block placement ----- */
+
+#define HMALLOC_PAGE_MAX_START_BLOCK_ALIGN2		(4u * 1024u)
+#define HMALLOC_PAGE_OSPAGE_BLOCK_ALIGN2		(4u * 1024u)
+#define HMALLOC_PAGE_MIN_START_BLOCK_ALIGN		16u
+
+/*
+ * Cache offset: shift the first block of each page so that blocks of
+ * different pages do not all map to the same cache sets.
+ */
+#define HMALLOC_PAGE_CACHE_OFFSET_UNIT			128u
+#define HMALLOC_PAGE_CACHE_OFFSET_MAX \
+	(HMALLOC_PAGE_OSPAGE_BLOCK_ALIGN2 - HMALLOC_PAGE_CACHE_OFFSET_UNIT)
+#define HMALLOC_PAGE_SMALL_CACHE_OFFSET_UNIT	64u
+#define HMALLOC_PAGE_SMALL_CACHE_OFFSET_MAX \
+	(7u * HMALLOC_PAGE_SMALL_CACHE_OFFSET_UNIT)
+
+static __HAJ_INLINE bool hmallocIsPow2(size_t x)
 {
-	if (blockSize == 0 || zoneSize <= HMALLOC_PAGE_HEADER_SIZE) return (0);
-	size_t n = (zoneSize - HMALLOC_PAGE_HEADER_SIZE) / blockSize;
+	return (x != 0 && (x & (x - 1)) == 0);
+}
+
+/* Align up to any (not necessarily power of two) alignment. */
+static __HAJ_INLINE size_t hmallocAlignUpAny(size_t x, size_t a)
+{
+	return (((x + a - 1) / a) * a);
+}
+
+/* Only blocks larger than a tiny-page object use the page tail slack. */
+static __HAJ_INLINE bool hmallocBlockSizeHasCacheOffset(size_t bsize)
+{
+	return (bsize > HMALLOC_TINY_MAX_OBJ_SIZE);
+}
+
+static size_t hmallocNaturalAlignmentOfSize(size_t bsize)
+{
+	size_t lowbit = bsize & (~bsize + 1);
+
+	if (hmallocIsPow2(bsize) && bsize <= HMALLOC_PAGE_MAX_START_BLOCK_ALIGN2)
+		return (bsize);
+	if (bsize <= HMALLOC_SMALL_SIZE_MAX)
+		return (lowbit);
+	if ((bsize % HMALLOC_PAGE_OSPAGE_BLOCK_ALIGN2) == 0)
+		return (hmallocBlockSizeHasCacheOffset(bsize)
+			? HMALLOC_PAGE_CACHE_OFFSET_UNIT
+			: HMALLOC_PAGE_OSPAGE_BLOCK_ALIGN2);
+	return (lowbit < HMALLOC_PAGE_MIN_START_BLOCK_ALIGN
+		? lowbit : HMALLOC_PAGE_MIN_START_BLOCK_ALIGN);
+}
+
+/* Offset of the first block, with the page header in front of the slices. */
+static size_t hmallocPageBlockStart(size_t bsize)
+{
+	size_t info = HMALLOC_PAGE_HEADER_SIZE;
+	size_t offset;
+
+	if (bsize != 0 && hmallocIsPow2(bsize)
+		&& bsize <= HMALLOC_PAGE_MAX_START_BLOCK_ALIGN2)
+		offset = hmallocAlignUpAny(info, bsize);
+	else if (bsize != 0 && bsize <= HMALLOC_SMALL_SIZE_MAX)
+		offset = hmallocAlignUpAny(info, bsize);
+	else if (bsize != 0 && (bsize % HMALLOC_PAGE_OSPAGE_BLOCK_ALIGN2) == 0)
+		offset = hmallocAlignUpAny(info, HMALLOC_PAGE_OSPAGE_BLOCK_ALIGN2);
+	else
+		offset = info;
+	return (hmallocAlignUpAny(offset, HMALLOC_PAGE_MIN_START_BLOCK_ALIGN));
+}
+
+/* Fibonacci hash of the page index, scaled to [0, noffsets). */
+static size_t hmallocPageCacheOffsetIndex(uintptr_t zone, size_t nSlices,
+										  size_t noffsets)
+{
+	const size_t	bits = sizeof(size_t) * 8u;
+	size_t			pageIndex = (size_t)(zone >> HMALLOC_SLICE_SHIFT) / nSlices;
+#if SIZE_MAX > 0xFFFFFFFFu
+	size_t			hash = pageIndex * (size_t)0x9E3779B97F4A7C15ULL;
+#else
+	size_t			hash = pageIndex * (size_t)0x9E3779B9u;
+#endif
+
+	return (((hash >> (bits - 16u)) * noffsets) >> 16);
+}
+
+static size_t hmallocPageCacheOffset(uintptr_t zone, size_t nSlices,
+									 size_t bsize, size_t blockStart,
+									 size_t zoneSize)
+{
+	size_t	unit;
+	size_t	slack;
+	size_t	noffsets;
+
+	if (nSlices == 0)
+		return (0);
+	if (!hmallocBlockSizeHasCacheOffset(bsize)) {
+		unit = hmallocNaturalAlignmentOfSize(bsize);
+		if (unit < HMALLOC_PAGE_SMALL_CACHE_OFFSET_UNIT)
+			unit = HMALLOC_PAGE_SMALL_CACHE_OFFSET_UNIT;
+		if (unit > HMALLOC_PAGE_SMALL_CACHE_OFFSET_MAX)
+			return (0);
+		return (hmallocPageCacheOffsetIndex(zone, nSlices,
+			1u + HMALLOC_PAGE_SMALL_CACHE_OFFSET_MAX / unit) * unit);
+	}
+	unit = HMALLOC_PAGE_CACHE_OFFSET_UNIT;
+	if (blockStart + bsize > zoneSize)
+		return (0);
+	slack = (zoneSize - blockStart) % bsize;
+	if (slack < unit && bsize < zoneSize / 8u)
+		slack += bsize;
+	noffsets = 1u + (slack < HMALLOC_PAGE_CACHE_OFFSET_MAX
+		? slack : HMALLOC_PAGE_CACHE_OFFSET_MAX) / unit;
+	return (hmallocPageCacheOffsetIndex(zone, nSlices, noffsets) * unit);
+}
+
+static size_t hmallocPageReservedCapacity(size_t zoneSize, size_t blockSize,
+										  size_t pageOffset)
+{
+	if (blockSize == 0 || zoneSize <= pageOffset) return (0);
+	size_t n = (zoneSize - pageOffset) / blockSize;
 	return ((n > 65535) ? 65535 : n);
 }
 
-/**
- * @brief Set a range of bits in the purge bitmap of an arena.
- *
- * This function sets a range of bits in the purge bitmap of the
- * specified arena. The range is defined by the starting index
- * (`idx`) and the number of bits to set (`n`). The function uses
- * atomic operations to ensure thread safety when modifying the
- * bitmap.
- *
- * @param a Pointer to the arena whose purge bitmap is to be modified.
- * @param idx The starting index of the range to set.
- * @param n The number of bits to set in the range.
+/* ----- Arena purge ----- */
+
+/*
+ * Purge delay of the arenas in milliseconds: purge_delay * arena_purge_mult.
+ * < 0: never purge, 0: purge right away, > 0: delay.
  */
-static inline void hmallocArenaPurgeSetRange(t_hmallocArena *a, size_t idx, size_t n)
+static long	hmallocArenaPurgeDelay(void)
 {
-	size_t firstBit	= idx;
-	size_t lastBit	= idx + n;
+	const long	delay = hmOptionGet(HMALLOC_OPT_PURGE_DELAY);
+	const long	mult = hmOptionGet(HMALLOC_OPT_ARENA_PURGE_MULT);
+	size_t		total;
+
+	if (delay < 0 || mult < 0)
+		return (-1);
+	if (delay == 0 || mult == 0)
+		return (0);
+	if (__builtin_mul_overflow((size_t)delay, (size_t)mult, &total))
+		return (delay);
+	if (total > (size_t)LONG_MAX)
+		return (delay);
+	return ((long)total);
+}
+
+/*
+ * Smallest range worth purging. With THP and allow_thp == 2 this is a
+ * whole huge page, so that purging never splits one; otherwise an OS page.
+ */
+static size_t	hmallocOsMinimalPurgeSize(void)
+{
+	const size_t	minsize = hmOptionGetSize(HMALLOC_OPT_ARENA_PURGE_MIN_SIZE);
+
+	if (minsize != 0)
+		return (hmallocAlignUp(minsize, g_hmalloc.pageSize));
+	if (g_hmalloc.memConfig.hasTransparentHugePages
+		&& hmOptionGet(HMALLOC_OPT_ALLOW_THP) == 2)
+		return ((g_hmalloc.memConfig.largePageSize != 0)
+			? g_hmalloc.memConfig.largePageSize : g_hmalloc.pageSize);
+	return (g_hmalloc.pageSize);
+}
+
+/* Mark slices [idx, idx + n) as waiting for a purge. */
+static void	hmallocArenaPurgeSetRange(t_hmallocArena *a, size_t idx, size_t n)
+{
+	size_t	firstBit = idx;
+	size_t	lastBit = idx + n;
+
 	while (firstBit < lastBit) {
-		size_t wi			= firstBit >> 6;
-		size_t bitInWord	= firstBit & 63;
-		size_t bits			= 64 - bitInWord;
+		size_t		wi = firstBit >> 6;
+		size_t		bitInWord = firstBit & 63;
+		size_t		bits = 64 - bitInWord;
+		uint64_t	mask;
+
 		if (bits > lastBit - firstBit)
 			bits = lastBit - firstBit;
-		uint64_t mask = ((bits == 64)
-							? ~(uint64_t)0
-							: (((uint64_t)1 << bits) - 1))
-						<< bitInWord;
+		mask = ((bits == 64) ? ~(uint64_t)0 : (((uint64_t)1 << bits) - 1))
+			<< bitInWord;
 		atomic_fetch_or_explicit(&a->purgeBitmap[wi], mask, memory_order_relaxed);
 		firstBit += bits;
 	}
 }
 
-/**
- * @brief Take one bit from the purge bitmap of an arena.
- *
- * This function searches for a set bit in the purge bitmap of the
- * specified arena and clears it. It returns the index of the bit
- * that was cleared. If no bits are set, it returns SIZE_MAX.
- *
- * @param a Pointer to the arena whose purge bitmap is to be modified.
- * @return The index of the bit that was cleared, or SIZE_MAX if no bits were set.
+/*
+ * Give claimed slices back to the OS (MADV_DONTNEED). The caller owns the
+ * range: either it is still allocated to it, or it was claimed in
+ * slicesFree. The slices stay marked dirty.
  */
-static size_t hmallocArenaPurgeTakeOne(t_hmallocArena *a)
+static void	hmallocArenaPurge(t_hmallocArena *a, size_t idx, size_t n)
 {
-	for (size_t wi = 0; wi < HMALLOC_ARENA_BITMAP_WORDS; wi++) {
-		uint64_t v = atomic_load_explicit(&a->purgeBitmap[wi], memory_order_relaxed);
-		while (v != 0) {
-			size_t bit		= hmallocCtz((size_t)v);
-			uint64_t m		= (uint64_t)1 << bit;
-			uint64_t old	= atomic_fetch_and_explicit(
-				&a->purgeBitmap[wi], ~m, memory_order_acq_rel);
-			if (old & m)
-				return (wi << 6) | bit;
-			v = atomic_load_explicit(&a->purgeBitmap[wi], memory_order_relaxed);
-		}
-	}
-	return SIZE_MAX;
+	bool	needsRecommit = false;
+
+	hmStatsSubprocCounter(purgeCalls, 1);
+	hmStatsSubprocCounter(purged, n << HMALLOC_SLICE_SHIFT);
+	(void)hmallocPrimDecommit(
+		(void *)((uintptr_t)a->start + (idx << HMALLOC_SLICE_SHIFT)),
+		n << HMALLOC_SLICE_SHIFT, &needsRecommit);
 }
 
-void hmallocArenaSchedulePurge(t_hmallocArena *a, size_t idx, size_t n)
+/*
+ * Schedule the purge of slices that are being freed (still owned by the
+ * caller). Large ranges, or a zero delay, are purged right away.
+ */
+void	hmallocArenaSchedulePurge(t_hmallocArena *a, size_t idx, size_t n)
 {
-	if (a == NULL || n == 0) return;
+	const long	delay = hmallocArenaPurgeDelay();
 
+	if (a == NULL || n == 0 || delay < 0)
+		return;
+	if (delay == 0
+		|| (n << HMALLOC_SLICE_SHIFT) >= hmOptionGetSize(HMALLOC_OPT_ARENA_PURGE_IMMEDIATE_SIZE)) {
+		hmallocArenaPurge(a, idx, n);
+		return;
+	}
+	{
+		t_hmallocSubproc	*subproc = (a->subproc != NULL) ? a->subproc : &g_hmalloc.subprocMain;
+		const t_hmMsecs		expire = hmallocPrimClockNow() + delay;
+		t_hmMsecs			expire0 = 0;
+
+		/* First purge of this arena: maybe set the subproc expiration too. */
+		if (atomic_compare_exchange_strong_explicit(&a->purgeExpire, &expire0,
+				expire, memory_order_acq_rel, memory_order_acquire))
+			(void)atomic_compare_exchange_strong_explicit(&subproc->purgeExpire,
+				&expire0, expire, memory_order_acq_rel, memory_order_acquire);
+	}
 	hmallocArenaPurgeSetRange(a, idx, n);
+}
 
-	if (atomic_load_explicit(&a->purgeExpire, memory_order_relaxed) != 0)
+/* Claim a free range, purge it and make it free again. */
+static bool	hmallocArenaTryPurgeRange(t_hmallocArena *a, size_t idx, size_t n)
+{
+	if (!hmBBitmapTryClearNC(&a->slicesFree, idx, n))
+		return (false);		/* allocated again in the meantime */
+	hmallocArenaPurge(a, idx, n);
+	(void)hmBBitmapSetN(&a->slicesFree, idx, n);
+	return (true);
+}
+
+/* Purge a marked range, slice by slice if part of it was reallocated. */
+static void	hmallocArenaTryPurgeVisit(t_hmallocArena *a, size_t idx, size_t n,
+										bool *anyPurged)
+{
+	if (hmallocArenaTryPurgeRange(a, idx, n)) {
+		*anyPurged = true;
+		return;
+	}
+	for (size_t i = 0; n > 1 && i < n; i++) {
+		if (hmallocArenaTryPurgeRange(a, idx + i, 1))
+			*anyPurged = true;
+	}
+}
+
+/*
+ * Visit the marked ranges, clearing their bits atomically (slices freed
+ * meanwhile are purged next time). With rngslices > 1 only whole aligned
+ * groups of rngslices are visited; the other bits are put back.
+ */
+static bool	hmallocArenaPurgeVisitAll(t_hmallocArena *a, size_t rngslices)
+{
+	bool	anyPurged = false;
+
+	if (rngslices > 64)
+		rngslices = 64;
+	for (size_t wi = 0; wi < HMALLOC_ARENA_BITMAP_WORDS; wi++) {
+		const size_t	base = wi << 6;
+		uint64_t		b;
+		uint64_t		skipped = 0;
+		size_t			shift;
+
+		if (atomic_load_explicit(&a->purgeBitmap[wi], memory_order_relaxed) == 0)
+			continue;
+		b = atomic_exchange_explicit(&a->purgeBitmap[wi], 0, memory_order_acq_rel);
+		if (rngslices <= 1) {
+			/* Longest runs of set bits. */
+			while (b != 0) {
+				const size_t	start = hmallocCtz((size_t)b);
+				const uint64_t	rest = ~(b >> start);
+				const size_t	len = (rest == 0) ? 64 - start : hmallocCtz((size_t)rest);
+
+				hmallocArenaTryPurgeVisit(a, base + start, len, &anyPurged);
+				b = (start + len >= 64) ? 0 : b & (~(uint64_t)0 << (start + len));
+			}
+			continue;
+		}
+		for (shift = 0; rngslices + shift <= 64; shift += rngslices) {
+			const uint64_t	rngmask = ((rngslices == 64) ? ~(uint64_t)0
+				: (((uint64_t)1 << rngslices) - 1)) << shift;
+
+			if ((b & rngmask) == rngmask)
+				hmallocArenaTryPurgeVisit(a, base + shift, rngslices, &anyPurged);
+			else
+				skipped |= (b & rngmask);
+		}
+		if (shift < 64)
+			skipped |= (b & (~(uint64_t)0 << shift));
+		if (skipped != 0)
+			atomic_fetch_or_explicit(&a->purgeBitmap[wi], skipped, memory_order_relaxed);
+	}
+	return (anyPurged);
+}
+
+/*
+ * Purge an arena whose expiration is reached (or any arena with a pending
+ * purge when `force`). Returns -1 if nothing was purged, 0 if the
+ * expiration is not reached yet, 1 if some slices were purged.
+ */
+static int	hmallocArenaTryPurge(t_hmallocArena *a, t_hmMsecs now, bool force)
+{
+	const t_hmMsecs	expire = atomic_load_explicit(&a->purgeExpire, memory_order_relaxed);
+	size_t			minslices;
+
+	if (expire == 0)
+		return (-1);
+	if (!force && expire > now)
+		return (0);
+	atomic_store_explicit(&a->purgeExpire, 0, memory_order_release);
+	hmStatsSubprocCounter(arenaPurges, 1);
+
+	/* Purge by at least `minslices` so that huge pages are not split up. */
+	minslices = (hmallocOsMinimalPurgeSize() + HMALLOC_SLICE_SIZE - 1) >> HMALLOC_SLICE_SHIFT;
+	return (hmallocArenaPurgeVisitAll(a, minslices) ? 1 : -1);
+}
+
+void	hmallocArenasTryPurge(bool force, bool visitAll, t_hmallocSubproc *subproc,
+							  size_t tseq)
+{
+	const long		delay = hmallocArenaPurgeDelay();
+	t_hmMsecs		now;
+	t_hmMsecs		arenasExpire;
+	size_t			maxArena;
+	uintptr_t		guard = 0;
+
+	/* Called often: only run when something may be due. */
+	if (delay <= 0)
+		return;
+	if (subproc == NULL)
+		subproc = &g_hmalloc.subprocMain;
+	now = hmallocPrimClockNow();
+	arenasExpire = atomic_load_explicit(&subproc->purgeExpire, memory_order_acquire);
+	if (!visitAll && !force && (arenasExpire == 0 || arenasExpire > now))
+		return;
+	maxArena = atomic_load_explicit(&subproc->arenaCount, memory_order_acquire);
+	if (maxArena == 0)
 		return;
 
-	t_hmMsecs now = hmallocPrimClockNow();
-	if (now == 0) return;
-	t_hmMsecs expire = now + (t_hmMsecs)HMALLOC_PURGE_DELAY_MS
-						 * (t_hmMsecs)HMALLOC_PURGE_MULT;
-	t_hmMsecs expected = 0;
-	(void)atomic_compare_exchange_strong_explicit(
-		&a->purgeExpire, &expected, expire,
-		memory_order_release, memory_order_relaxed);
-}
+	/* One purging thread at a time; the others just skip. */
+	if (!atomic_compare_exchange_strong_explicit(&g_hmalloc.arenaPurgeGuard,
+			&guard, 1, memory_order_acq_rel, memory_order_relaxed))
+		return;
+	{
+		const size_t	arenaStart = tseq % maxArena;
+		size_t			maxPurgeCount = visitAll ? maxArena : (maxArena / 4) + 1;
+		bool			allVisited = true;
+		bool			anyPurged = false;
 
-/**
- * @brief Check if a slice in the arena is free.
- *
- * This function checks if a specific slice in the arena is marked as
- * free in the slicesFree bitmap. It uses atomic operations to ensure
- * thread safety when accessing the bitmap.
- *
- * @param a Pointer to the arena.
- * @param idx The index of the slice to check.
- * @return true if the slice is free, false otherwise.
- */
-static inline bool hmallocPageSliceIsFree(const t_hmallocArena *a, size_t idx)
-{
-	if (a == NULL || idx >= a->sliceCount) return (false);
-	const t_hmBBitmap *bm = &a->slicesFree;
-	size_t ci	= idx / HMALLOC_BCHUNK_BITS;
-	size_t off	= idx % HMALLOC_BCHUNK_BITS;
-	size_t f	= off >> 6;
-	size_t b	= off & 63;
-	uint64_t v	= atomic_load_explicit(
-		(_Atomic uint64_t *)&bm->chunks[ci].fields[f],
-		memory_order_relaxed);
-	return ((v >> b) & 1u) != 0;
-}
+		/* At most one purge per delay cycle. */
+		if (arenasExpire > now)
+			atomic_store_explicit(&subproc->purgeExpire, now + (delay / 10),
+				memory_order_release);
+		for (size_t k = 0; k < maxArena; k++) {
+			size_t			i = k + arenaStart;
+			t_hmallocArena	*a;
+			int				purged;
 
-void hmallocArenaTryPurge(t_hmallocArena *a)
-{
-	if (a == NULL) return;
-
-	t_hmMsecs expire = atomic_load_explicit(&a->purgeExpire, memory_order_acquire);
-	if (expire == 0) return;
-
-	t_hmMsecs now = hmallocPrimClockNow();
-	if (now == 0 || now < expire) return;
-
-	atomic_store_explicit(&a->purgeExpire, 0, memory_order_release);
-
-	/* Purge all slices that are marked for purging and are free. */
-	for (;;) {
-		size_t idx = hmallocArenaPurgeTakeOne(a);
-		if (idx == SIZE_MAX) break;
-
-		if (!hmallocPageSliceIsFree(a, idx))
-			continue;
-
-		size_t start = idx;
-		while (start > a->infoSlices && hmallocPageSliceIsFree(a, start - 1))
-			start--;
-
-		size_t end = idx;
-		while (end + 1 < a->sliceCount && hmallocPageSliceIsFree(a, end + 1))
-			end++;
-
-		size_t run = end - start + 1;
-		void *zone = (char *)a->start + (start << HMALLOC_SLICE_SHIFT);
-		uintptr_t lo = (uintptr_t)zone;
-		uintptr_t hi = lo + (run << HMALLOC_SLICE_SHIFT);
-
-		/* If the range is large enough, decommit it using transparent huge pages. */
-		if (g_hmalloc.memConfig.hasTransparentHugePages
-			&& (hi - lo) >= (2u * 1024 * 1024)) {
-			const uintptr_t H = 2u * 1024 * 1024;
-			uintptr_t alo = (lo + H - 1) & ~(H - 1);
-			uintptr_t ahi = hi & ~(H - 1);
-			if (ahi > alo) {
-				(void)hmallocPrimDecommit((void *)alo, ahi - alo, NULL);
+			if (i >= maxArena)
+				i -= maxArena;
+			a = atomic_load_explicit(&subproc->arenas[i], memory_order_acquire);
+			if (a == NULL)
+				continue;
+			purged = hmallocArenaTryPurge(a, now, force);
+			if (purged < 0)
+				continue;
+			anyPurged = true;	/* purged, or not expired yet */
+			if (purged >= 1) {
+				if (maxPurgeCount <= 1) {
+					allVisited = false;
+					break;
+				}
+				maxPurgeCount--;
 			}
-		} else {
-			(void)hmallocPrimDecommit((void *)lo, hi - lo, NULL);
 		}
+		if (allVisited && !anyPurged)
+			atomic_store_explicit(&subproc->purgeExpire, 0, memory_order_release);
 	}
+	atomic_store_explicit(&g_hmalloc.arenaPurgeGuard, 0, memory_order_release);
 }
 
+/* ----- Page queues ----- */
+
+void hmallocPageQueuePush(t_hmallocTheap *th, size_t bin, t_hmallocPage *p)
+{
+	t_hmallocPageQueue *pq = &th->pages[bin];
+
+	p->prev = NULL;
+	p->next = pq->first;
+	if (pq->first != NULL)
+		pq->first->prev = p;
+	else
+		pq->last = p;
+	pq->first = p;
+	pq->count++;
+	hmallocTheapUpdateDirect(th, bin);
+}
+
+/* Move a page to the end of its queue so it is not revisited for a while. */
+void hmallocPageQueueMoveToBack(t_hmallocTheap *th, size_t bin, t_hmallocPage *p)
+{
+	t_hmallocPageQueue *pq = &th->pages[bin];
+
+	if (pq->last == p)
+		return;
+	hmallocPageQueueRemove(th, bin, p);
+	p->next = NULL;
+	p->prev = pq->last;
+	if (pq->last != NULL)
+		pq->last->next = p;
+	else
+		pq->first = p;
+	pq->last = p;
+	pq->count++;
+	hmallocTheapUpdateDirect(th, bin);
+}
+
+void hmallocPageQueueRemove(t_hmallocTheap *th, size_t bin, t_hmallocPage *p)
+{
+	t_hmallocPageQueue *pq = &th->pages[bin];
+
+	if (p->prev != NULL)
+		p->prev->next = p->next;
+	else if (pq->first == p)
+		pq->first = p->next;
+	if (p->next != NULL)
+		p->next->prev = p->prev;
+	else if (pq->last == p)
+		pq->last = p->prev;
+	p->next = NULL;
+	p->prev = NULL;
+	if (pq->count > 0)
+		pq->count--;
+	hmallocTheapUpdateDirect(th, bin);
+}
 
 void hmallocPageToFull(t_hmallocTheap *th, t_hmallocPage *p)
 {
@@ -285,40 +518,23 @@ void hmallocPageToFull(t_hmallocTheap *th, t_hmallocPage *p)
 	if (bin >= HMALLOC_BIN_COUNT) return;
 
 	/* Remove the page from its current bin list. */
-	if (p->prev != NULL) p->prev->next = p->next;
-	else if (th->pages[bin].first == p) th->pages[bin].first = p->next;
-	if (p->next != NULL) p->next->prev = p->prev;
-	p->next = NULL;
-	p->prev = NULL;
+	hmallocPageQueueRemove(th, bin, p);
 
-	bool small	= (p->blockSize <= HMALLOC_SMALL_MAX_OBJ_SIZE);
-	bool retain	= small
-		&& th->pageFullRetain > 0
-		&& th->pagesFullCount[bin] < (uint16_t)th->pageFullRetain;
-
-	/* If the page is small and we want to retain it in the full queue, do so. */
-	if (retain) {
-		atomic_fetch_or_explicit(&p->xthreadId, HMALLOC_PAGE_IN_FULL_QUEUE, memory_order_release);
-		p->next = th->pages[HMALLOC_BIN_FULL].first;
-		if (th->pages[HMALLOC_BIN_FULL].first != NULL)
-			th->pages[HMALLOC_BIN_FULL].first->prev = p;
-		th->pages[HMALLOC_BIN_FULL].first = p;
-		th->pagesFullCount[bin]++;
-		hmallocTheapUpdateDirect(th, bin);
+	/*
+	 * Usual case: abandon the full page so its memory can be shared with
+	 * other theaps (retention already happened in the bin queue itself).
+	 */
+	if (th->pageFullRetain >= 0) {
+		hmallocPageAbandon(p);
 		return;
 	}
 
-	p->theap	= NULL;
-	p->heap		= NULL;
-
-	uintptr_t old = atomic_load_explicit(&p->xthreadId, memory_order_relaxed);
-	atomic_store_explicit(&p->xthreadId,
-		(old & HMALLOC_PAGE_HAS_INTERIOR_POINTERS),
-		memory_order_release);
-
-	atomic_fetch_and_explicit(&p->xthreadFree, ~(uintptr_t)1, memory_order_release);
-
-	hmallocTheapUpdateDirect(th, bin);
+	/* Abandoning is disabled: keep the page in the theap's full queue. */
+	atomic_fetch_or_explicit(&p->xthreadId, HMALLOC_PAGE_IN_FULL_QUEUE, memory_order_release);
+	hmallocPageQueuePush(th, HMALLOC_BIN_FULL, p);
+	th->pagesFullCount[bin]++;
+	/* A remote free may have raced with the flag: collect right away. */
+	hmallocBlockCoalesce(p);
 }
 
 void hmallocPageUnfull(t_hmallocTheap *th, t_hmallocPage *p)
@@ -332,17 +548,8 @@ void hmallocPageUnfull(t_hmallocTheap *th, t_hmallocPage *p)
 
 	atomic_fetch_and_explicit(&p->xthreadId, ~HMALLOC_PAGE_IN_FULL_QUEUE, memory_order_release);
 
-	if (p->prev != NULL) p->prev->next = p->next;
-	else if (th->pages[HMALLOC_BIN_FULL].first == p)
-		th->pages[HMALLOC_BIN_FULL].first = p->next;
-	if (p->next != NULL) p->next->prev = p->prev;
-
-	p->prev = NULL;
-	p->next = th->pages[bin].first;
-	if (th->pages[bin].first != NULL) th->pages[bin].first->prev = p;
-	th->pages[bin].first = p;
-
-	hmallocTheapUpdateDirect(th, bin);
+	hmallocPageQueueRemove(th, HMALLOC_BIN_FULL, p);
+	hmallocPageQueuePush(th, bin, p);
 }
 
 /**
@@ -361,12 +568,17 @@ static void hmallocPageUnlink(t_hmallocTheap *th, t_hmallocPage *p)
 {
 	if (th != NULL) {
 		size_t bin = hmallocBinOf(p->blockSize);
-		if (p->prev != NULL) p->prev->next = p->next;
-		else if (th->pages[HMALLOC_BIN_FULL].first == p)
-			th->pages[HMALLOC_BIN_FULL].first = p->next;
-		else if (bin < HMALLOC_BIN_COUNT && th->pages[bin].first == p)
-			th->pages[bin].first = p->next;
-		if (p->next != NULL) p->next->prev = p->prev;
+		bool inFull = (atomic_load_explicit(&p->xthreadId, memory_order_relaxed)
+			& HMALLOC_PAGE_IN_FULL_QUEUE) != 0;
+		size_t qbin = inFull ? HMALLOC_BIN_FULL : bin;
+
+		if (qbin < HMALLOC_BIN_COUNT
+			&& (p->prev != NULL || p->next != NULL || th->pages[qbin].first == p)) {
+			if (inFull && th->pagesFullCount[bin] > 0)
+				th->pagesFullCount[bin]--;
+			hmallocPageQueueRemove(th, qbin, p);
+			return;
+		}
 	}
 	p->next = NULL;
 	p->prev = NULL;
@@ -378,10 +590,12 @@ t_hmallocPage *hmallocPageInit(t_hmallocArena	*a,			size_t sliceIdx,
 {
 	t_hmallocPage	*page;
 	size_t			nSlices;
+	size_t			blockStart;
 	size_t			key0, key1;
 
 	if (a == NULL || blockSize == 0) return (NULL);
-	if (zoneSize < HMALLOC_PAGE_HEADER_SIZE + blockSize) return (NULL);
+	blockStart = hmallocPageBlockStart(blockSize);
+	if (zoneSize < blockStart + blockSize) return (NULL);
 
 	nSlices = zoneSize >> HMALLOC_SLICE_SHIFT;
 	if (sliceIdx + nSlices > a->sliceCount) return (NULL);
@@ -391,8 +605,10 @@ t_hmallocPage *hmallocPageInit(t_hmallocArena	*a,			size_t sliceIdx,
 	memset(page, 0, sizeof(*page));
 
 	page->blockSize = blockSize;
-	page->pageOffset = HMALLOC_PAGE_HEADER_SIZE;
-	page->reserved = (uint16_t)hmallocPageReservedCapacity(zoneSize, blockSize);
+	page->pageOffset = blockStart + hmallocPageCacheOffset((uintptr_t)zone,
+		nSlices, blockSize, blockStart, zoneSize);
+	page->reserved = (uint16_t)hmallocPageReservedCapacity(
+		zoneSize, blockSize, page->pageOffset);
 	page->capacity = 0;
 	page->used = 0;
 	page->retireExpire = 0;
@@ -405,17 +621,26 @@ t_hmallocPage *hmallocPageInit(t_hmallocArena	*a,			size_t sliceIdx,
 	page->arena = a;
 	page->next = NULL;
 	page->prev = NULL;
-	page->freeIsZero = true;
+	/*
+	 * The blocks are zero only if none of the slices was ever used: mark
+	 * them dirty and learn whether they all were clean (as mimalloc's
+	 * memid.initially_zero). Purged slices stay dirty (conservative).
+	 */
+	page->freeIsZero = hmBitmapSetN(&a->slicesDirty, sliceIdx, nSlices, NULL);
 
-	key0 = (tld != NULL && tld->rng[0] != 0)
-		? (size_t)tld->rng[0] : (size_t)0x9E3779B97F4A7C15ULL;
-	key1 = (tld != NULL && tld->rng[1] != 0)
-		? (size_t)tld->rng[1] : (size_t)0xBF58476D1CE4E5B9ULL;
+	/* Two fresh keys per page, drawn in order (keys[0] never zero). */
+	key0 = hmallocPageKeyNext(tld, (uintptr_t)0x9E3779B97F4A7C15ULL);
+	key1 = hmallocPageKeyNext(tld, (uintptr_t)0xBF58476D1CE4E5B9ULL);
 	page->keys[0] = key0 | 1u;
 	page->keys[1] = key1;
 
 	if (!hmallocArenaSetPageRange(a, sliceIdx, nSlices, page))
 		return (NULL);
+	/* Checked lookups (calloc, realloc, usable size...) go through the page map. */
+	if (!hmallocPageMapRegister(page, page, zoneSize)) {
+		hmallocArenaSetPageRange(a, sliceIdx, nSlices, NULL);
+		return (NULL);
+	}
 	return (page);
 }
 
@@ -423,20 +648,10 @@ void hmallocPageFree(t_hmallocTheap *th, t_hmallocPage *p)
 {
 	if (p == NULL) return;
 
-	/* If the page is retired, decrement the retired count for its bin. */
-	if (th != NULL && p->retireExpire != 0
-		&& p->blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE) {
-		size_t b = hmallocBinOf(p->blockSize);
-		if (b < HMALLOC_BIN_COUNT && th->pagesRetiredCount[b] > 0)
-			th->pagesRetiredCount[b]--;
-	}
-
 	t_hmallocArena *arena = p->arena;
-	bool small = (p->blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE);
 
+	p->retireExpire = 0;
 	hmallocPageUnlink(th, p);
-	if (th != NULL && small)
-		hmallocTheapUpdateDirect(th, hmallocBinOf(p->blockSize));
 
 	if (arena == NULL) return;
 
@@ -445,27 +660,23 @@ void hmallocPageFree(t_hmallocTheap *th, t_hmallocPage *p)
 
 	hmStatsOnPageFree(p->blockSize, hmallocPageZoneSize(p->blockSize));
 
-	/* If the page is small, attempt to claim it as abandoned in the arena. */
-	if (small) {
-		size_t bin = hmallocBinOf(p->blockSize);
-		if (bin < HMALLOC_BIN_COUNT) {
-			if (hmallocArenaClaimAbandoned(arena, bin, sliceIdx)) {
-				t_hmallocHeap *heap = (th != NULL) ? th->heap : NULL;
-				if (heap != NULL)
-					atomic_fetch_sub_explicit(
-						&heap->abandonedCountBin[bin], 1,
-						memory_order_relaxed);
-			}
-		}
-	}
+	/*
+	 * The caller owns the page. If it is still in the abandoned map, remove
+	 * it first: hmallocArenaPageUnabandon waits for a concurrent reader that
+	 * temporarily cleared the bit to restore it, so no reader can find this
+	 * page once its slices are released below. No lock needed.
+	 */
+	hmallocArenaPageUnabandon(p);
 
 	p->used = 0;
 	p->free = NULL;
 	p->localFree = NULL;
 	p->retireExpire = 0;
+	p->abandonedHeap = NULL;
 	atomic_store_explicit(&p->xthreadFree, 0, memory_order_relaxed);
 	atomic_store_explicit(&p->xthreadId, 0, memory_order_relaxed);
 
+	hmallocPageMapUnregister(p, nSlices << HMALLOC_SLICE_SHIFT);
 	hmallocArenaSetPageRange(arena, sliceIdx, nSlices, NULL);
 
 	hmallocArenaSchedulePurge(arena, sliceIdx, nSlices);
@@ -476,8 +687,21 @@ void hmallocPageFree(t_hmallocTheap *th, t_hmallocPage *p)
 void hmallocPageRetire(t_hmallocTheap *th, t_hmallocPage *p)
 {
 	if (p == NULL || p->used != 0) return;
+	if (p->retireExpire != 0) return;
 
 	if (p->blockSize > HMALLOC_LARGE_MAX_OBJ_SIZE) {
+		/*
+		 * Keep one empty arena huge page per theap for a few admin
+		 * cycles: an alloc/free loop of the same size then skips the
+		 * slice search, the page init and the page map update.
+		 */
+		if (th != NULL && th->hugeCached == NULL && p->arena != NULL
+			&& p->osBase == NULL && p->theap == th) {
+			hmStatsTheapCounter(th, pagesRetire, 1);
+			p->retireExpire = HMALLOC_RETIRE_CYCLES_TINY;
+			th->hugeCached = p;
+			return;
+		}
 		hmallocPageFree(th, p);
 		return;
 	}
@@ -488,62 +712,85 @@ void hmallocPageRetire(t_hmallocTheap *th, t_hmallocPage *p)
 		return;
 	}
 
-	/* If the number of retired pages for this bin is below the maximum,
-	 * set the retireExpire counter and increment the retired count.
-	 * Otherwise, free the page. */
-	if (th->pagesRetiredCount[bin] < HMALLOC_RETIRE_MAX_PER_BIN) {
-		p->retireExpire = (p->blockSize <= HMALLOC_TINY_MAX_SIZE)
-			? HMALLOC_RETIRE_CYCLES_TINY
-			: HMALLOC_RETIRE_CYCLES_SMALL;
-		th->pagesRetiredCount[bin]++;
-		if ((uint16_t)bin < th->retiredMinBin)
-			th->retiredMinBin = (uint16_t)bin;
-		if ((uint16_t)bin > th->retiredMaxBin)
-			th->retiredMaxBin = (uint16_t)bin;
-		return;
+	/*
+	 * Do not retire too eagerly: keep an empty page around for a few admin
+	 * cycles, but only while its queue is short and it is either the only
+	 * page of its size class or holds small blocks. Pages in the full
+	 * queue are freed right away.
+	 */
+	bool inFull = (atomic_load_explicit(&p->xthreadId, memory_order_relaxed)
+		& HMALLOC_PAGE_IN_FULL_QUEUE) != 0;
+	size_t count = th->pages[bin].count;
+
+	if (hmLikely(!inFull && count <= HMALLOC_RETIRE_MAX_PER_BIN)) {
+		if (count == 1 || p->blockSize < HMALLOC_SMALL_SIZE_MAX) {
+			hmStatsTheapCounter(th, pagesRetire, 1);
+			p->retireExpire = (p->blockSize <= HMALLOC_TINY_MAX_OBJ_SIZE)
+				? HMALLOC_RETIRE_CYCLES_TINY
+				: HMALLOC_RETIRE_CYCLES_SMALL;
+			if (bin < th->retiredMinBin)
+				th->retiredMinBin = (uint16_t)bin;
+			if (bin > th->retiredMaxBin)
+				th->retiredMaxBin = (uint16_t)bin;
+			return;
+		}
 	}
 
 	hmallocPageFree(th, p);
 }
 
+/* One admin cycle for a retired page: free it once its delay expires. */
+static void hmallocPageTryRetire(t_hmallocTheap *th, t_hmallocPage *page,
+								 size_t bin, bool force,
+								 size_t *min, size_t *max)
+{
+	if (page->used == 0) {
+		page->retireExpire--;
+		if (page->retireExpire == 0 || force)
+			hmallocPageFree(th, page);
+		else {
+			if (bin < *min)
+				*min = bin;
+			if (bin > *max)
+				*max = bin;
+		}
+	}
+	else
+		page->retireExpire = 0;
+}
+
+/*
+ * Free expired retired pages. Retired pages sit at the head of their
+ * queue, so only the first few pages of each bin are examined.
+ */
 void hmallocPageCollectRetired(t_hmallocTheap *th, bool force)
 {
+	size_t	min = HMALLOC_BIN_FULL;
+	size_t	max = 0;
+
 	if (th == NULL) return;
 
-	if (th->retiredMinBin > th->retiredMaxBin) return;
+	/* The cached huge page expires like a retired page. */
+	if (th->hugeCached != NULL) {
+		t_hmallocPage	*hp = th->hugeCached;
 
-	size_t lo = th->retiredMinBin;
-	size_t hi = th->retiredMaxBin;
-	if (hi >= HMALLOC_BIN_HUGE) hi = HMALLOC_BIN_HUGE - 1;
-
-	/* Iterate through the bins in the retired range and process each page. */
-	for (size_t bin = lo; bin <= hi; ++bin) {
-		if (th->pagesRetiredCount[bin] == 0) continue;
-
+		if (force || --hp->retireExpire == 0) {
+			th->hugeCached = NULL;
+			hp->retireExpire = 0;
+			hmallocPageFree(th, hp);
+		}
+	}
+	for (size_t bin = th->retiredMinBin;
+		 bin <= th->retiredMaxBin && bin < HMALLOC_BIN_FULL; bin++) {
 		t_hmallocPage *page = th->pages[bin].first;
-		/* Iterate through the pages in the bin and check their retireExpire counters. */
-		while (page != NULL) {
+
+		for (unsigned i = 0; i < HMALLOC_RETIRE_MAX_PER_BIN && page != NULL
+			 && page->retireExpire != 0; i++) {
 			t_hmallocPage *next = page->next;
-
-			/* If the page is still in use, skip it. If the retireExpire counter is zero, skip it.
-			 * If force is true or the retireExpire counter has reached 1, free the page.
-			 * Otherwise, decrement the retireExpire counter. */
-			if (page->used != 0) {
-				if (page->retireExpire != 0) {
-					if (th->pagesRetiredCount[bin] > 0)
-						th->pagesRetiredCount[bin]--;
-					page->retireExpire = 0;
-				}
-				page = next;
-				continue;
-			}
-			if (page->retireExpire == 0) { page = next; continue; }
-
-			if (force || page->retireExpire == 1)
-				hmallocPageFree(th, page);
-			else
-				page->retireExpire--;
+			hmallocPageTryRetire(th, page, bin, force, &min, &max);
 			page = next;
 		}
 	}
+	th->retiredMinBin = (uint16_t)min;
+	th->retiredMaxBin = (uint16_t)max;
 }

@@ -10,12 +10,17 @@
  * @file stats.c
  * @brief Statistics collection for the hajlibc allocator.
  * @Created: 2026/10/19 10:46:59 by Moutig
- * @Updated: 2026/10/23 17:53:17 by Moutig
+ * @Updated: 2026/11/10 12:00:00 by Moutig
  *
- *	This file implements functions for collecting and reporting statistics
- *	about memory usage in the hajlibc allocator. It provides functions to
- *	initialize, merge, and retrieve statistics, as well as to output them
- *	in various formats (plain text, JSON).
+ * Statistics follow the mimalloc model:
+ *   - every thread counts in its theap (no atomics);
+ *   - theap stats are merged into their heap (on collect, thread exit,
+ *     or hmTheapStatsMergeToHeap);
+ *   - heap stats are merged into the sub-process on request
+ *     (hmHeapStatsMergeToSubproc) or when the heap goes away;
+ *   - OS level counters (pages, commit, purge, threads...) go directly to
+ *     the sub-process, atomically.
+ * A sub-process snapshot is its own stats plus those of all its heaps.
  */
 
 #include "include/hmInternal.h"
@@ -24,157 +29,240 @@
 
 #include <unistd.h>
 #include <string.h>
+
 #if HMALLOC_STATS
+
+/* ----- Primitives ----- */
+
+void	_hmallocStatUpdate(t_hmallocStatCount *stat, int64_t amount)
+{
+	if (amount == 0)
+		return;
+	stat->current += amount;
+	if (stat->current > stat->peak)
+		stat->peak = stat->current;
+	if (amount > 0)
+		stat->total += amount;
+}
+
+static void	hmallocAtomicMaxI64(int64_t *p, int64_t v)
+{
+	int64_t	cur = __atomic_load_n(p, __ATOMIC_RELAXED);
+
+	while (cur < v && !__atomic_compare_exchange_n(p, &cur, v, true,
+			__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		;
+}
+
+void	_hmallocStatUpdateMt(t_hmallocStatCount *stat, int64_t amount)
+{
+	int64_t	current;
+
+	if (amount == 0)
+		return;
+	current = __atomic_add_fetch(&stat->current, amount, __ATOMIC_RELAXED);
+	hmallocAtomicMaxI64(&stat->peak, current);
+	if (amount > 0)
+		(void)__atomic_fetch_add(&stat->total, amount, __ATOMIC_RELAXED);
+}
+
+/* Add a count: totals add up, the peak is bounded by the sum of both. */
+static void	hmallocStatCountAdd(t_hmallocStatCount *stat, const t_hmallocStatCount *src)
+{
+	const int64_t	srcPeak = __atomic_load_n(&src->peak, __ATOMIC_RELAXED);
+	const int64_t	srcCurrent = __atomic_load_n(&src->current, __ATOMIC_RELAXED);
+	int64_t			prevCurrent;
+
+	if (stat == src)
+		return;
+	(void)__atomic_fetch_add(&stat->total,
+		__atomic_load_n(&src->total, __ATOMIC_RELAXED), __ATOMIC_RELAXED);
+	if (srcCurrent == 0 && srcPeak == 0)
+		return;
+	prevCurrent = (srcCurrent == 0)
+		? __atomic_load_n(&stat->current, __ATOMIC_RELAXED)
+		: __atomic_fetch_add(&stat->current, srcCurrent, __ATOMIC_RELAXED);
+	hmallocAtomicMaxI64(&stat->peak, prevCurrent + srcPeak);
+}
+
+static void	hmallocStatCounterAdd(t_hmallocStatCounter *stat, const t_hmallocStatCounter *src)
+{
+	if (stat == src)
+		return;
+	(void)__atomic_fetch_add(&stat->total,
+		__atomic_load_n(&src->total, __ATOMIC_RELAXED), __ATOMIC_RELAXED);
+}
+
+#define HMALLOC_STAT_COUNT(stat)	hmallocStatCountAdd(&to->stat, &src->stat);
+#define HMALLOC_STAT_COUNTER(stat)	hmallocStatCounterAdd(&to->stat, &src->stat);
+
+static void	hmallocStatsAdd(t_hmallocStats *to, const t_hmallocStats *src)
+{
+	if (to == NULL || src == NULL || to == src)
+		return;
+	HMALLOC_STAT_FIELDS()
+	for (size_t i = 0; i <= HMALLOC_BIN_HUGE; i++) {
+		hmallocStatCountAdd(&to->mallocBins[i], &src->mallocBins[i]);
+		hmallocStatCountAdd(&to->pageBins[i], &src->pageBins[i]);
+	}
+	for (size_t i = 0; i < HMALLOC_CBIN_COUNT; i++)
+		hmallocStatCountAdd(&to->chunkBins[i], &src->chunkBins[i]);
+}
+
+#undef HMALLOC_STAT_COUNT
+#undef HMALLOC_STAT_COUNTER
+
+void	_hmallocStatsMergeInto(t_hmallocStats *to, t_hmallocStats *src)
+{
+	if (to == NULL || src == NULL || to == src)
+		return;
+	hmallocStatsAdd(to, src);
+	hmStatsInit(src);
+}
+
 void	_hmallocStatsInit(void)
 {
-	t_hmallocStats	*s = &g_hmalloc.statsSubproc;
-
-	memset(s, 0, sizeof(*s));
-	s->size = sizeof(*s);
-	s->version = HMALLOC_STATS_VERSION;
-
-	s = &g_hmalloc.statsHeapMain;
-	memset(s, 0, sizeof(*s));
-	s->size = sizeof(*s);
-	s->version = HMALLOC_STATS_VERSION;
-
+	hmStatsInit(&g_hmalloc.statsSubproc);
+	hmStatsInit(&g_hmalloc.statsHeapMain);
 	g_hmalloc.subprocMain.stats = &g_hmalloc.statsSubproc;
 	g_hmalloc.heapMain.stats = &g_hmalloc.statsHeapMain;
 }
 
-void	_hmallocStatsMergeInto(struct s_hmallocStats *to, struct s_hmallocStats *from)
+t_hmallocStats	*_hmallocHeapStats(t_hmallocHeap *heap)
 {
-	size_t	i;
-
-	if (to == NULL || from == NULL)
-		return;
-
-	to->total				+= from->total;
-	to->current				+= from->current;
-	to->pages				+= from->pages;
-	to->reserved			+= from->reserved;
-	to->committed			+= from->committed;
-	to->mmapCalls			+= from->mmapCalls;
-	to->arenaCount			+= from->arenaCount;
-	to->mallocNormalCount	+= from->mallocNormalCount;
-	to->mallocHugeCount		+= from->mallocHugeCount;
-	to->mallocRequested		+= from->mallocRequested;
-	to->errors				+= from->errors;
-
-	if (from->peak > to->peak)
-		to->peak = from->peak;
-
-	for (i = 0; i < HMALLOC_BIN_COUNT; i++) {
-		to->mallocBins[i]	+= from->mallocBins[i];
-		to->pageBins[i]		+= from->pageBins[i];
-	}
-
-	memset(from, 0, sizeof(*from));
-	from->size = sizeof(*from);
-	from->version = HMALLOC_STATS_VERSION;
+	if (heap == NULL || heap->stats == NULL)
+		return (&g_hmalloc.statsHeapMain);
+	return (heap->stats);
 }
 
-static void	hmStatsCollectTheaps(t_hmallocStats *dst)
+/* ----- Snapshots ----- */
+
+static bool	hmallocStatsCopy(t_hmallocStats *to, const t_hmallocStats *from)
 {
-	t_hmallocHeap	*heap = &g_hmalloc.heapMain;
+	if (to == NULL || to->size != sizeof(t_hmallocStats)
+		|| to->version != HMALLOC_STATS_VERSION)
+		return (false);
+	if (from == NULL)
+		return (false);
+	memcpy(to, from, sizeof(*to));
+	to->size = sizeof(*to);
+	to->version = HMALLOC_STATS_VERSION;
+	return (true);
+}
+
+static t_hmallocSubproc	*hmallocSubprocFromId(t_hmSubprocId id)
+{
+	return ((t_hmallocSubproc *)id._hmSubprocId);
+}
+
+/* The calling thread's theap of `heap`, if it already has one. */
+static t_hmallocTheap	*hmallocHeapTheapPeek(t_hmallocHeap *heap)
+{
+	t_hmallocTheap	*th = hmallocTheapDefaultGet();
+
+	if (th == NULL || th->tld == NULL)
+		return (NULL);
+	for (t_hmallocTheap *it = th->tld->theaps; it != NULL; it = it->tnext)
+		if (it->heap == heap)
+			return (it);
+	return (NULL);
+}
+
+/* Stats of a heap, including what the calling thread has not merged yet. */
+static t_hmallocStats	*hmallocHeapGetStats(t_hmallocHeap *heap)
+{
 	t_hmallocTheap	*th;
 
-	if (heap->stats != NULL)
-		_hmallocStatsMergeInto(dst, heap->stats);
+	if (heap == NULL)
+		heap = &g_hmalloc.heapMain;
+	th = hmallocHeapTheapPeek(heap);
+	if (th != NULL && th->stats != NULL)
+		_hmallocStatsMergeInto(_hmallocHeapStats(heap), th->stats);
+	return (_hmallocHeapStats(heap));
+}
 
-	hmallocLockAcquire(&heap->theapsLock);
-	th = heap->theaps;
-	while (th != NULL) {
-		if (th->stats != NULL) {
-			const t_hmallocStats	*tmp = th->stats;
+bool	hmSubprocStatsGet(t_hmSubprocId subprocId, t_hmallocStats *stats)
+{
+	t_hmallocSubproc	*subproc = hmallocSubprocFromId(subprocId);
 
-			dst->total				+= tmp->total;
-			dst->current			+= tmp->current;
-			dst->pages				+= tmp->pages;
-			dst->reserved			+= tmp->reserved;
-			dst->committed			+= tmp->committed;
-			dst->mmapCalls			+= tmp->mmapCalls;
-			dst->arenaCount			+= tmp->arenaCount;
-			dst->mallocNormalCount	+= tmp->mallocNormalCount;
-			dst->mallocHugeCount	+= tmp->mallocHugeCount;
-			dst->mallocRequested	+= tmp->mallocRequested;
-			dst->errors				+= tmp->errors;
-			if (tmp->peak > dst->peak)
-				dst->peak = tmp->peak;
-			for (size_t i = 0; i < HMALLOC_BIN_COUNT; i++) {
-				dst->mallocBins[i] += tmp->mallocBins[i];
-				dst->pageBins[i]   += tmp->pageBins[i];
-			}
-		}
-		th = th->hnext;
-	}
-	hmallocLockRelease(&heap->theapsLock);
+	if (stats == NULL || subproc == NULL || subproc->stats == NULL)
+		return (false);
+	if (!hmallocStatsCopy(stats, subproc->stats))
+		return (false);
+	hmallocStatsAdd(stats, hmallocHeapGetStats(subproc->heapMain));
+	hmallocLockAcquire(&subproc->heapsLock);
+	for (t_hmallocHeap *h = subproc->heaps; h != NULL; h = h->next)
+		if (h != subproc->heapMain)
+			hmallocStatsAdd(stats, hmallocHeapGetStats(h));
+	hmallocLockRelease(&subproc->heapsLock);
+	return (true);
 }
 
 bool	hmStatsGet(t_hmallocStats *stats)
 {
-	t_hmallocStats	acc;
-
-	if (stats == NULL)
-		return (false);
-	if (stats->size != sizeof(t_hmallocStats))
-		return (false);
-	if (stats->version != HMALLOC_STATS_VERSION)
-		return (false);
-
-	memset(&acc, 0, sizeof(acc));
-	acc.size = sizeof(acc);
-	acc.version = HMALLOC_STATS_VERSION;
-
-	{
-		const t_hmallocStats	*g = &g_hmalloc.statsSubproc;
-
-		acc.total				= g->total;
-		acc.peak				= g->peak;
-		acc.current				= g->current;
-		acc.pages				= g->pages;
-		acc.reserved			= g->reserved;
-		acc.committed			= g->committed;
-		acc.mmapCalls			= g->mmapCalls;
-		acc.arenaCount			= g->arenaCount;
-		acc.mallocNormalCount	= g->mallocNormalCount;
-		acc.mallocHugeCount		= g->mallocHugeCount;
-		acc.mallocRequested		= g->mallocRequested;
-		acc.errors				= g->errors;
-		for (size_t i = 0; i < HMALLOC_BIN_COUNT; i++) {
-			acc.mallocBins[i]	= g->mallocBins[i];
-			acc.pageBins[i]		= g->pageBins[i];
-		}
-	}
-
-	hmStatsCollectTheaps(&acc);
-
-	if (acc.total > acc.peak)
-		acc.peak = acc.total;
-
-	*stats = acc;
-	return (true);
+	return (hmSubprocStatsGet(hmSubprocMain(), stats));
 }
 
 bool	hmHeapStatsGet(t_hmallocHeap *heap, t_hmallocStats *stats)
 {
-	if (heap == NULL || stats == NULL)
-		return (false);
-	if (stats->size != sizeof(t_hmallocStats)
-		|| stats->version != HMALLOC_STATS_VERSION)
-		return (false);
-
-	memset(stats, 0, sizeof(*stats));
-	stats->size = sizeof(*stats);
-	stats->version = HMALLOC_STATS_VERSION;
-
-	if (heap->stats != NULL) {
-		*stats = *heap->stats;
-		stats->size = sizeof(*stats);
-		stats->version = HMALLOC_STATS_VERSION;
-	}
-	return (true);
+	return (hmallocStatsCopy(stats, hmallocHeapGetStats(heap)));
 }
+
+bool	hmTheapStatsGet(t_hmallocTheap *theap, t_hmallocStats *stats)
+{
+	if (theap == NULL || theap->stats == NULL)
+		return (false);
+	return (hmallocStatsCopy(stats, theap->stats));
+}
+
+void	hmTheapStatsMergeToHeap(t_hmallocTheap *theap)
+{
+	if (theap == NULL || theap->stats == NULL || theap->heap == NULL)
+		return;
+	_hmallocStatsMergeInto(_hmallocHeapStats(theap->heap), theap->stats);
+}
+
+void	hmHeapStatsMergeToSubproc(t_hmallocHeap *heap)
+{
+	t_hmallocSubproc	*subproc;
+
+	if (heap == NULL)
+		heap = &g_hmalloc.heapMain;
+	subproc = (heap->subproc != NULL) ? heap->subproc : &g_hmalloc.subprocMain;
+	if (subproc->stats == NULL)
+		return;
+	_hmallocStatsMergeInto(subproc->stats, _hmallocHeapStats(heap));
+}
+
+/* Merge the calling thread's stats into its heap (mimalloc's mi_stats_merge). */
+void	hmStatsMerge(void)
+{
+	t_hmallocTheap	*th = hmallocTheapDefaultGet();
+
+	if (th == NULL || th->tld == NULL)
+		return;
+	hmTheapStatsMergeToHeap(th);
+}
+
+void	hmStatsReset(void)
+{
+	t_hmallocHeap	*h = &g_hmalloc.heapMain;
+
+	hmStatsInit(&g_hmalloc.statsSubproc);
+	hmStatsInit(&g_hmalloc.statsHeapMain);
+	hmallocLockAcquire(&g_hmalloc.subprocMain.heapsLock);
+	for (t_hmallocHeap *it = g_hmalloc.subprocMain.heaps; it != NULL; it = it->next)
+		if (it->stats != NULL)
+			hmStatsInit(it->stats);
+	hmallocLockRelease(&g_hmalloc.subprocMain.heapsLock);
+	hmallocLockAcquire(&h->theapsLock);
+	for (t_hmallocTheap *th = h->theaps; th != NULL; th = th->hnext)
+		if (th->stats != NULL)
+			hmStatsInit(th->stats);
+	hmallocLockRelease(&h->theapsLock);
+}
+
+/* ----- JSON ----- */
 
 typedef struct s_hmJson {
 	char	*buf;
@@ -198,320 +286,235 @@ static void	hmJsonPuts(t_hmJson *j, const char *s)
 		hmJsonPutc(j, *s++);
 }
 
-static void	hmJsonPutU64(t_hmJson *j, uint64_t v)
-{
-	char	tmp[24];
-
-	hmallocUtoa(tmp, sizeof(tmp), v, 10, false);
-	hmJsonPuts(j, tmp);
-}
-
 static void	hmJsonPutI64(t_hmJson *j, int64_t v)
 {
 	char	tmp[24];
 
 	if (v < 0) {
 		hmJsonPutc(j, '-');
-		v = -v;
+		hmallocUtoa(tmp, sizeof(tmp), (uint64_t)0 - (uint64_t)v, 10, false);
 	}
-	hmallocUtoa(tmp, sizeof(tmp), (uint64_t)v, 10, false);
+	else
+		hmallocUtoa(tmp, sizeof(tmp), (uint64_t)v, 10, false);
 	hmJsonPuts(j, tmp);
 }
 
-static void	hmJsonKey(t_hmJson *j, const char *key, bool comma)
+static void	hmJsonKey(t_hmJson *j, const char *key)
 {
-	if (comma)
+	if (j->pos > 1)
 		hmJsonPutc(j, ',');
 	hmJsonPutc(j, '"');
 	hmJsonPuts(j, key);
 	hmJsonPuts(j, "\":");
 }
 
-static void	hmJsonFieldU64(t_hmJson *j, const char *key,
-							  uint64_t v, bool comma)
+static void	hmJsonCount(t_hmJson *j, const t_hmallocStatCount *c)
 {
-	hmJsonKey(j, key, comma);
-	hmJsonPutU64(j, v);
-}
-
-static void	hmJsonFieldI64(t_hmJson *j, const char *key,
-							  int64_t v, bool comma)
-{
-	hmJsonKey(j, key, comma);
-	hmJsonPutI64(j, v);
-}
-
-static void	hmJsonStats(t_hmJson *j, const t_hmallocStats *s)
-{
-	hmJsonPutc(j, '{');
-	hmJsonFieldI64(j, "version", s->version, false);
-	hmJsonFieldU64(j, "total", s->total, true);
-	hmJsonFieldU64(j, "peak", s->peak, true);
-	hmJsonFieldU64(j, "current", s->current, true);
-	hmJsonFieldU64(j, "pages", s->pages, true);
-	hmJsonFieldU64(j, "reserved", s->reserved, true);
-	hmJsonFieldU64(j, "committed", s->committed, true);
-	hmJsonFieldU64(j, "mmapCalls", s->mmapCalls, true);
-	hmJsonFieldU64(j, "arenaCount", s->arenaCount, true);
-	hmJsonFieldU64(j, "mallocNormalCount", s->mallocNormalCount, true);
-	hmJsonFieldU64(j, "mallocHugeCount", s->mallocHugeCount, true);
-	hmJsonFieldU64(j, "mallocRequested", s->mallocRequested, true);
-	hmJsonFieldU64(j, "errors", s->errors, true);
-
-	hmJsonKey(j, "mallocBins", true);
-	hmJsonPutc(j, '[');
-	for (size_t i = 0; i < HMALLOC_BIN_COUNT; i++) {
-		if (i != 0)
-			hmJsonPutc(j, ',');
-		hmJsonPutU64(j, s->mallocBins[i]);
-	}
-	hmJsonPutc(j, ']');
-
-	hmJsonKey(j, "pageBins", true);
-	hmJsonPutc(j, '[');
-	for (size_t i = 0; i < HMALLOC_BIN_COUNT; i++) {
-		if (i != 0)
-			hmJsonPutc(j, ',');
-		hmJsonPutU64(j, s->pageBins[i]);
-	}
-	hmJsonPutc(j, ']');
-
+	hmJsonPuts(j, "{\"total\":");
+	hmJsonPutI64(j, c->total);
+	hmJsonPuts(j, ",\"peak\":");
+	hmJsonPutI64(j, c->peak);
+	hmJsonPuts(j, ",\"current\":");
+	hmJsonPutI64(j, c->current);
 	hmJsonPutc(j, '}');
-	hmJsonPutc(j, '\0');
 }
 
-char	*hmStatsGetJson(size_t bufSize, char *buf)
+static void	hmJsonCounter(t_hmJson *j, const t_hmallocStatCounter *c)
 {
-	t_hmallocStats	s;
-	t_hmJson		j;
+	hmJsonPuts(j, "{\"total\":");
+	hmJsonPutI64(j, c->total);
+	hmJsonPutc(j, '}');
+}
+
+/* Per-bin counts, compact: one [total,peak,current] triple per bin. */
+static void	hmJsonCountArray(t_hmJson *j, const char *key,
+							 const t_hmallocStatCount *a, size_t n)
+{
+	hmJsonKey(j, key);
+	hmJsonPutc(j, '[');
+	for (size_t i = 0; i < n; i++) {
+		if (i != 0)
+			hmJsonPutc(j, ',');
+		hmJsonPutc(j, '[');
+		hmJsonPutI64(j, a[i].total);
+		hmJsonPutc(j, ',');
+		hmJsonPutI64(j, a[i].peak);
+		hmJsonPutc(j, ',');
+		hmJsonPutI64(j, a[i].current);
+		hmJsonPutc(j, ']');
+	}
+	hmJsonPutc(j, ']');
+}
+
+#define HMALLOC_STAT_COUNT(stat)	hmJsonKey(&j, #stat); hmJsonCount(&j, &s->stat);
+#define HMALLOC_STAT_COUNTER(stat)	hmJsonKey(&j, #stat); hmJsonCounter(&j, &s->stat);
+
+static char	*hmallocStatsJson(const t_hmallocStats *s, size_t bufSize, char *buf)
+{
+	t_hmJson	j;
 
 	if (buf == NULL || bufSize == 0)
 		return (NULL);
-
-	memset(&s, 0, sizeof(s));
-	s.size = sizeof(s);
-	s.version = HMALLOC_STATS_VERSION;
-	if (!hmStatsGet(&s))
-		return (NULL);
-
 	j.buf = buf;
 	j.cap = bufSize;
 	j.pos = 0;
 	j.overflow = false;
+	hmJsonPutc(&j, '{');
+	hmJsonPuts(&j, "\"version\":");
+	hmJsonPutI64(&j, (int64_t)s->version);
+	HMALLOC_STAT_FIELDS()
+	hmJsonCountArray(&j, "mallocBins", s->mallocBins, HMALLOC_BIN_HUGE + 1);
+	hmJsonCountArray(&j, "pageBins", s->pageBins, HMALLOC_BIN_HUGE + 1);
+	hmJsonCountArray(&j, "chunkBins", s->chunkBins, HMALLOC_CBIN_COUNT);
+	hmJsonPutc(&j, '}');
+	hmJsonPutc(&j, '\0');
+	return (j.overflow ? NULL : buf);
+}
 
-	hmJsonStats(&j, &s);
+#undef HMALLOC_STAT_COUNT
+#undef HMALLOC_STAT_COUNTER
 
-	if (j.overflow)
+char	*hmStatsGetJson(size_t bufSize, char *buf)
+{
+	hmStatsDecl(s);
+
+	if (!hmStatsGet(&s))
 		return (NULL);
-	return (buf);
+	return (hmallocStatsJson(&s, bufSize, buf));
 }
 
 char	*hmHeapStatsGetJson(t_hmallocHeap *heap, size_t bufSize, char *buf)
 {
-	t_hmallocStats	s;
-	t_hmJson		j;
+	hmStatsDecl(s);
 
-	if (heap == NULL || buf == NULL || bufSize == 0)
-		return (NULL);
-
-	memset(&s, 0, sizeof(s));
-	s.size = sizeof(s);
-	s.version = HMALLOC_STATS_VERSION;
 	if (!hmHeapStatsGet(heap, &s))
 		return (NULL);
-
-	j.buf = buf;
-	j.cap = bufSize;
-	j.pos = 0;
-	j.overflow = false;
-
-	hmJsonStats(&j, &s);
-
-	if (j.overflow)
-		return (NULL);
-	return (buf);
+	return (hmallocStatsJson(&s, bufSize, buf));
 }
 
-static void	hmStatsLine(t_hmOutputFun *out, void *arg, const char *key, uint64_t v)
+/* ----- Text output ----- */
+
+static void	hmallocDefaultOut(const char *msg, void *arg)
 {
-	char	buf[128];
-	char	num[24];
-	size_t	pos;
-	size_t	n;
-
-	pos = 0;
-	while (*key != '\0' && pos + 1 < sizeof(buf))
-		buf[pos++] = *key++;
-	if (pos + 1 < sizeof(buf))
-		buf[pos++] = ':';
-	if (pos + 1 < sizeof(buf))
-		buf[pos++] = ' ';
-
-
-	n = hmallocUtoa(num, sizeof(num), v, 10, false);
-	for (size_t i = 0; i < n && pos + 1 < sizeof(buf); i++)
-		buf[pos++] = num[i];
-	if (pos + 1 < sizeof(buf))
-		buf[pos++] = '\n';
-	buf[pos] = '\0';
-
-	if (out != NULL)
-		out(buf, arg);
+	(void)arg;
+	hmallocPrimOutStderr(msg);
 }
 
-static void	hmStatsPrintStats(t_hmallocStats *s, t_hmOutputFun *out, void *arg)
+/* Append `s` right-aligned in a field of `width` characters. */
+static size_t	hmallocPutField(char *buf, size_t pos, size_t cap, const char *s,
+								size_t width, bool left)
 {
+	size_t	len = strlen(s);
+
+	if (!left)
+		for (; len < width && pos + 1 < cap; width--)
+			buf[pos++] = ' ';
+	for (size_t i = 0; s[i] != '\0' && pos + 1 < cap; i++)
+		buf[pos++] = s[i];
+	if (left)
+		for (; len < width && pos + 1 < cap; len++)
+			buf[pos++] = ' ';
+	return (pos);
+}
+
+static void	hmallocI64Str(char *out, size_t cap, int64_t v)
+{
+	if (v < 0) {
+		out[0] = '-';
+		hmallocUtoa(out + 1, cap - 1, (uint64_t)0 - (uint64_t)v, 10, false);
+	}
+	else
+		hmallocUtoa(out, cap, (uint64_t)v, 10, false);
+}
+
+/* One line: name, total, peak, current (counters show only total). */
+static void	hmallocStatsLine(t_hmOutputFun *out, void *arg, const char *name,
+							 int64_t total, const int64_t *peak, const int64_t *current)
+{
+	char	line[160];
 	char	num[24];
+	size_t	pos = 0;
 
-	out("hmalloc stats v", arg);
-	hmallocUtoa(num, sizeof(num), (uint64_t)s->version, 10, false);
-	out(num, arg);
-	out("\n", arg);
+	pos = hmallocPutField(line, pos, sizeof(line), name, 24, true);
+	hmallocI64Str(num, sizeof(num), total);
+	pos = hmallocPutField(line, pos, sizeof(line), num, 16, false);
+	if (peak != NULL) {
+		hmallocI64Str(num, sizeof(num), *peak);
+		pos = hmallocPutField(line, pos, sizeof(line), num, 16, false);
+		hmallocI64Str(num, sizeof(num), *current);
+		pos = hmallocPutField(line, pos, sizeof(line), num, 16, false);
+	}
+	line[pos++] = '\n';
+	line[pos] = '\0';
+	out(line, arg);
+}
 
-	hmStatsLine(out, arg, "total", s->total);
-	hmStatsLine(out, arg, "peak", s->peak);
-	hmStatsLine(out, arg, "current", s->current);
-	hmStatsLine(out, arg, "pages", s->pages);
-	hmStatsLine(out, arg, "reserved", s->reserved);
-	hmStatsLine(out, arg, "committed", s->committed);
-	hmStatsLine(out, arg, "mmapCalls", s->mmapCalls);
-	hmStatsLine(out, arg, "arenaCount", s->arenaCount);
-	hmStatsLine(out, arg, "mallocNormalCount", s->mallocNormalCount);
-	hmStatsLine(out, arg, "mallocHugeCount", s->mallocHugeCount);
-	hmStatsLine(out, arg, "mallocRequested", s->mallocRequested);
-	hmStatsLine(out, arg, "errors", s->errors);
+#define HMALLOC_STAT_COUNT(stat) \
+	hmallocStatsLine(out, arg, #stat, s->stat.total, &s->stat.peak, &s->stat.current);
+#define HMALLOC_STAT_COUNTER(stat) \
+	hmallocStatsLine(out, arg, #stat, s->stat.total, NULL, NULL);
+
+static void	hmallocStatsPrint(const char *what, const t_hmallocStats *s,
+							  t_hmOutputFun *out, void *arg)
+{
+	static const char	*cbins[HMALLOC_CBIN_COUNT] = {
+		"small", "other", "medium", "large", "huge", "none"
+	};
+	char				name[32];
+
+	if (out == NULL)
+		out = &hmallocDefaultOut;
+	out(what, arg);
+	out(" stats (hmalloc v", arg);
+	hmallocUtoa(name, sizeof(name), s->version, 10, false);
+	out(name, arg);
+	out(")\n", arg);
+	hmallocStatsLine(out, arg, "", 0, NULL, NULL);
+	HMALLOC_STAT_FIELDS()
+	for (size_t i = 0; i < HMALLOC_CBIN_COUNT; i++) {
+		memcpy(name, "chunkBins.", 10);
+		strcpy(name + 10, cbins[i]);
+		hmallocStatsLine(out, arg, name, s->chunkBins[i].total,
+			&s->chunkBins[i].peak, &s->chunkBins[i].current);
+	}
+}
+
+#undef HMALLOC_STAT_COUNT
+#undef HMALLOC_STAT_COUNTER
+
+void	hmSubprocStatsPrintOut(t_hmSubprocId subprocId, t_hmOutputFun *out, void *arg)
+{
+	hmStatsDecl(s);
+
+	if (hmSubprocStatsGet(subprocId, &s))
+		hmallocStatsPrint("subproc", &s, out, arg);
 }
 
 void	hmStatsPrintOut(t_hmOutputFun *out, void *arg)
 {
-	t_hmallocStats	s;
-
-	if (out == NULL)
-		return;
-
-	memset(&s, 0, sizeof(s));
-	s.size = sizeof(s);
-	s.version = HMALLOC_STATS_VERSION;
-	if (!hmStatsGet(&s))
-		return;
-
-	hmStatsPrintStats(&s, out, arg);
+	hmSubprocStatsPrintOut(hmSubprocMain(), out, arg);
 }
 
 void	hmHeapStatsPrintOut(t_hmallocHeap *heap, t_hmOutputFun *out, void *arg)
 {
-	t_hmallocStats	s;
+	hmStatsDecl(s);
 
-	if (heap == NULL || out == NULL)
-		return;
+	if (hmHeapStatsGet(heap, &s))
+		hmallocStatsPrint("heap", &s, out, arg);
+}
 
-	memset(&s, 0, sizeof(s));
-	s.size = sizeof(s);
-	s.version = HMALLOC_STATS_VERSION;
-	if (!hmHeapStatsGet(heap, &s))
-		return;
-
-	hmStatsPrintStats(&s, out, arg);
+/* Write to a file descriptor (NULL: stderr). */
+static void	hmallocFdOut(const char *msg, void *arg)
+{
+	(void)!write((int)(uintptr_t)arg, msg, strlen(msg));
 }
 
 void	hmStatsPrint(void *out)
 {
-	int		fd = 2;
-	char	buf[512];
-	t_hmallocStats	s;
-	size_t	pos;
-	size_t	n;
-
-	if (out != NULL)
-		fd = (int)(uintptr_t)out;
-
-	memset(&s, 0, sizeof(s));
-	s.size = sizeof(s);
-	s.version = HMALLOC_STATS_VERSION;
-	if (!hmStatsGet(&s))
-		return;
-
-	pos = 0;
-	{
-		const char	*hdr = "hmalloc stats\n";
-
-		while (*hdr != '\0' && pos + 1 < sizeof(buf))
-			buf[pos++] = *hdr++;
-	}
-	{
-		static const char *keys[] = {
-			"total", "peak", "current", "pages",
-			"reserved", "committed", "mmapCalls",
-			"arenaCount", "mallocNormalCount",
-			"mallocHugeCount", "mallocRequested", "errors"
-		};
-		const size_t	vals[] = {
-			s.total, s.peak, s.current, s.pages,
-			s.reserved, s.committed, s.mmapCalls,
-			s.arenaCount, s.mallocNormalCount,
-			s.mallocHugeCount, s.mallocRequested, s.errors
-		};
-
-		for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
-			const char	*k = keys[i];
-			char		num[24];
-
-			while (*k != '\0' && pos + 1 < sizeof(buf))
-				buf[pos++] = *k++;
-			if (pos + 1 < sizeof(buf))
-				buf[pos++] = ':';
-			if (pos + 1 < sizeof(buf))
-				buf[pos++] = ' ';
-			n = hmallocUtoa(num, sizeof(num), (uint64_t)vals[i], 10, false);
-			for (size_t j = 0; j < n && pos + 1 < sizeof(buf); j++)
-				buf[pos++] = num[j];
-			if (pos + 1 < sizeof(buf))
-				buf[pos++] = '\n';
-		}
-	}
-	buf[pos] = '\0';
-	write(fd, buf, pos);
+	hmStatsPrintOut(&hmallocFdOut, (out != NULL) ? out : (void *)(uintptr_t)2);
 }
 
-void	hmStatsReset(void)
-{
-	t_hmallocStats	*subproc = &g_hmalloc.statsSubproc;
-	t_hmallocStats	*heap = &g_hmalloc.statsHeapMain;
-	t_hmallocHeap	*h = &g_hmalloc.heapMain;
-	t_hmallocTheap	*th;
-
-	memset(subproc, 0, sizeof(*subproc));
-	subproc->size = sizeof(*subproc);
-	subproc->version = HMALLOC_STATS_VERSION;
-
-	memset(heap, 0, sizeof(*heap));
-	heap->size = sizeof(*heap);
-	heap->version = HMALLOC_STATS_VERSION;
-
-	hmallocLockAcquire(&h->theapsLock);
-	th = h->theaps;
-	while (th != NULL) {
-		if (th->stats != NULL) {
-			memset(th->stats, 0, sizeof(*th->stats));
-			th->stats->size = sizeof(*th->stats);
-			th->stats->version = HMALLOC_STATS_VERSION;
-		}
-		th = th->hnext;
-	}
-	hmallocLockRelease(&h->theapsLock);
-}
-
-void	hmStatsMerge(void)
-{
-	t_hmallocTheap	*th = hmallocTheapDefaultGet();
-	t_hmallocStats	*dst;
-
-	if (th == NULL || th->tld == NULL || th->stats == NULL)
-		return;
-
-	dst = &g_hmalloc.statsSubproc;
-	_hmallocStatsMergeInto(dst, th->stats);
-}
+#endif /* HMALLOC_STATS */
 
 void	hmProcessInfo(size_t *elapsedMsecs,	size_t *userMsecs,
 					  size_t *systemMsecs,	size_t *currentRss,
@@ -541,113 +544,94 @@ void	hmProcessInfo(size_t *elapsedMsecs,	size_t *userMsecs,
 		*pageFaults = info.pageFaults;
 }
 
+#if HMALLOC_STATS
+
+/* ----- Allocator hooks ----- */
 
 __HAJ_INLINE void	hmStatsOnHugeAlloc(t_hmallocTheap *th, size_t blockSize, size_t padded)
 {
 	if (th == NULL || th->stats == NULL)
 		return;
-	th->stats->mallocHugeCount++;
-	th->stats->mallocRequested += padded - HMALLOC_PADDING_SIZE;
-	th->stats->total += padded;
-	th->stats->current += blockSize;
-	if (th->stats->current > th->stats->peak)
-		th->stats->peak = th->stats->current;
+	_hmallocStatUpdate(&th->stats->mallocHuge, (int64_t)blockSize);
+	_hmallocStatUpdate(&th->stats->allocated, (int64_t)blockSize);
+	th->stats->mallocHugeCount.total++;
+	th->stats->mallocCount.total++;
+	th->stats->mallocRequested.total += (int64_t)(padded - HMALLOC_PADDING_SIZE);
 	th->statsPending++;
 }
 
 __HAJ_INLINE void	hmStatsOnNormalAlloc(t_hmallocTheap *th, size_t padded, size_t bin)
 {
+	size_t	bsize;
+
 	if (th == NULL || th->stats == NULL)
 		return;
+	bsize = hmallocBinSize(bin);
+	_hmallocStatUpdate(&th->stats->mallocNormal, (int64_t)bsize);
+	_hmallocStatUpdate(&th->stats->allocated, (int64_t)bsize);
+	th->stats->mallocNormalCount.total++;
+	th->stats->mallocCount.total++;
+	th->stats->mallocRequested.total += (int64_t)(padded - HMALLOC_PADDING_SIZE);
+	if (bin <= HMALLOC_BIN_HUGE)
+		_hmallocStatUpdate(&th->stats->mallocBins[bin], 1);
+	th->statsPending++;
+}
 
-	th->stats->mallocNormalCount++;
-	th->stats->mallocRequested	+= padded - HMALLOC_PADDING_SIZE;
-	th->stats->total			+= padded;
-	th->stats->current			+= padded;
-	if (th->stats->current > th->stats->peak)
-		th->stats->peak = th->stats->current;
-	if (bin < HMALLOC_BIN_COUNT)
-		th->stats->mallocBins[bin]++;
+__HAJ_INLINE void	hmStatsOnFree(t_hmallocTheap *th, size_t blockSize)
+{
+	if (th == NULL || th->stats == NULL)
+		return;
+	_hmallocStatUpdate(&th->stats->allocated, -(int64_t)blockSize);
+	th->stats->freeCount.total++;
+	th->stats->freed.total += (int64_t)blockSize;
+	if (blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE) {
+		const size_t	bin = hmallocBinOf(blockSize);
+
+		_hmallocStatUpdate(&th->stats->mallocNormal, -(int64_t)blockSize);
+		if (bin <= HMALLOC_BIN_HUGE)
+			_hmallocStatUpdate(&th->stats->mallocBins[bin], -1);
+	}
+	else
+		_hmallocStatUpdate(&th->stats->mallocHuge, -(int64_t)blockSize);
 	th->statsPending++;
 }
 
 __HAJ_INLINE void	hmStatsOnPageAlloc(size_t blockSize, size_t zoneSize)
 {
-	__atomic_fetch_add(&g_hmalloc.statsSubproc.pages,		1,			__ATOMIC_RELAXED);
-	__atomic_fetch_add(&g_hmalloc.statsSubproc.reserved,	zoneSize,	__ATOMIC_RELAXED);
-	__atomic_fetch_add(&g_hmalloc.statsSubproc.committed,	zoneSize,	__ATOMIC_RELAXED);
+	hmStatsSubprocIncrease(pages, 1);
+	hmStatsSubprocIncrease(reserved, zoneSize);
+	hmStatsSubprocIncrease(committed, zoneSize);
+	hmStatsSubprocIncrease(pageCommitted, zoneSize);
 	if (blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE) {
-		size_t bin = hmallocBinOf(blockSize);
-		if (bin < HMALLOC_BIN_COUNT)
-			__atomic_fetch_add(&g_hmalloc.statsSubproc.pageBins[bin], 1,
-							   __ATOMIC_RELAXED);
+		const size_t	bin = hmallocBinOf(blockSize);
+
+		if (bin <= HMALLOC_BIN_HUGE)
+			hmStatsSubprocIncrease(pageBins[bin], 1);
 	}
-}
-
-__HAJ_INLINE void	hmStatsOnFree(t_hmallocTheap *th, size_t padded)
-{
-	if (th == NULL || th->stats == NULL)
-		return;
-
-	if (th->stats->current >= padded)
-		th->stats->current -= padded;
-	else
-		th->stats->current = 0;
-	th->statsPending++;
 }
 
 __HAJ_INLINE void	hmStatsOnPageFree(size_t blockSize, size_t zoneSize)
 {
-	size_t cur;
-	cur = __atomic_load_n(&g_hmalloc.statsSubproc.pages, __ATOMIC_RELAXED);
-	while (cur > 0) {
-		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.pages, &cur,
-				cur - 1, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-			break;
-	}
-	cur = __atomic_load_n(&g_hmalloc.statsSubproc.reserved, __ATOMIC_RELAXED);
-	while (cur >= zoneSize) {
-		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.reserved, &cur,
-				cur - zoneSize, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-			break;
-	}
-	cur = __atomic_load_n(&g_hmalloc.statsSubproc.committed, __ATOMIC_RELAXED);
-	while (cur >= zoneSize) {
-		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.committed, &cur,
-				cur - zoneSize, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-			break;
-	}
+	hmStatsSubprocDecrease(pages, 1);
+	hmStatsSubprocDecrease(reserved, zoneSize);
+	hmStatsSubprocDecrease(committed, zoneSize);
+	hmStatsSubprocDecrease(pageCommitted, zoneSize);
 	if (blockSize <= HMALLOC_LARGE_MAX_OBJ_SIZE) {
-		size_t bin = hmallocBinOf(blockSize);
-		if (bin < HMALLOC_BIN_COUNT) {
-			cur = __atomic_load_n(&g_hmalloc.statsSubproc.pageBins[bin], __ATOMIC_RELAXED);
-			while (cur > 0) {
-				if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.pageBins[bin], &cur,
-						cur - 1, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-					break;
-			}
-		}
+		const size_t	bin = hmallocBinOf(blockSize);
+
+		if (bin <= HMALLOC_BIN_HUGE)
+			hmStatsSubprocDecrease(pageBins[bin], 1);
 	}
 }
 
 __HAJ_INLINE void	hmStatsOnMmap(void)
 {
-	__atomic_fetch_add(&g_hmalloc.statsSubproc.mmapCalls, 1, __ATOMIC_RELAXED);
+	hmStatsSubprocCounter(mmapCalls, 1);
 }
 
 __HAJ_INLINE void	hmStatsOnArenaCreate(void)
 {
-	__atomic_fetch_add(&g_hmalloc.statsSubproc.arenaCount, 1, __ATOMIC_RELAXED);
-}
-
-__HAJ_INLINE void	hmStatsOnArenaDestroy(void)
-{
-	size_t cur = __atomic_load_n(&g_hmalloc.statsSubproc.arenaCount, __ATOMIC_RELAXED);
-	while (cur > 0) {
-		if (__atomic_compare_exchange_n(&g_hmalloc.statsSubproc.arenaCount, &cur,
-				cur - 1, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-			break;
-	}
+	hmStatsSubprocCounter(arenaCount, 1);
 }
 
 #endif /* HMALLOC_STATS */

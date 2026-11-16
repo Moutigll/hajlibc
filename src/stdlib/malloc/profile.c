@@ -15,7 +15,9 @@
  * The profiler is an opt-in feature: when HMALLOC_PROFILE is 0,
  * the public API still links (see hmalloc.h) but every call is a
  * stub. When HMALLOC_PROFILE is 1, allocation and large-alloc
- * paths call profiler->onSample every `sampleRate` bytes.
+ * path calls profiler->onSample about every `sampleRate` allocated bytes
+ * (see the sampling section of alloc.c, modelled on mimalloc's
+ * MI_SAMPLE == 1: the decision is only taken on the generic path).
  *
  * Wiring in the allocator
  * -----------------------
@@ -40,8 +42,8 @@
  * it is immutable while the profiler is active, and it is set
  * to 0 by Stop after taking the lock.
  *
- * When a new theap is created after Start, init.c arms it
- * lazily (see _hmallocThreadInit in init.c).
+ * A theap is armed when it is created, and every theap follows
+ * Start / Stop on its heartbeat (hmallocTheapProfileSync, alloc.c).
  */
 
 #include "include/hmInternal.h"
@@ -53,6 +55,9 @@ bool	hmHeapProfile(t_hmallocHeap *heap, t_hmallocProfiler *prof)
 {
 	if (heap == NULL || prof == NULL)
 		return (false);
+	/* The lazy process init resets the main heap: do it before attaching. */
+	if (!atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire))
+		_hmallocAutoProcessInit();
 
 	hmallocLockAcquire(&g_hmallocTs.lock);
 
@@ -96,6 +101,8 @@ bool	hmProfilerStart(t_hmallocProfiler *prof)
 
 	if (prof == NULL)
 		return (false);
+	if (!atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire))
+		_hmallocAutoProcessInit();
 
 	if (prof->initialSampleRate == 0)
 		prof->initialSampleRate = 64 * 1024;	/* 64 KiB default */
@@ -114,7 +121,7 @@ bool	hmProfilerStart(t_hmallocProfiler *prof)
 	prof->sampleCountdown		= prof->sampleRate;
 	prof->sampleCount			= 0;
 	prof->bytesSinceLastSample	= 0;
-	prof->active				= true;
+	__atomic_store_n(&prof->active, true, __ATOMIC_RELEASE);
 
 	/*
 	 * Arm the calling thread's theap if it already exists.
@@ -142,17 +149,21 @@ bool	hmProfilerStop(t_hmallocProfiler *prof)
 
 	hmallocLockAcquire(&g_hmallocTs.lock);
 
-	prof->active			= false;
+	__atomic_store_n(&prof->active, false, __ATOMIC_RELEASE);
 	prof->sampleCountdown	= SIZE_MAX;	/* "never" on the fast path */
 
-	if (heap != NULL) {
-		hmallocLockAcquire(&heap->theapsLock);
-		for (th = heap->theaps; th != NULL; th = th->hnext) {
-			th->sampleRate		= 0;
-			th->sampleCountdown	= SIZE_MAX;
-		}
-		hmallocLockRelease(&heap->theapsLock);
+	/*
+	 * Only the calling thread is disarmed here: a theap is only written
+	 * by its owner, the others stop sampling on their next generic
+	 * allocation (the profiler is no longer active) or heartbeat.
+	 */
+	th = hmallocTheapDefaultGet();
+	if (th != NULL && th->tld != NULL) {
+		th->sampleRate		= 0;
+		th->sampleCountdown	= SIZE_MAX;
+	}
 
+	if (heap != NULL) {
 		if (heap->profiler == prof) {
 			heap->profiler	= NULL;
 			prof->heap		= NULL;

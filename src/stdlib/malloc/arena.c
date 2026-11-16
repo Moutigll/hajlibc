@@ -10,7 +10,7 @@
  * @file arena.c
  * @brief Arena allocation, binned slice bitmap, abandoned-slice reclaim.
  * @Created: 2026/10/06 13:32:48 by Moutig
- * @Updated: 2026/10/23 17:15:00 by Moutig
+ * @Updated: 2026/11/16 17:23:02 by Moutig
  *
  * An arena is a 256 MiB region carved into 64 KiB slices. Each slice
  * is either metadata (the arena header itself, plus its metas[] array
@@ -38,339 +38,62 @@
 
 #include <errno.h>
 
-/**
- * @brief Try to claim a range of bits in an atomic field.
- * @param w The atomic field to claim from.
- * @param i The starting index of the range.
- * @param n The number of bits to claim.
- * @return true if the bits were successfully claimed, false otherwise.
- */
-static __HAJ_INLINE bool hmBFieldTryClaim(_Atomic uint64_t *w, size_t i, size_t n)
-{
-	uint64_t mask = (n == 64)
-		? (~(uint64_t)0 << (i & 63))
-		: ((((uint64_t)1 << n) - 1) << (i & 63));
-	uint64_t old = atomic_load_explicit(w, memory_order_relaxed);
+/* ----- Abandoned pages ----- */
 
-	do {
-		if ((old & mask) != mask)
-			return (false);
-	} while (!atomic_compare_exchange_weak_explicit(
-		w, &old, old & ~mask,
-		memory_order_acq_rel, memory_order_relaxed));
-	return (true);
+/* Current thread sequence number, used to space out bitmap searches. */
+static __HAJ_INLINE size_t hmallocArenaTseq(void)
+{
+	t_hmallocTheap *th = hmallocTheapDefaultGet();
+
+	return ((th != NULL && th->tld != NULL) ? th->tld->threadSeq : 0);
 }
 
-/**
- * @brief Release a range of bits in an atomic field.
- * @param w The atomic field to release to.
- * @param i The starting index of the range.
- * @param n The number of bits to release.
- */
-static __HAJ_INLINE void hmBFieldRelease(_Atomic uint64_t *w, size_t i, size_t n)
+bool hmallocArenaPageAbandonMapped(t_hmallocPage *page, t_hmallocHeap *heap)
 {
-	uint64_t mask = (n == 64)
-		? (~(uint64_t)0 << (i & 63))
-		: ((((uint64_t)1 << n) - 1) << (i & 63));
+	t_hmallocArena	*a = page->arena;
+	size_t			bin = hmallocBinOf(page->blockSize);
 
-	atomic_fetch_or_explicit(w, mask, memory_order_release);
-}
-
-/**
- * @brief Try to claim a range of slices in a chunk.
- * @param ch The chunk to claim from.
- * @param start The starting index of the range.
- * @param n The number of slices to claim.
- * @return true if the slices were successfully claimed, false otherwise.
- */
-static bool hmChunkTryClaim(t_hmBChunk *ch, size_t start, size_t n)
-{
-	size_t i	= start;
-	size_t rem	= n;
-	size_t done	= 0;
-
-	while (rem > 0) {
-		size_t f		= i >> 6;
-		size_t b		= i & 63;
-		size_t avail	= 64 - b;
-		size_t take		= (rem < avail) ? rem : avail;
-
-		if (!hmBFieldTryClaim(&ch->fields[f], i, take)) {
-			/* Roll back the fields we have already modified. */
-			size_t j	= start;
-			size_t back	= done;
-
-			while (back > 0) {
-				size_t jf		= j >> 6;
-				size_t jb		= j & 63;
-				size_t availj	= 64 - jb;
-				size_t takej	= (back < availj) ? back : availj;
-
-				hmBFieldRelease(&ch->fields[jf], j, takej);
-				j	+= takej;
-				back -= takej;
-			}
-			return (false);
-		}
-		i		+= take;
-		rem		-= take;
-		done	+= take;
-	}
-	return (true);
-}
-
-/**
- * @brief Release a range of slices in a chunk.
- * @param ch The chunk to release to.
- * @param start The starting index of the range.
- * @param n The number of slices to release.
- */
-static __HAJ_INLINE void hmChunkRelease(t_hmBChunk *ch, size_t start, size_t n)
-{
-	size_t	i	= start;
-	size_t	rem	= n;
-
-	while (rem > 0) {
-		size_t f		= i >> 6;
-		size_t b		= i & 63;
-		size_t avail	= 64 - b;
-		size_t take		= (rem < avail) ? rem : avail;
-
-		hmBFieldRelease(&ch->fields[f], i, take);
-		i	+= take;
-		rem	-= take;
-	}
-}
-
-/**
- * @brief Check if a chunk is completely empty (all bits set).
- * @param ch The chunk to check.
- * @return true if the chunk is empty, false otherwise.
- */
-static __HAJ_INLINE bool hmChunkIsEmpty(const t_hmBChunk *ch)
-{
-	for (size_t f = 0; f < HMALLOC_BCHUNK_WORDS; f++) {
-		uint64_t v = atomic_load_explicit(
-			(_Atomic uint64_t *)&ch->fields[f], memory_order_relaxed);
-
-		if (v != ~(uint64_t)0)
-			return (false);
-	}
-	return (true);
-}
-
-/**
- * @brief Check if a chunk is completely full (all bits cleared).
- * @param ch The chunk to check.
- * @return true if the chunk is full, false otherwise.
- */
-static __HAJ_INLINE bool hmChunkIsFull(const t_hmBChunk *ch)
-{
-	for (size_t f = 0; f < HMALLOC_BCHUNK_WORDS; f++) {
-		uint64_t v = atomic_load_explicit(
-			(_Atomic uint64_t *)&ch->fields[f], memory_order_relaxed);
-
-		if (v != 0)
-			return (false);
-	}
-	return (true);
-}
-
-/**
- * @brief Find the first aligned run of a given size in a chunk.
- * @param ch The chunk to search.
- * @param n The size of the run to find.
- * @return The index of the first aligned run, or SIZE_MAX if not found.
- */
-static size_t hmChunkFindAlignedRun(const t_hmBChunk *ch, size_t n)
-{
-	if (n == 0 || n > 64)
-		return (SIZE_MAX);
-
-	if (n == 1) {
-		for (size_t f = 0; f < HMALLOC_BCHUNK_WORDS; f++) {
-			uint64_t v = atomic_load_explicit(
-				(_Atomic uint64_t *)&ch->fields[f], memory_order_relaxed);
-
-			if (v != 0)
-				return ((f << 6) | hmallocCtz((size_t)v));
-		}
-		return (SIZE_MAX);
-	}
-
-	size_t count = HMALLOC_BCHUNK_BITS / n;
-
-	for (size_t i = 0; i < count; i++) {
-		size_t pos	= i * n;
-		size_t f	= pos >> 6;
-		size_t b	= pos & 63;
-
-		if (b + n > 64)
-			continue;
-
-		uint64_t v = atomic_load_explicit(
-			(_Atomic uint64_t *)&ch->fields[f], memory_order_relaxed);
-		uint64_t mask = (n == 64)
-			? ~(uint64_t)0
-			: (((uint64_t)1 << n) - 1) << b;
-
-		if ((v & mask) == mask)
-			return (pos);
-	}
-	return (SIZE_MAX);
-}
-
-/**
- * @brief Find any run of a given size in a chunk.
- * @param ch The chunk to search.
- * @param n The size of the run to find.
- * @return The index of the first run, or SIZE_MAX if not found.
- */
-static size_t hmChunkFindAnyRun(const t_hmBChunk *ch, size_t n)
-{
-	if (n == 0 || n > HMALLOC_BCHUNK_BITS)
-		return (SIZE_MAX);
-
-	size_t	runStart	= 0;
-	size_t	run			= 0;
-
-	for (size_t i = 0; i < HMALLOC_BCHUNK_BITS; i++) {
-		size_t		f = i >> 6;
-		size_t		b = i & 63;
-		uint64_t	v = atomic_load_explicit(
-			(_Atomic uint64_t *)&ch->fields[f], memory_order_relaxed);
-
-		if ((v >> b) & 1u) {
-			if (run == 0)
-				runStart = i;
-			run++;
-			if (run >= n)
-				return (runStart);
-		} else
-			run = 0;
-	}
-	return (SIZE_MAX);
-}
-
-/**
- * @brief Set a bit in the chunkmap.
- * @param cm The chunkmap to modify.
- * @param ci The index of the chunk to set.
- */
-static __HAJ_INLINE void hmChunkmapSet(_Atomic uint64_t *cm, size_t ci)
-{
-	atomic_fetch_or_explicit(&cm[ci >> 6],
-							 (uint64_t)1 << (ci & 63),
-							 memory_order_release);
-}
-
-/**
- * @brief Test and clear a bit in the chunkmap.
- * @param cm The chunkmap to modify.
- * @param ci The index of the chunk to test and clear.
- * @return true if the bit was set before clearing, false otherwise.
- */
-static __HAJ_INLINE bool hmChunkmapTestAndClear(_Atomic uint64_t *cm, size_t ci)
-{
-	uint64_t	mask = (uint64_t)1 << (ci & 63);
-	uint64_t	old  = atomic_fetch_and_explicit(&cm[ci >> 6], ~mask,
-												 memory_order_acq_rel);
-
-	return ((old & mask) != 0);
-}
-
-/**
- * @brief Set the bin for a chunk in the binned bitmap.
- * @param bm The binned bitmap to modify.
- * @param ci The index of the chunk to set.
- * @param bin The bin to assign to the chunk.
- */
-static void hmallocBBitmapSetChunkBin(t_hmBBitmap *bm, size_t ci, t_hmChunkBin bin)
-{
-	for (int b = 0; b < HMALLOC_CBIN_COUNT - 1; b++) {
-		if ((t_hmChunkBin)b == bin)
-			hmChunkmapSet(bm->chunkmapBins[b], ci);
-		else
-			(void)hmChunkmapTestAndClear(bm->chunkmapBins[b], ci);
-	}
-}
-
-
-
-
-
-void hmallocArenaMarkAbandoned(t_hmallocArena *a, size_t bin, size_t sliceIdx)
-{
-	if (a == NULL || bin >= HMALLOC_BIN_COUNT || sliceIdx >= a->sliceCount)
-		return;
-
-	uint64_t			mask = (uint64_t)1 << (sliceIdx & 63);
-	_Atomic uint64_t	*word = &a->pagesAbandoned[bin][sliceIdx >> 6];
-	uint64_t			old = atomic_fetch_or_explicit(word, mask, memory_order_release);
-
-	if ((old & mask) == 0)
+	if (a == NULL || bin >= HMALLOC_BIN_COUNT || page->abandonedHeap != NULL)
+		return (false);
+	if (heap == NULL)
+		heap = &g_hmalloc.heapMain;
+	page->abandonedHeap = heap;
+	if (hmBitmapSet(&a->pagesAbandoned[bin], hmallocPageSliceIdx(page))) {
 		atomic_fetch_add_explicit(&a->abandonedCount[bin], 1, memory_order_relaxed);
+		atomic_fetch_add_explicit(&heap->abandonedCountBin[bin], 1, memory_order_relaxed);
+	}
+	return (true);
 }
 
-size_t hmallocArenaFindAbandonedFrom(t_hmallocArena *a, size_t bin, size_t from)
+void hmallocArenaPageUnabandon(t_hmallocPage *page)
+{
+	t_hmallocArena	*a = page->arena;
+	t_hmallocHeap	*heap = page->abandonedHeap;
+	size_t			bin;
+
+	if (heap == NULL || a == NULL)
+		return;
+	bin = hmallocBinOf(page->blockSize);
+	hmBitmapClearOnceSet(&a->pagesAbandoned[bin], hmallocPageSliceIdx(page));
+	atomic_fetch_sub_explicit(&a->abandonedCount[bin], 1, memory_order_relaxed);
+	atomic_fetch_sub_explicit(&heap->abandonedCountBin[bin], 1, memory_order_relaxed);
+	page->abandonedHeap = NULL;
+}
+
+bool hmallocArenaTryFindAndClaimAbandoned(t_hmallocArena	*a,		size_t	bin,
+										  t_hmClaimFun		*claim,	void	*arg,
+										  size_t			*sliceIdx)
 {
 	if (a == NULL || bin >= HMALLOC_BIN_COUNT)
-		return (SIZE_MAX);
-	if (from >= a->sliceCount)
-		return (SIZE_MAX);
-
+		return (false);
 	/* Cheap early exit if no abandoned page of this bin is known. */
 	if (atomic_load_explicit(&a->abandonedCount[bin], memory_order_relaxed) == 0)
-		return (SIZE_MAX);
-
-	size_t startWord	= from >> 6;
-	size_t startBit		= from & 63;
-
-	/* Scan the abandoned bitmap for the first set bit starting from 'from'. */
-	for (size_t w = startWord; w < HMALLOC_ARENA_BITMAP_WORDS; w++) {
-		uint64_t v = atomic_load_explicit(&a->pagesAbandoned[bin][w],
-										  memory_order_relaxed);
-
-		if (w == startWord && startBit != 0)
-			v &= (~(uint64_t)0) << startBit;
-		if (v != 0) {
-			size_t idx = (w << 6) | hmallocCtz((size_t)v);
-
-			return ((idx < a->sliceCount) ? idx : SIZE_MAX);
-		}
-	}
-	return (SIZE_MAX);
-}
-
-bool hmallocArenaClaimAbandoned(t_hmallocArena *a, size_t bin, size_t sliceIdx)
-{
-	if (a == NULL || bin >= HMALLOC_BIN_COUNT
-		|| sliceIdx >= a->sliceCount)
 		return (false);
-
-	uint64_t mask	= (uint64_t)1 << (sliceIdx & 63);
-	uint64_t old	= atomic_fetch_and_explicit(
-		&a->pagesAbandoned[bin][sliceIdx >> 6], ~mask,
-		memory_order_acq_rel);
-
-	if ((old & mask) != 0) {
-		atomic_fetch_sub_explicit(&a->abandonedCount[bin], 1, memory_order_relaxed);
-		return (true);
-	}
-	return (false);
-}
-
-void hmallocArenaRestoreAbandoned(t_hmallocArena *a, size_t bin, size_t sliceIdx)
-{
-	if (a == NULL || bin >= HMALLOC_BIN_COUNT || sliceIdx >= a->sliceCount)
-		return;
-
-	uint64_t			mask = (uint64_t)1 << (sliceIdx & 63);
-	_Atomic uint64_t	*word = &a->pagesAbandoned[bin][sliceIdx >> 6];
-	uint64_t			old = atomic_fetch_or_explicit(word, mask, memory_order_release);
-
-	if ((old & mask) == 0)
-		atomic_fetch_add_explicit(&a->abandonedCount[bin], 1, memory_order_relaxed);
+	if (!hmBitmapTryFindAndClaim(&a->pagesAbandoned[bin], hmallocArenaTseq(),
+			sliceIdx, claim, arg))
+		return (false);
+	atomic_fetch_sub_explicit(&a->abandonedCount[bin], 1, memory_order_relaxed);
+	return (true);
 }
 
 size_t hmallocArenaAbandonedCount(t_hmallocArena *a, size_t bin)
@@ -378,38 +101,6 @@ size_t hmallocArenaAbandonedCount(t_hmallocArena *a, size_t bin)
 	if (a == NULL || bin >= HMALLOC_BIN_COUNT)
 		return (0);
 	return (atomic_load_explicit(&a->abandonedCount[bin], memory_order_relaxed));
-}
-
-void hmallocArenaListAdd(t_hmallocArena **list, t_hmallocArena *arena)
-{
-	if (list == NULL || arena == NULL)
-		return;
-
-	t_hmallocArena	**pp = list;
-	t_hmallocArena	*cur = *pp;
-
-	while (cur != NULL && (uintptr_t)cur->start < (uintptr_t)arena->start) {
-		pp  = &cur->next;
-		cur = cur->next;
-	}
-	arena->next = cur;
-	*pp = arena;
-}
-
-/**
- * @brief Unlink an arena from a list.
- * @param a The arena to unlink.
- */
-static void hmallocArenaUnlink(t_hmallocArena *a)
-{
-	for (t_hmallocArena **pp = &g_hmalloc.arenas[a->category];
-		 *pp != NULL; pp = &(*pp)->next) {
-		if (*pp == a) {
-			*pp = a->next;
-			a->next = NULL;
-			return;
-		}
-	}
 }
 
 t_hmallocArena *hmallocArenaCreate(size_t zoneSize, t_hmallocCategory cat)
@@ -430,11 +121,9 @@ t_hmallocArena *hmallocArenaCreate(size_t zoneSize, t_hmallocCategory cat)
 		return (NULL);
 	}
 
-	for (arenaIdx = 0; arenaIdx < HMALLOC_MAX_ARENAS; arenaIdx++) {
-		if (atomic_load_explicit(&subproc->arenas[arenaIdx], memory_order_acquire) == NULL)
-			break;
-	}
-	if (arenaIdx == HMALLOC_MAX_ARENAS) {
+	/* Arenas are never removed, so the next free slot is `arenaCount`. */
+	arenaIdx = atomic_load_explicit(&subproc->arenaCount, memory_order_relaxed);
+	if (arenaIdx >= HMALLOC_MAX_ARENAS) {
 		errno = ENOMEM;
 		return (NULL);
 	}
@@ -446,7 +135,17 @@ t_hmallocArena *hmallocArenaCreate(size_t zoneSize, t_hmallocCategory cat)
 		errno = ENOMEM;
 		return (NULL);
 	}
-	hmallocPrimAdviseHuge(base, HMALLOC_ARENA_SIZE);
+	/*
+	 * Ask for transparent huge pages when allowed and the arena is made of
+	 * whole huge pages (size and alignment), as mimalloc's OS allocation.
+	 */
+	if (g_hmalloc.memConfig.largePageSize > (8u * 1024u * 1024u)
+		&& HMALLOC_ARENA_SIZE >= g_hmalloc.memConfig.largePageSize)
+		hmallocPrimAdviseNoHuge(base, HMALLOC_ARENA_SIZE);	/* too large to be useful */
+	else if (hmOptionGet(HMALLOC_OPT_ALLOW_THP) != 0
+		&& g_hmalloc.memConfig.largePageSize != 0
+		&& (HMALLOC_ARENA_SIZE % g_hmalloc.memConfig.largePageSize) == 0)
+		hmallocPrimAdviseHuge(base, HMALLOC_ARENA_SIZE);
 
 	a = (t_hmallocArena *)base;
 
@@ -472,12 +171,10 @@ t_hmallocArena *hmallocArenaCreate(size_t zoneSize, t_hmallocCategory cat)
 	a->sliceCount = HMALLOC_ARENA_SLICE_COUNT;
 	a->infoSlices = infoSlices;
 	a->category   = cat;
-	a->next	   = NULL;
 
 	atomic_store_explicit(&a->freeSlices,
 						  HMALLOC_ARENA_SLICE_COUNT - infoSlices,
 						  memory_order_relaxed);
-	hmallocLockInit(&a->sliceLock);
 	atomic_init(&a->purgeExpire, 0);
 
 	/* ---- Metas + abandoned + purge bitmaps ---- */
@@ -486,165 +183,37 @@ t_hmallocArena *hmallocArenaCreate(size_t zoneSize, t_hmallocCategory cat)
 
 	for (size_t b = 0; b < HMALLOC_BIN_COUNT; b++) {
 		atomic_init(&a->abandonedCount[b], 0);
-		for (size_t w = 0; w < HMALLOC_ARENA_BITMAP_WORDS; w++)
-			atomic_init(&a->pagesAbandoned[b][w], 0);
+		hmBitmapInit(&a->pagesAbandoned[b], HMALLOC_ARENA_SLICE_COUNT);
 	}
 
 	for (size_t w = 0; w < HMALLOC_ARENA_BITMAP_WORDS; w++)
 		atomic_init(&a->purgeBitmap[w], 0);
 
-	/* ---- Free-slice bitmaps ---- */
-	t_hmBBitmap *bm = &a->slicesFree;
+	/* ---- Dirty slices: a fresh OS mapping is zero, otherwise all dirty ---- */
+	hmBitmapInit(&a->slicesDirty, HMALLOC_ARENA_SLICE_COUNT);
+	if (!isZero)
+		(void)hmBitmapSetN(&a->slicesDirty, 0, HMALLOC_ARENA_SLICE_COUNT, NULL);
 
-	for (size_t w = 0; w < HMALLOC_CHUNKMAP_WORDS; w++) {
-		atomic_init(&bm->chunkmap[w], 0);
-		for (int b = 0; b < HMALLOC_CBIN_COUNT - 1; b++)
-			atomic_init(&bm->chunkmapBins[b][w], 0);
-	}
-	for (size_t ci = 0; ci < HMALLOC_BCHUNK_COUNT; ci++)
-		for (size_t f = 0; f < HMALLOC_BCHUNK_WORDS; f++)
-			atomic_init(&bm->chunks[ci].fields[f], ~(uint64_t)0);
+	/* ---- Free-slice bitmap: every slice but the metadata ones is free ---- */
+	hmBBitmapInit(&a->slicesFree, HMALLOC_ARENA_SLICE_COUNT);
+	hmBBitmapUnsafeSetN(&a->slicesFree, infoSlices,
+						HMALLOC_ARENA_SLICE_COUNT - infoSlices);
 
-	/* Mark the metadata slices as used (bit = 0). */
-	for (size_t s = 0; s < infoSlices; s++) {
-		size_t ci	= s / HMALLOC_BCHUNK_BITS;
-		size_t off	= s % HMALLOC_BCHUNK_BITS;
-		size_t f	= off >> 6;
-		size_t b	= off & 63;
-
-		atomic_fetch_and_explicit(&bm->chunks[ci].fields[f],
-								  ~((uint64_t)1 << b),
-								  memory_order_relaxed);
-	}
-	for (size_t s = 0; s < infoSlices; s += HMALLOC_BCHUNK_BITS) {
-		size_t ci = s / HMALLOC_BCHUNK_BITS;
-
-		hmChunkmapSet(bm->chunkmap, ci);
-	}
-
+	/*
+	 * Publish. Pages are found through the page map (and the aligned
+	 * metas[] at the arena start), so the arena needs no address map.
+	 * The caller holds subproc->arenaReserveLock, so creations are
+	 * serialised. Readers iterate `arenas[0..arenaCount)` without a lock:
+	 * the release store of the slot makes the initialised header visible
+	 * to any reader that loads it with acquire, and the count is only
+	 * raised afterwards. Arenas are never unmapped, so a pointer read from
+	 * the table stays valid for the lifetime of the process.
+	 */
 	atomic_store_explicit(&subproc->arenas[arenaIdx], a, memory_order_release);
-	atomic_fetch_add_explicit(&subproc->arenaCount, 1, memory_order_relaxed);
+	atomic_store_explicit(&subproc->arenaCount, arenaIdx + 1, memory_order_release);
 
-	hmallocArenaListAdd(&g_hmalloc.arenas[cat], a);
 	hmStatsOnArenaCreate();
 	return (a);
-}
-
-void hmallocArenaDestroy(t_hmallocArena *a)
-{
-	if (a == NULL)
-		return;
-
-	t_hmallocSubproc	*subproc	= a->subproc;
-	void				*base		= a->memid.base;
-	size_t				total		= a->memid.size;
-
-	hmallocArenaUnlink(a);
-	if (atomic_load_explicit(&g_hmalloc.spareLarge, memory_order_relaxed) == a)
-		atomic_store_explicit(&g_hmalloc.spareLarge, NULL, memory_order_relaxed);
-
-	if (subproc != NULL && a->arenaIdx < HMALLOC_MAX_ARENAS
-		&& atomic_load_explicit(&subproc->arenas[a->arenaIdx],
-								memory_order_relaxed) == a) {
-		atomic_store_explicit(&subproc->arenas[a->arenaIdx], NULL, memory_order_release);
-		atomic_fetch_sub_explicit(&subproc->arenaCount, 1, memory_order_relaxed);
-	}
-
-	t_hmallocHeap *heap = &g_hmalloc.heapMain;
-
-	hmallocLockAcquire(&heap->theapsLock);
-	for (t_hmallocTheap *th = heap->theaps; th != NULL; th = th->hnext) {
-		for (int c = 0; c < 3; c++)
-			if (th->arenaHint[c] == a)
-				th->arenaHint[c] = NULL;
-	}
-	hmallocLockRelease(&heap->theapsLock);
-
-	hmStatsOnArenaDestroy();
-
-	if (base != NULL && total > 0)
-		(void)hmallocPrimFree(base, total);
-}
-
-/**
- * @brief Try to allocate a small run of slices in a chunk.
- * @param ch The chunk to allocate from.
- * @param n The number of slices to allocate.
- * @param outLocal Pointer to store the local index of the allocated run.
- * @return true if the allocation was successful, false otherwise.
- */
-static bool hmChunkTryAllocSmall(t_hmBChunk *ch, size_t n, size_t *outLocal)
-{
-	size_t pos = hmChunkFindAlignedRun(ch, n);
-
-	if (pos == SIZE_MAX)
-		return (false);
-	if (!hmChunkTryClaim(ch, pos, n))
-		return (false);
-	*outLocal = pos;
-	return (true);
-}
-
-/**
- * @brief Try to allocate a large run of slices in a chunk.
- * @param ch The chunk to allocate from.
- * @param n The number of slices to allocate.
- * @param outLocal Pointer to store the local index of the allocated run.
- * @return true if the allocation was successful, false otherwise.
- */
-static bool hmChunkTryAllocLarge(t_hmBChunk *ch, size_t n, size_t *outLocal)
-{
-	size_t pos = hmChunkFindAnyRun(ch, n);
-
-	if (pos == SIZE_MAX)
-		return (false);
-	if (!hmChunkTryClaim(ch, pos, n))
-		return (false);
-	*outLocal = pos;
-	return (true);
-}
-
-/**
- * @brief Search for a free run of slices in a binned bitmap.
- * @param bm The binned bitmap to search.
- * @param bin The chunk bin to search in (or HMALLOC_CBIN_NONE for unbinned).
- * @param mask The mask to apply to the chunkmap.
- * @param n The number of slices to allocate.
- * @param out_idx Pointer to store the global index of the allocated run.
- * @return true if a free run was found and allocated, false otherwise.
- */
-static bool hmBBitmapSearchBin(t_hmBBitmap *bm, t_hmChunkBin bin, uint64_t mask, size_t n, size_t *out_idx)
-{
-	const _Atomic uint64_t *cm = (bin == HMALLOC_CBIN_NONE)
-		? bm->chunkmap
-		: bm->chunkmapBins[(int)bin];
-
-	uint64_t m = atomic_load_explicit((_Atomic uint64_t *)&cm[0], memory_order_relaxed) & mask;
-
-	while (m != 0) {
-		size_t ci = hmallocCtz((size_t)m);
-
-		m &= m - 1;
-
-		t_hmBChunk	*ch = &bm->chunks[ci];
-		size_t		local;
-		bool		ok = (n <= 64)
-			? hmChunkTryAllocSmall(ch, n, &local)
-			: hmChunkTryAllocLarge(ch, n, &local);
-
-		/* If the allocation succeeded, return the global index. */
-		if (ok) {
-			*out_idx = (ci * HMALLOC_BCHUNK_BITS) + local;
-			if (bin == HMALLOC_CBIN_NONE)
-				hmallocBBitmapSetChunkBin(bm, ci,
-					(n == 1)  ? HMALLOC_CBIN_SMALL  :
-					(n == 8)  ? HMALLOC_CBIN_MEDIUM :
-					(n == 64) ? HMALLOC_CBIN_LARGE  :
-								HMALLOC_CBIN_OTHER);
-			return (true);
-		}
-	}
-	return (false);
 }
 
 bool hmallocArenaAllocSlices(t_hmallocArena *a, size_t n, size_t *idx)
@@ -656,105 +225,91 @@ bool hmallocArenaAllocSlices(t_hmallocArena *a, size_t n, size_t *idx)
 	if (atomic_load_explicit(&a->freeSlices, memory_order_relaxed) < n)
 		return (false);
 
-	t_hmBBitmap *bm = &a->slicesFree;
-
-	/* Fast path for small allocations (1, 8, 64 slices) using the binned bitmap. */
-	if (n <= HMALLOC_BCHUNK_BITS) {
-		uint64_t cmap = atomic_load_explicit(&bm->chunkmap[0], memory_order_relaxed);
-
-		/* If no chunks have free slices, go to the slow path. */
-		if (cmap == 0)
-			goto slowPath;
-
-		uint64_t unionBins = 0;
-
-		/* Create a union of all chunkmapBins to find chunks that have free slices. */
-		for (int b = 0; b < HMALLOC_CBIN_COUNT - 1; b++)
-			unionBins |= atomic_load_explicit(&bm->chunkmapBins[b][0], memory_order_relaxed);
-		uint64_t noneMask = cmap & ~unionBins;
-
-		t_hmChunkBin target;
-
-		if (n == 1)
-			target = HMALLOC_CBIN_SMALL;
-		else if (n == 8)
-			target = HMALLOC_CBIN_MEDIUM;
-		else if (n == 64)
-			target = HMALLOC_CBIN_LARGE;
-		else
-			target = HMALLOC_CBIN_OTHER;
-
-		/* Search the binned bitmap for a suitable chunk. */
-		for (int ib = 0; ib <= (int)target; ib++) {
-			if ((t_hmChunkBin)ib == HMALLOC_CBIN_NONE)
-				break;
-
-			uint64_t m = atomic_load_explicit(&bm->chunkmapBins[ib][0], memory_order_relaxed);
-
-			while (m != 0) {
-				size_t ci = hmallocCtz((size_t)m);
-
-				m &= m - 1;
-
-				t_hmBChunk	*ch = &bm->chunks[ci];
-				size_t		local;
-				bool		ok = (n <= 64)
-					? hmChunkTryAllocSmall(ch, n, &local)
-					: hmChunkTryAllocLarge(ch, n, &local);
-
-				if (ok) {
-					*idx = (ci * HMALLOC_BCHUNK_BITS) + local;
-					/* Update the number of free slices. */
-					atomic_fetch_sub_explicit(&a->freeSlices, n, memory_order_relaxed);
-					return (true);
-				}
-			}
-		}
-		if (hmBBitmapSearchBin(bm, HMALLOC_CBIN_NONE, noneMask, n, idx)) {
-			atomic_fetch_sub_explicit(&a->freeSlices, n, memory_order_relaxed);
-			return (true);
-		}
-	}
-
-slowPath:
-	hmallocLockAcquire(&a->sliceLock);
-
-	/* Slow path: linear search through all chunks. */
-	for (size_t ci = 0; ci < HMALLOC_BCHUNK_COUNT; ci++) {
-		t_hmBChunk *ch = &bm->chunks[ci];
-
-		if (hmChunkIsFull(ch))
-			continue;
-
-		size_t found = (n <= 64)
-			? hmChunkFindAlignedRun(ch, n)
-			: hmChunkFindAnyRun(ch, n);
-
-		if (found == SIZE_MAX)
-			continue;
-
-		if (hmChunkTryClaim(ch, found, n)) {
-			*idx = (ci * HMALLOC_BCHUNK_BITS) + found;
-			atomic_fetch_sub_explicit(&a->freeSlices, n,
-									  memory_order_relaxed);
-			hmallocLockRelease(&a->sliceLock);
-			return (true);
-		}
-	}
-	hmallocLockRelease(&a->sliceLock);
-	return (false);
+	if (!hmBBitmapTryFindAndClearN(&a->slicesFree, hmallocArenaTseq(), n, idx))
+		return (false);
+	atomic_fetch_sub_explicit(&a->freeSlices, n, memory_order_relaxed);
+	return (true);
 }
 
-t_hmallocArena *hmallocArenaFind(t_hmallocCategory cat, size_t nSlices, size_t *sliceIdx)
+t_hmallocArena *hmallocArenaFind(t_hmallocCategory	cat,		size_t			nSlices,
+								 size_t				*sliceIdx,	t_hmallocArena	*skip)
 {
-	if (sliceIdx == NULL || (unsigned)cat >= 3)
+	t_hmallocSubproc	*subproc = &g_hmalloc.subprocMain;
+	size_t				count;
+	size_t				cycle;
+	size_t				start;
+
+	if (sliceIdx == NULL || (unsigned)cat > HMALLOC_CAT_LARGE)
 		return (NULL);
 
-	for (t_hmallocArena *a = g_hmalloc.arenas[cat]; a != NULL; a = a->next) {
+	count = atomic_load_explicit(&subproc->arenaCount, memory_order_acquire);
+	cycle = (count == 0) ? 0 : count - 1;
+	start = (cycle <= 1) ? 0 : (hmallocArenaTseq() % cycle);
+	for (size_t i = 0; i < count; i++) {
+		size_t			idx = i;
+		t_hmallocArena	*a;
+
+		if (i < cycle) {
+			idx = i + start;
+			if (idx >= cycle)
+				idx -= cycle;
+		}
+		a = atomic_load_explicit(&subproc->arenas[idx], memory_order_acquire);
+		if (a == NULL || a == skip || a->category != cat)
+			continue;
 		if (hmallocArenaAllocSlices(a, nSlices, sliceIdx))
 			return (a);
 	}
 	return (NULL);
+}
+
+t_hmallocArena *hmallocArenaTryAlloc(t_hmallocCategory	cat,		size_t			nSlices,
+									 size_t				*sliceIdx,	t_hmallocArena	*skip)
+{
+	t_hmallocSubproc	*subproc = &g_hmalloc.subprocMain;
+	t_hmallocArena		*a;
+	size_t				count;
+
+	/* 1. Free slices in an existing arena (lock-free). */
+	a = hmallocArenaFind(cat, nSlices, sliceIdx, skip);
+	if (a != NULL)
+		return (a);
+
+	/*
+	 * 2. Reserve a fresh arena, one thread at a time. If another thread
+	 * created one while we were waiting, use that one instead.
+	 */
+	count = atomic_load_explicit(&subproc->arenaCount, memory_order_acquire);
+	hmallocLockAcquire(&subproc->arenaReserveLock);
+	if (count == atomic_load_explicit(&subproc->arenaCount, memory_order_acquire))
+		(void)hmallocArenaCreate(0, cat);
+	hmallocLockRelease(&subproc->arenaReserveLock);
+
+	/* 3. Try once more, now including the new arena. */
+	return (hmallocArenaFind(cat, nSlices, sliceIdx, NULL));
+}
+
+size_t hmallocArenaSnapshot(t_hmallocCategory cat, t_hmallocArena **out)
+{
+	t_hmallocSubproc	*subproc = &g_hmalloc.subprocMain;
+	size_t				count;
+	size_t				n = 0;
+
+	count = atomic_load_explicit(&subproc->arenaCount, memory_order_acquire);
+	for (size_t i = 0; i < count && i < HMALLOC_MAX_ARENAS; i++) {
+		t_hmallocArena	*a = atomic_load_explicit(&subproc->arenas[i],
+			memory_order_acquire);
+		size_t			j;
+
+		if (a == NULL || a->category != cat)
+			continue;
+		/* Insertion sort by address (at most HMALLOC_MAX_ARENAS entries). */
+		for (j = n; j > 0 && (uintptr_t)out[j - 1]->start > (uintptr_t)a->start; j--)
+			out[j] = out[j - 1];
+		out[j] = a;
+		n++;
+	}
+	return (n);
 }
 
 void hmallocArenaFreeSlices(t_hmallocArena *a, size_t idx, size_t n)
@@ -763,95 +318,14 @@ void hmallocArenaFreeSlices(t_hmallocArena *a, size_t idx, size_t n)
 		|| idx + n > a->sliceCount)
 		return;
 
-	t_hmBBitmap	*bm	= &a->slicesFree;
-	size_t		i	= idx;
-	size_t		rem	= n;
-
-	/* Release the slices back to the chunk(s). */
-	while (rem > 0) {
-		size_t ci		= i / HMALLOC_BCHUNK_BITS;
-		size_t ciOff	= i % HMALLOC_BCHUNK_BITS;
-		size_t inChunk	= HMALLOC_BCHUNK_BITS - ciOff;
-
-		if (inChunk > rem)
-			inChunk = rem;
-
-		t_hmBChunk *ch = &bm->chunks[ci];
-
-		hmChunkRelease(ch, ciOff, inChunk);
-		hmChunkmapSet(bm->chunkmap, ci);
-		if (hmChunkIsEmpty(ch))
-			hmallocBBitmapSetChunkBin(bm, ci, HMALLOC_CBIN_NONE);
-
-		i	+= inChunk;
-		rem	-= inChunk;
-	}
-
-	atomic_fetch_add_explicit(&a->freeSlices, n, memory_order_relaxed);
-
-	if (atomic_load_explicit(&a->freeSlices, memory_order_relaxed)
-		!= a->sliceCount - a->infoSlices)
-		return;
+	/* Release the slices; fully free chunks return to the NONE size class. */
+	(void)hmBBitmapSetN(&a->slicesFree, idx, n);
 
 	/*
-	 * The arena is now empty. We do not destroy it on every
-	 * transition to empty: munmap + mmap of a 256 MiB arena is
-	 * very expensive and would be repeated on every short spike
-	 * of allocations. Instead:
-	 *
-	 * 	- LARGE arenas are parked in g_hmalloc.spareLarge, out
-	 * 		of the allocation chain, so the LARGE fast path stays
-	 * 		a simple linked-list walk.
-	 * 	- TINY/SMALL arenas stay in their category chain as a
-	 * 		cache. We only destroy them once the number of empty
-	 * 		arenas exceeds HMALLOC_MAX_EMPTY_ARENAS.
-	 *
-	 * The RSS of empty arenas is returned to the kernel through
-	 * the deferred purge scheduler (see hmallocArenaSchedulePurge
-	 * in page.c), so keeping the address space reserved costs
-	 * nothing.
+	 * Empty arenas are never destroyed: they stay mapped and their RSS is
+	 * returned to the OS by the deferred purge (see hmallocArenaTryPurge).
 	 */
-
-	/* LARGE: park in spareLarge, outside the chain. */
-	if (a->category == HMALLOC_CAT_LARGE) {
-		t_hmallocArena *sp = atomic_load_explicit(&g_hmalloc.spareLarge, memory_order_acquire);
-
-		if (sp == a || sp != NULL)
-			return;
-
-		hmallocLockAcquire(&g_hmallocTs.lock);
-		sp = atomic_load_explicit(&g_hmalloc.spareLarge, memory_order_relaxed);
-		if (sp == NULL) {
-			hmallocArenaUnlink(a);
-			atomic_store_explicit(&g_hmalloc.spareLarge, a, memory_order_release);
-		}
-		hmallocLockRelease(&g_hmallocTs.lock);
-		return;
-	}
-
-	/* TINY/SMALL: destroy only if we already have enough empty arenas. */
-	hmallocLockAcquire(&g_hmallocTs.lock);
-
-	if (atomic_load_explicit(&a->freeSlices, memory_order_relaxed)
-		!= a->sliceCount - a->infoSlices) {
-		hmallocLockRelease(&g_hmallocTs.lock);
-		return;
-	}
-
-	size_t emptyCount = 0;
-
-	/* Count the number of empty arenas in this category. */
-	for (t_hmallocArena *it = g_hmalloc.arenas[a->category];
-		it != NULL; it = it->next) {
-		if (atomic_load_explicit(&it->freeSlices, memory_order_relaxed)
-			== it->sliceCount - it->infoSlices)
-			emptyCount++;
-	}
-
-	if (emptyCount > HMALLOC_MAX_EMPTY_ARENAS)
-		hmallocArenaDestroy(a);
-
-	hmallocLockRelease(&g_hmallocTs.lock);
+	atomic_fetch_add_explicit(&a->freeSlices, n, memory_order_relaxed);
 }
 
 bool hmallocArenaSetPageRange(t_hmallocArena *a, size_t sliceIdx, size_t nSlices, t_hmallocPage *page)

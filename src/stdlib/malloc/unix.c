@@ -57,6 +57,7 @@
 
 # if defined(__linux__)
 #  include <sys/random.h>
+#  include <sys/prctl.h>
 # endif
 
 #endif
@@ -80,9 +81,13 @@
 # ifndef MADV_HUGEPAGE
 #  define MADV_HUGEPAGE	14
 # endif
+# ifndef MADV_NOHUGEPAGE
+#  define MADV_NOHUGEPAGE	15
+# endif
 
 # define HAJ_HUGE_PAGE_2MB	(2UL * 1024UL * 1024UL)
-# define HAJ_HUGE_PAGE_1GB	(1024UL * 1024UL * 1024UL)
+/* Above this huge page size, transparent huge pages are not used. */
+# define HAJ_MAX_THP_PAGE_SIZE	(8UL * 1024UL * 1024UL)
 
 
 #if defined(HAJ_PLATFORM_POSIX)
@@ -164,26 +169,30 @@ static void	hajProbeLinux(t_hmallocOsMemConfig *config)
 {
 	char	buf[64];
 
-	config->largePageSize = 0;
-	if (hajReadSmallFile(
-			"/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages",
-			buf, sizeof(buf)) >= 0)
-		config->largePageSize = HAJ_HUGE_PAGE_2MB;
-	else if (hajReadSmallFile(
-			"/sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages",
-			buf, sizeof(buf)) >= 0)
-		config->largePageSize = HAJ_HUGE_PAGE_1GB;
+	/* Huge page size: the THP pmd size, 2 MiB when it cannot be read. */
+	config->largePageSize = HAJ_HUGE_PAGE_2MB;
+	if (hajReadSmallFile("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size",
+						 buf, sizeof(buf)) > 0) {
+		size_t	v = 0;
+		size_t	i = 0;
+
+		while (buf[i] >= '0' && buf[i] <= '9' && v <= SIZE_MAX / 10)
+			v = v * 10 + (size_t)(buf[i++] - '0');
+		if (i > 0 && v > 0)
+			config->largePageSize = v;
+	}
 
 	config->hasOvercommit = true;
 	if (hajReadSmallFile("/proc/sys/vm/overcommit_memory",
 						 buf, sizeof(buf)) > 0 && buf[0] == '2')
 		config->hasOvercommit = false;
 
+	/* THP is usable unless the mode is [never]; above 8 MiB it is not used. */
 	config->hasTransparentHugePages = false;
-	if (hajReadSmallFile("/sys/kernel/mm/transparent_hugepage/enabled",
-						 buf, sizeof(buf)) > 0
-		&& (strstr(buf, "[always]") != NULL
-			|| strstr(buf, "[madvise]") != NULL))
+	if (config->largePageSize <= HAJ_MAX_THP_PAGE_SIZE
+		&& hajReadSmallFile("/sys/kernel/mm/transparent_hugepage/enabled",
+							buf, sizeof(buf)) > 0
+		&& strstr(buf, "[never]") == NULL)
 		config->hasTransparentHugePages = true;
 }
 
@@ -216,6 +225,15 @@ void	hmallocPrimMemInit(t_hmallocOsMemConfig *config)
 # endif
 
 	config->virtualAddressBits = hajVirtualAddressBits();
+
+# if defined(__linux__) && defined(PR_GET_THP_DISABLE)
+	/* allow_thp == 0: no THP for this process, without touching the system setting. */
+	if (hmOptionGet(HMALLOC_OPT_ALLOW_THP) == 0) {
+		config->hasTransparentHugePages = false;
+		if (prctl(PR_GET_THP_DISABLE, 0, 0, 0, 0) == 0)
+			(void)prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0);
+	}
+# endif
 
 	g_hmalloc.addrLimit = SIZE_MAX;
 	if (getrlimit(RLIMIT_AS, &rl) == 0
@@ -252,6 +270,19 @@ int	hmallocPrimAdviseHuge(void *addr, size_t size)
 	if (!g_hmalloc.memConfig.hasTransparentHugePages)
 		return (0);
 	return (madvise(addr, size, MADV_HUGEPAGE));
+#else
+	(void)addr;
+	(void)size;
+	return (0);
+#endif
+}
+
+int	hmallocPrimAdviseNoHuge(void *addr, size_t size)
+{
+#if defined(HAJ_PLATFORM_POSIX) && defined(__linux__)
+	if (!g_hmalloc.memConfig.hasTransparentHugePages)
+		return (0);
+	return (madvise(addr, size, MADV_NOHUGEPAGE));
 #else
 	(void)addr;
 	(void)size;
@@ -484,6 +515,26 @@ int	hmallocPrimAlloc(void *hint, size_t size, size_t align, bool commit,
 }
 
 #endif
+
+int	hmallocPrimCommit(void *addr, size_t size)
+{
+	if (addr == NULL || size == 0) {
+		errno = EINVAL;
+		return (-1);
+	}
+	hmStatsSubprocCounter(commitCalls, 1);
+#if defined(HAJ_PLATFORM_POSIX)
+	if (mprotect(addr, size, PROT_READ | PROT_WRITE) != 0)
+		return (-1);
+	return (0);
+#else
+	if (VirtualAlloc(addr, size, MEM_COMMIT, PAGE_READWRITE) == NULL) {
+		errno = ENOMEM;
+		return (-1);
+	}
+	return (0);
+#endif
+}
 
 int	hmallocPrimDecommit(void *addr, size_t size, bool *needsRecommit)
 {

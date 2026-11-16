@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 Moutig <ele-lean@student.42lehavre.fr>
+ * Copyright (C) 2026 Moutig <moutig-tan@proton.me>
  *
  * This file is part of hajlibc.
  * See LICENSE for the full license text.
@@ -9,6 +9,8 @@
 /**
  * @file test.c
  * @brief Comprehensive functional test for hajlibc's memory allocator.
+ * @Created: 2026/11/16 15:01:09 by Moutig
+ * @Updated: 2026/11/16 15:01:35 by Moutig
  *
  * This test exercises the public API of the hajlibc allocator, as
  * well as every compile-time feature of the library (canary, check,
@@ -26,11 +28,13 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #include "../../../include/malloc.h"
 
 /* Internal headers, for hmallocFmt and the profiler struct. */
 #include "../../../src/stdlib/malloc/include/hmInternal.h"
+#include "../../../src/stdlib/malloc/include/hmPrivate.h"
 
 static int			g_run = 0;
 static int			g_fail = 0;
@@ -39,6 +43,17 @@ static const char	*g_sect = "?";
 
 
 
+/**
+ * @brief Opaque size_t to prevent compiler optimizations.
+ *
+ * This function is used to prevent the compiler from optimizing away
+ * certain size_t values during testing. It uses inline assembly to
+ * create a memory barrier, ensuring that the value is treated as
+ * opaque and not optimized out.
+ *
+ * @param v The size_t value to be treated as opaque.
+ * @return The same size_t value, treated as opaque.
+ */
 static inline size_t opaqueSize(size_t v)
 {
 #if defined(__GNUC__) || defined(__clang__)
@@ -155,6 +170,61 @@ static void testBasic(void)
 	}
 
 	hfree(NULL);
+
+	SECTION_END();
+}
+
+/**
+ * @brief Test page geometry and allocation behavior.
+ *
+ * This test checks the geometry of memory pages used by the allocator
+ * and verifies that allocations are placed correctly within these pages.
+ */
+static void testPageGeometry(void)
+{
+	SECTION("page_geometry");
+
+	CHECK(hmallocPageZoneSize(HMALLOC_TINY_MAX_OBJ_SIZE)
+			== HMALLOC_TINY_PAGE_SIZE,
+		"tiny blocks use 64 KiB pages");
+	CHECK(hmallocPageZoneSize(HMALLOC_TINY_MAX_OBJ_SIZE + 1)
+			== HMALLOC_MEDIUM_PAGE_SIZE,
+		"small blocks use 512 KiB pages");
+	CHECK(hmallocPageZoneSize(HMALLOC_SMALL_MAX_OBJ_SIZE + 1)
+			== HMALLOC_LARGE_PAGE_SIZE,
+		"large blocks use 4 MiB pages");
+
+	size_t maxDirectIndex =
+		(HMALLOC_DIRECT_MAX_SIZE + HMALLOC_PADDING_SIZE + 7u) >> 3;
+	CHECK(maxDirectIndex < HMALLOC_DIRECT_PAGES,
+		"direct table includes the largest padded allocation index");
+
+	void *tinyBlocks[5000];
+	size_t tinyCount = 0;
+	for (; tinyCount < sizeof(tinyBlocks) / sizeof(tinyBlocks[0]); ++tinyCount) {
+		tinyBlocks[tinyCount] = hmalloc(16);
+		if (tinyBlocks[tinyCount] == NULL)
+			break;
+		((unsigned char *)tinyBlocks[tinyCount])[0] = (unsigned char)tinyCount;
+	}
+	CHECK(tinyCount == sizeof(tinyBlocks) / sizeof(tinyBlocks[0]),
+		"tiny-page capacity can roll over to another page");
+	for (size_t i = 0; i < tinyCount; ++i)
+		hfree(tinyBlocks[i]);
+
+	void *directBlocks[130];
+	size_t directCount = 0;
+	for (; directCount < sizeof(directBlocks) / sizeof(directBlocks[0]); ++directCount) {
+		directBlocks[directCount] = hmalloc(4096);
+		if (directBlocks[directCount] == NULL)
+			break;
+		((unsigned char *)directBlocks[directCount])[0] = (unsigned char)directCount;
+		((unsigned char *)directBlocks[directCount])[4095] = (unsigned char)~directCount;
+	}
+	CHECK(directCount == sizeof(directBlocks) / sizeof(directBlocks[0]),
+		"largest direct-table allocation can span pages");
+	for (size_t i = 0; i < directCount; ++i)
+		hfree(directBlocks[i]);
 
 	SECTION_END();
 }
@@ -333,6 +403,29 @@ static void testAligned(void)
 }
 
 /**
+ * @brief Test oversized allocations.
+ *
+ * This test checks the behavior of the allocator when attempting to allocate
+ * an oversized block of memory. It verifies that the allocation succeeds and
+ * that the usable size reported by the allocator is at least as large as the
+ * requested size.
+ */
+static void testOversizedAllocations(void)
+{
+	SECTION("oversized_allocations");
+
+	size_t size = (size_t)1 << 30;
+	void *p = hmalloc(size);
+	CHECK(p != NULL, "1 GiB allocation succeeds");
+	if (p) {
+		CHECK(husableSize(p) >= size, "1 GiB usable size is reported");
+		hfree(p);
+	}
+
+	SECTION_END();
+}
+
+/**
  * @brief Test size query functions.
  *
  * This test checks the functionality of the size query functions
@@ -475,15 +568,15 @@ static void testStats(void)
 
 	hmStatsInit(&s);
 	CHECK(hmStatsGet(&s), "hmStatsGet after alloc");
-	CHECK(s.current  > 0, "stats.current > 0 after alloc");
-	CHECK(s.total	> 0, "stats.total   > 0 after alloc");
-	CHECK(s.peak	 > 0, "stats.peak	> 0 after alloc");
-	CHECK(s.pages	> 0, "stats.pages   > 0 after alloc");
-	CHECK(s.reserved > 0, "stats.reserved> 0 after alloc");
-	CHECK(s.committed> 0, "stats.committed>0 after alloc");
-	CHECK(s.mmapCalls > 0, "stats.mmapCalls>0 after alloc");
-	CHECK(s.arenaCount > 0, "stats.arenaCount>0 after alloc");
-	CHECK(s.mallocNormalCount + s.mallocHugeCount > 0,
+	CHECK(s.allocated.current  > 0, "stats.current > 0 after alloc");
+	CHECK(s.allocated.total	> 0, "stats.total   > 0 after alloc");
+	CHECK(s.allocated.peak	 > 0, "stats.peak	> 0 after alloc");
+	CHECK(s.pages.current	> 0, "stats.pages   > 0 after alloc");
+	CHECK(s.reserved.current > 0, "stats.reserved> 0 after alloc");
+	CHECK(s.committed.current> 0, "stats.committed>0 after alloc");
+	CHECK(s.mmapCalls.total > 0, "stats.mmapCalls>0 after alloc");
+	CHECK(s.arenaCount.total > 0, "stats.arenaCount>0 after alloc");
+	CHECK(s.mallocNormalCount.total + s.mallocHugeCount.total > 0,
 		  "stats.malloc{Normal,Huge}Count > 0");
 
 	char  json[8192];
@@ -513,7 +606,7 @@ static void testStats(void)
 	t_hmallocStats after;
 	hmStatsInit(&after);
 	CHECK(hmStatsGet(&after), "hmStatsGet after reset");
-	CHECK(after.current == 0, "reset: current == 0");
+	CHECK(after.allocated.current == 0, "reset: current == 0");
 
 	hfree(big);
 	hmStatsMerge();
@@ -703,6 +796,63 @@ static void testThreads(void)
 	}
 	for (int i = 0; i < 8; i++)
 		pthread_join(tids[i], NULL);
+
+	int abandoned = 0;
+	for (size_t bin = 0; bin < HMALLOC_BIN_COUNT; ++bin)
+		abandoned += atomic_load_explicit(
+			&g_hmalloc.heapMain.abandonedCountBin[bin],
+			memory_order_relaxed) != 0;
+	CHECK(abandoned == 0, "abandoned page counters return to zero");
+
+	SECTION_END();
+}
+
+static void *largeThreadWorker(void *arg)
+{
+	t_arg *a = arg;
+
+	for (int i = 0; i < a->iters; ++i) {
+		size_t size = (3u * 1024u * 1024u)
+			+ ((size_t)(a->id + i) % 512u) * 1024u;
+		unsigned char *p = hmalloc(size);
+		if (p == NULL)
+			return ((void *)1);
+		p[0] = (unsigned char)a->id;
+		p[size - 1] = (unsigned char)i;
+		hfree(p);
+	}
+	return (NULL);
+}
+
+/**
+ * @brief Test concurrent large allocations.
+ *
+ * This test creates multiple threads that perform a series of large
+ * allocations and deallocations concurrently. It verifies that the
+ * allocator can handle large allocations in a multi-threaded context
+ * without errors or memory corruption.
+ */
+static void testConcurrentLargeAllocations(void)
+{
+	SECTION("concurrent_large_allocations");
+
+	pthread_t tids[16];
+	t_arg args[16];
+	int started = 0;
+
+	for (int i = 0; i < 16; ++i) {
+		args[i].id = i;
+		args[i].iters = 12;
+		int result = pthread_create(&tids[i], NULL, largeThreadWorker, &args[i]);
+		CHECK(result == 0, "large allocation worker starts");
+		if (result == 0)
+			started++;
+	}
+	for (int i = 0; i < started; ++i) {
+		void *result = NULL;
+		pthread_join(tids[i], &result);
+		CHECK(result == NULL, "large allocation worker completes");
+	}
 
 	SECTION_END();
 }
@@ -905,6 +1055,53 @@ static void testStress(void)
 }
 
 /**
+ * @brief Test empty arena accounting.
+ *
+ * This test checks the consistency of the allocator's arena accounting
+ * by verifying that every published arena is consistent with its slot
+ * and that its free-slice count stays within its usable slices. It ensures
+ * that the allocator maintains correct accounting for empty arenas.
+ */
+static void testEmptyArenaAccounting(void)
+{
+	SECTION("empty_arena_accounting");
+
+	/*
+	 * Arenas live in a fixed array of the subproc and are never destroyed
+	 * (empty ones stay mapped), so there is no empty-arena counter to
+	 * keep in sync: check that every published arena is consistent with
+	 * its slot and that its free-slice count stays within its usable
+	 * slices. Readers of the array are lock-free.
+	 */
+	t_hmallocSubproc *subproc = &g_hmalloc.subprocMain;
+	size_t count = atomic_load_explicit(&subproc->arenaCount,
+		memory_order_acquire);
+	bool arenasValid = true;
+	bool slicesValid = true;
+
+	CHECK(count <= HMALLOC_MAX_ARENAS, "arena count fits the arena array");
+	if (count > HMALLOC_MAX_ARENAS)
+		count = HMALLOC_MAX_ARENAS;
+	for (size_t i = 0; i < count; ++i) {
+		t_hmallocArena *arena = atomic_load_explicit(&subproc->arenas[i],
+			memory_order_acquire);
+		if (arena == NULL || arena->arenaIdx != i
+			|| arena->subproc != subproc) {
+			arenasValid = false;
+			continue;
+		}
+		if (atomic_load_explicit(&arena->freeSlices, memory_order_relaxed)
+			> arena->sliceCount - arena->infoSlices)
+			slicesValid = false;
+	}
+
+	CHECK(count > 0, "at least one arena is published");
+	CHECK(arenasValid, "published arenas match their slot and subproc");
+	CHECK(slicesValid, "free slices never exceed the usable slices");
+	SECTION_END();
+}
+
+/**
  * @brief Test error handling and edge cases.
  *
  * This test checks the allocator's behavior in various error scenarios,
@@ -920,6 +1117,33 @@ static void testErrors(void)
 	hmRegisterError(errCb, NULL);
 
 	void *ov;
+#if HMALLOC_FREE_IS_CHECKED
+	/*
+	 * Foreign pointers are only detected when free goes through the page
+	 * map. An unchecked free (aligned lookup, as in a mimalloc release
+	 * build) does not validate them: passing one is undefined behaviour.
+	 */
+	static const char rodata[] = "not an allocation";
+	int stackValue = 0;
+	int beforeForeign = g_errorCalls;
+	errno = 0;
+	hfree((void *)rodata);
+	CHECK(g_errorCalls > beforeForeign, "free(.rodata) reports invalid pointer");
+	CHECK(errno == EINVAL, "free(.rodata) sets EINVAL");
+	beforeForeign = g_errorCalls;
+	errno = 0;
+	hfree(&stackValue);
+	CHECK(g_errorCalls > beforeForeign, "free(stack) reports invalid pointer");
+	CHECK(errno == EINVAL, "free(stack) sets EINVAL");
+	errno = 0;
+	CHECK(hrealloc((void *)rodata, 16) == NULL,
+		"realloc(.rodata) is rejected");
+	CHECK(errno == EINVAL, "realloc(.rodata) sets EINVAL");
+	errno = 0;
+	CHECK(husableSize(&stackValue) == 0,
+		"usableSize(stack) is rejected");
+	CHECK(errno == EINVAL, "usableSize(stack) sets EINVAL");
+#endif
 
 	ov = hcalloc(opaqueSize((size_t)-1), 2);
 	CHECK(ov == NULL, "calloc(SIZE_MAX,2) NULL");
@@ -989,12 +1213,30 @@ static void testErrors(void)
 	}
 #endif
 
+#if HMALLOC_CANARY
+	{
+		int before = g_errorCalls;
+		void *aligned = hmallocAligned(4096, 4096);
+		CHECK(aligned != NULL, "canary aligned realloc: allocation succeeds");
+		if (aligned) {
+			void *resized = hrealloc(aligned, 4096);
+			CHECK(resized != NULL, "canary aligned realloc: resize succeeds");
+			if (resized)
+				hfree(resized);
+			else
+				hfree(aligned);
+			CHECK(g_errorCalls == before,
+				"canary aligned realloc does not corrupt block padding");
+		}
+	}
+#endif
+
 	hmRegisterError(NULL, NULL);
 
 	SECTION_END();
 }
 
-static void report_config(void)
+static void reportConfig(void)
 {
 	minPrintf("\nConfig:\n");
 	minPrintf("  HMALLOC_DEBUG           = %d\n", HMALLOC_DEBUG);
@@ -1009,6 +1251,69 @@ static void report_config(void)
 	minPrintf("\n");
 }
 
+/**
+ * @brief Test retired page collection.
+ *
+ * This test checks the functionality of the retired page collection feature
+ * by creating a page, retiring it, and verifying that it is collected
+ * correctly. It also tests the behavior of reused pages and ensures that
+ * the retired page range is updated appropriately.
+ */
+static void testRetiredPageCollection(void)
+{
+	SECTION("retired_page_collection");
+
+	void *seed = hmalloc(16);
+	t_hmallocTheap *th = hmallocTheapDefaultGet();
+	CHECK(seed != NULL, "seed allocation succeeds");
+	CHECK(th != NULL, "thread heap is available");
+	if (seed == NULL || th == NULL) {
+		hfree(seed);
+		SECTION_END();
+		return;
+	}
+	hfree(seed);
+
+	hmallocPageCollectRetired(th, true);
+	size_t bin = hmallocBinOf(64);
+	t_hmallocPage *page = hmallocTheapNewPage(th, hmallocBinSize(bin), bin);
+	CHECK(page != NULL, "test page is created");
+	/*
+	 * A retired page stays at the head of its bin queue with a countdown
+	 * (retireExpire); the theap only tracks the [retiredMinBin,
+	 * retiredMaxBin] range of bins to scan.
+	 */
+	if (page != NULL) {
+		hmallocPageRetire(th, page);
+		hmallocPageRetire(th, page);
+		CHECK(page->retireExpire != 0, "retirement countdown is set");
+		CHECK(th->pages[bin].first == page, "retired page stays at the queue head");
+		CHECK(th->retiredMinBin <= bin && bin <= th->retiredMaxBin,
+			"retired bin range covers the bin");
+
+		hmallocPageCollectRetired(th, true);
+		CHECK(th->pages[bin].first != page, "forced collection frees the page");
+		CHECK(th->retiredMinBin == HMALLOC_BIN_FULL && th->retiredMaxBin == 0,
+			"forced collection clears the retired range");
+	}
+
+	page = hmallocTheapNewPage(th, hmallocBinSize(bin), bin);
+	CHECK(page != NULL, "reuse test page is created");
+	if (page != NULL) {
+		hmallocPageRetire(th, page);
+		page->used = 1;
+		hmallocPageCollectRetired(th, false);
+		CHECK(th->pages[bin].first == page, "reused page stays in its queue");
+		CHECK(!(th->retiredMinBin <= bin && bin <= th->retiredMaxBin),
+			"reused page leaves the retired range");
+		CHECK(page->retireExpire == 0, "reused page clears retirement countdown");
+		page->used = 0;
+		hmallocPageFree(th, page);
+	}
+
+	SECTION_END();
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -1020,17 +1325,21 @@ int main(int argc, char **argv)
 	minPrintf("  hajlibc allocator - comprehensive API test\n");
 	minPrintf("=========================================================\n");
 
-	report_config();
-	marker("main: after report_config");
+	reportConfig();
+	marker("main: after reportConfig");
 
 	testBasic();
 	marker("main: after basic");
+	testPageGeometry();
+	marker("main: after page geometry");
 	testCalloc();
 	marker("main: after calloc");
 	testRealloc();
 	marker("main: after realloc");
 	testAligned();
 	marker("main: after aligned");
+	testOversizedAllocations();
+	marker("main: after oversized allocations");
 	testSizeQueries();
 	marker("main: after size_queries");
 	testExpand();
@@ -1047,6 +1356,8 @@ int main(int argc, char **argv)
 	marker("main: after callbacks");
 	testThreads();
 	marker("main: after threads");
+	testConcurrentLargeAllocations();
+	marker("main: after concurrent large allocations");
 	testCrossThread();
 	marker("main: after cross_thread");
 	testProfiler();
@@ -1057,6 +1368,10 @@ int main(int argc, char **argv)
 	marker("main: after errors");
 	testStress();
 	marker("main: after stress");
+	testEmptyArenaAccounting();
+	marker("main: after empty arena accounting");
+	testRetiredPageCollection();
+	marker("main: after retired page collection");
 
 	minPrintf("\n");
 	minPrintf("=========================================================\n");

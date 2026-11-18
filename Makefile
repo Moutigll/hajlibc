@@ -153,7 +153,7 @@ help:
 clean:
 	@rm -rf $(OBJDIR)
 
-fclean: clean
+fclean: clean clean-malloc
 	@rm -f $(NAME)
 
 re: fclean all
@@ -180,7 +180,10 @@ headers-check:
 # Not cross-compiled: LD_PRELOAD is a POSIX/Linux concept, and mingw has
 # no equivalent.
 
-HOSTTYPE	?= $(shell uname -m)_$(shell uname -s)
+# An empty HOSTTYPE counts as unset, as the subject requires.
+ifeq ($(HOSTTYPE),)
+HOSTTYPE	:= $(shell uname -m)_$(shell uname -s)
+endif
 MALLOC_INC	:= -Iinclude/malloc. -I$(MALLOC_DIR)/include
 
 MALLOC_CFLAGS := \
@@ -208,7 +211,7 @@ MALLOC_LDFLAGS := \
 	-pthread
 else
 MALLOC_LDFLAGS := \
-	-flto \
+	-flto=auto \
 	-shared \
 	-pthread \
 	-Wl,--build-id=none
@@ -217,13 +220,40 @@ endif
 MALLOC_TARGET	:= libft_malloc_$(HOSTTYPE).so
 MALLOC_LINK		:= libft_malloc.so
 
-$(MALLOC_TARGET): $(MALLOC_SRCS) $(MALLOC_SO_EXTRA_SRCS) $(DEBUGINFO_SRCS)
-	$(CC) $(MALLOC_CFLAGS) $(MALLOC_INC) -o $@ $^ $(MALLOC_LDFLAGS)
+# The .so objects use other flags than the archive ones (PIC, hidden
+# visibility, host headers, HMALLOC_SHARED_LIB), so they get their own
+# tree under $(OBJDIR)/malloc and never mix with the libhajc.a objects.
+# -MMD -MP tracks the headers: only the files that changed are rebuilt.
+MALLOC_OBJDIR	:= $(OBJDIR)/malloc
+MALLOC_SO_SRCS	:= $(MALLOC_SRCS) $(MALLOC_SO_EXTRA_SRCS) $(DEBUGINFO_SRCS)
+MALLOC_OBJS		:= $(patsubst %.c,$(MALLOC_OBJDIR)/%.o,$(MALLOC_SO_SRCS))
+MALLOC_DEPS		:= $(MALLOC_OBJS:.o=.d)
+
+# Compiled through build.mk's _haj_compile (progress line, SHOW_FLAGS,
+# UNWIND) with its own counter and total, so `make all malloc` does not
+# mix the two builds.
+MALLOC_PROGRESS	:= $(MALLOC_OBJDIR)/.progress
+ifeq ($(MAKELEVEL),0)
+$(shell rm -f $(MALLOC_PROGRESS) 2>/dev/null)
+endif
+$(MALLOC_OBJS): PROGRESS := $(MALLOC_PROGRESS)
+$(MALLOC_OBJS): TOTAL_OBJS := $(words $(MALLOC_SO_SRCS))
+
+$(MALLOC_OBJDIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(call _haj_compile,CC [malloc] $<,$(CC) $(MALLOC_CFLAGS) $(MALLOC_INC) -MMD -MP -c $< -o $@)
+
+$(MALLOC_TARGET): $(MALLOC_OBJS)
+	@echo "LD $@"
+	@$(CC) $(MALLOC_CFLAGS) -o $@ $^ $(MALLOC_LDFLAGS)
 
 $(MALLOC_LINK): $(MALLOC_TARGET)
 	ln -sf $< $@
 
+-include $(MALLOC_DEPS)
+
 malloc: $(MALLOC_LINK)
 
 clean-malloc:
+	@rm -rf $(MALLOC_OBJDIR)
 	@rm -f $(MALLOC_TARGET) $(MALLOC_LINK)

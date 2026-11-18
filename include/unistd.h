@@ -10,18 +10,24 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/10/03 16:21:45 by Moutig
+ * @Updated: 2026/11/15 22:16:35 by Moutig
  *
- * @TODO: Add a description of the file.
+ * This header defines symbolic constants and types used in POSIX
+ * systems. It includes the necessary headers for fixed-width integer
+ * types, size-related types, and POSIX types. It also defines the
+ * POSIX minimum values for various system limits.
  */
 
 
 #ifndef _UNISTD_H
 # define _UNISTD_H
 
+#include "bits/types.h"
+#include "stdarg.h"
 # include <stddef.h>
 # include <sys/types.h>
 # include <bits/sysconf.h>
+#include <bits/syscall.h>
 
 # ifdef __cplusplus
 extern "C" {
@@ -128,7 +134,15 @@ extern "C" {
 # define _POSIX_RAW_SOCKETS				1
 
 
+#define STDIN_FILENO	0
+#define STDOUT_FILENO	1
+#define STDERR_FILENO	2
 
+# define SEEK_SET	0
+# define SEEK_CUR	1
+# define SEEK_END	2
+# define SEEK_HOLE	3
+# define SEEK_DATA	4
 
 
 /* ----- Functions ----- */
@@ -268,6 +282,109 @@ int unlink(const char *path);
  */
 __HAJ_NORETURN
 void _exit(int status);
+
+#ifdef __HAJ_SOURCE
+/* syscall */
+/**
+ * @brief Perform a system call with the specified number and arguments.
+ *
+ * This function allows direct interaction with the kernel by invoking
+ * a system call with the specified number and up to six arguments.
+ *
+ * @param num The system call number.
+ * @param arg1 The first argument for the system call.
+ * @param arg2 The second argument for the system call.
+ * @param arg3 The third argument for the system call.
+ * @param arg4 The fourth argument for the system call.
+ * @param arg5 The fifth argument for the system call.
+ * @param arg6 The sixth argument for the system call.
+ * @return The return value of the system call, or -1 on error (with errno set).
+ */
+__HAJ_UNUSED
+static long	syscall(long num, ...) {
+	va_list ap;
+	long arg1, arg2, arg3, arg4, arg5, arg6;
+
+	va_start(ap, num);
+	arg1 = va_arg(ap, long);
+	arg2 = va_arg(ap, long);
+	arg3 = va_arg(ap, long);
+	arg4 = va_arg(ap, long);
+	arg5 = va_arg(ap, long);
+	arg6 = va_arg(ap, long);
+	va_end(ap);
+
+	return (__haj_syscall6(num, arg1, arg2, arg3, arg4, arg5, arg6));
+}
+
+#endif /* __HAJ_SOURCE */
+
+/**
+ * @brief Create a pipe for interprocess communication.
+ *
+ * This function creates a unidirectional data channel that can be used
+ * for interprocess communication. The pipe consists of two file descriptors:
+ * one for reading and one for writing.
+ *
+ * @param pipefd An array of two integers where the file descriptors will be stored.
+ *               pipefd[0] is the read end, and pipefd[1] is the write end.
+ * @return 0 on success, or -1 on error.
+ */
+int	pipe(int pipefd[2]);
+
+/**
+ * @brief Duplicate a file descriptor.
+ *
+ * This function duplicates an existing file descriptor, creating a new
+ * file descriptor that refers to the same open file description.
+ *
+ * @param oldfd The file descriptor to duplicate.
+ * @param newfd The desired value for the new file descriptor. If this
+ *               value is already open, it will be closed before being reused.
+ * @return The new file descriptor on success, or -1 on error.
+ */
+int	dup2(int oldfd, int newfd);
+
+/**
+ * @brief Reposition the file offset of an open file descriptor.
+ *
+ * This function sets the file offset for the file descriptor `fd` to
+ * the specified `offset`, according to the directive specified by `whence`.
+ *
+ * @param fd The file descriptor whose offset is to be changed.
+ * @param offset The new offset, in bytes, relative to the position specified by `whence`.
+ * @param whence The directive that specifies how the offset is interpreted:
+ *               - SEEK_SET: The offset is set to `offset` bytes from the beginning of the file.
+ *               - SEEK_CUR: The offset is set to its current location plus `offset`.
+ *               - SEEK_END: The offset is set to the size of the file plus `offset`.
+ * @return The resulting offset location as measured in bytes from the beginning of the file,
+ *         or -1 on error (with errno set).
+ */
+off_t lseek(int fd, off_t offset, int whence);
+
+/**
+ * @brief Read the value of a symbolic link.
+ *
+ * This function places the contents of the symbolic link `path` into the buffer `buf`,
+ * which has a size of `bufsiz`. The returned value is the number of bytes placed in `buf`.
+ *
+ * @param path The pathname of the symbolic link to read.
+ * @param buf The buffer to store the contents of the symbolic link.
+ * @param bufsiz The size of the buffer `buf`.
+ * @return The number of bytes placed in `buf` on success, or -1 on error (with errno set).
+ */
+ssize_t readlink(const char *path, char *buf, size_t bufsiz);
+
+/**
+ * @brief Get the current working directory.
+ *
+ * @param buf  Destination buffer, or NULL to get a buffer allocated with
+ *             malloc() (of `size` bytes, or just large enough if 0).
+ * @param size Size of `buf` in bytes.
+ * @return `buf` (or the allocated buffer), or NULL with errno set
+ *         (ERANGE if `buf` is too small, ENOENT if unreachable).
+ */
+char	*getcwd(char *buf, size_t size);
 
 # ifdef __cplusplus
 }

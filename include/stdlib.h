@@ -10,7 +10,7 @@
  * @file stdlib.h
  * @brief Standard library header.
  * @Created: 2026/10/01 12:44:14 by Moutig
- * @Updated: 2026/10/02 15:21:43 by Moutig
+ * @Updated: 2026/10/29 01:16:41 by Moutig
  *
  * This header provides declarations for standard library functions, including
  * atexit() and exit(). It also defines the standard macros and types used in
@@ -21,6 +21,7 @@
 # define _STDLIB_H
 
 #include <bits/compiler.h>
+#include <stddef.h>
 
 /**
  * @brief Register a function to be called at program exit.
@@ -37,5 +38,215 @@ int		atexit(void (*func)(void));
  * It calls all functions registered with atexit() before terminating.
  */
 void	exit(int status) __HAJ_NORETURN;
+
+/**
+ * @brief Terminate the program immediately.
+ * @param status The exit status.
+ *
+ * This function terminates the program immediately without calling any
+ * functions registered with atexit(). It is equivalent to calling exit()
+ * with the specified status, but does not perform any cleanup.
+ */
+void	abort(void) __HAJ_NORETURN;
+
+/* ----- Environment ----- */
+
+/**
+ * @brief Get the value of an environment variable.
+ *
+ * @param name Variable name (NUL-terminated).
+ * @return Pointer to the value, or NULL if not found.
+ */
+char	*getenv(const char *name);
+
+/**
+ * @brief Add or replace an environment variable.
+ *
+ * @param name   Variable name.
+ * @param value  New value.
+ * @param overwrite If zero and the variable already exists,
+ *                  do nothing and return 0.
+ * @return 0 on success, -1 with errno set on failure.
+ */
+int		setenv(const char *name, const char *value, int overwrite);
+
+/**
+ * @brief Remove an environment variable.
+ *
+ * @param name Variable name.
+ * @return 0 on success, -1 with errno set on failure.
+ */
+int		unsetenv(const char *name);
+
+/**
+ * @brief Add or replace an environment variable (BSD-style).
+ *
+ * Takes a "NAME=value" string. The string is NOT copied; the
+ * caller must keep it alive. This is what makes putenv
+ * dangerous and why setenv is preferred.
+ *
+ * @param string "NAME=value" string.
+ * @return 0 on success, -1 with errno set on failure.
+ */
+int		putenv(char *string);
+
+/* ----- Memory allocation (C standard + POSIX extensions) ----- */
+
+/**
+ * @brief Allocate an uninitialised block of memory.
+ *
+ * @param size Requested size in bytes.
+ * @return Pointer to the block, or NULL on failure (errno = ENOMEM).
+ */
+void	*malloc(size_t size);
+
+/**
+ * @brief Allocate and zero-initialise an array.
+ *
+ * @param count Number of elements.
+ * @param size  Size of each element in bytes.
+ * @return Pointer to the zeroed block, or NULL on failure.
+ */
+void	*calloc(size_t count, size_t size);
+
+/**
+ * @brief Resize a previously allocated block.
+ *
+ * @param ptr     Previously allocated block, or NULL.
+ * @param size    New size in bytes.
+ * @return Pointer to the resized block, or NULL on failure.
+ */
+void	*realloc(void *ptr, size_t size);
+
+/**
+ * @brief Release a block of memory.
+ *
+ * @param ptr Block to free, or NULL (no-op).
+ */
+void	free(void *ptr);
+
+/* ----- POSIX aligned allocation ----- */
+
+/**
+ * @brief Allocate aligned memory.
+ *
+ * The alignment must be a power of two and a multiple of sizeof(void *).
+ *
+ * @param memptr    Output: pointer to the allocated block.
+ * @param alignment Required alignment (power of two).
+ * @param size      Size in bytes.
+ * @return 0 on success, or an errno value on failure.
+ */
+int		posix_memalign(void **memptr, size_t alignment, size_t size);
+
+/**
+ * @brief Allocate memory aligned on a specified boundary (C11).
+ *
+ * @param alignment Required alignment (power of two).
+ * @param size      Size in bytes, must be a multiple of alignment.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*aligned_alloc(size_t alignment, size_t size);
+
+/* ----- GNU/BSD extensions (widely available) ----- */
+
+/**
+ * @brief Allocate aligned memory (legacy).
+ *
+ * @param alignment Required alignment.
+ * @param size      Size in bytes.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*memalign(size_t alignment, size_t size);
+
+/**
+ * @brief Allocate memory aligned on a page boundary.
+ *
+ * @param size Size in bytes.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*valloc(size_t size);
+
+/**
+ * @brief Allocate memory aligned on a page boundary, rounded up.
+ *
+ * @param size Size in bytes.
+ * @return Pointer to the block, or NULL on failure.
+ */
+void	*pvalloc(size_t size);
+
+/**
+ * @brief Reallocate an array with overflow checking (BSD/GNU).
+ *
+ * @param ptr   Previously allocated block, or NULL.
+ * @param count Number of elements.
+ * @param size  Size of each element in bytes.
+ * @return Pointer to the resized block, or NULL on failure
+ *         (errno = ENOMEM on overflow).
+ */
+void	*reallocarray(void *ptr, size_t count, size_t size);
+
+/**
+ * @brief Resize a block, freeing it if the resize fails (BSD).
+ *
+ * @param ptr  Previously allocated block, or NULL.
+ * @param size New size in bytes.
+ * @return Pointer to the resized block, or NULL (and `ptr` is freed).
+ */
+void	*reallocf(void *ptr, size_t size);
+
+/**
+ * @brief Resize an array in place (NetBSD).
+ *
+ * @param ptrp  Address of the block pointer, updated on success.
+ * @param count Number of elements.
+ * @param size  Size of each element in bytes.
+ * @return 0 on success, or EINVAL / EOVERFLOW / ENOMEM.
+ */
+int		reallocarr(void *ptrp, size_t count, size_t size);
+
+/* ----- C23 sized deallocation ----- */
+
+/**
+ * @brief Release a block whose requested size is known.
+ *
+ * @param ptr  Block to free, or NULL.
+ * @param size Size passed to the allocation function.
+ */
+void	free_sized(void *ptr, size_t size);
+
+/**
+ * @brief Release an aligned block whose alignment and size are known.
+ *
+ * @param ptr       Block to free, or NULL.
+ * @param alignment Alignment passed to aligned_alloc().
+ * @param size      Size passed to aligned_alloc().
+ */
+void	free_aligned_sized(void *ptr, size_t alignment, size_t size);
+
+/* ----- Paths ----- */
+
+/**
+ * @brief Resolve a path to its canonical absolute form.
+ *
+ * Follows every symbolic link and removes ".", ".." and repeated slashes.
+ * All the components must exist.
+ *
+ * @param path     The path to resolve.
+ * @param resolved Destination buffer of PATH_MAX bytes, or NULL to get a
+ *                 buffer allocated with malloc().
+ * @return `resolved` (or the allocated buffer), or NULL with errno set.
+ */
+char	*realpath(const char *restrict path, char *restrict resolved);
+
+/**
+ * @brief Sort an array using the pattern-defeating quicksort algorithm.
+ *
+ * @param base  Pointer to the first element of the array.
+ * @param nmemb Number of elements in the array.
+ * @param size  Size of each element in bytes.
+ * @param compar Comparator function that compares two elements.
+ */
+void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
 
 #endif /* _STDLIB_H */

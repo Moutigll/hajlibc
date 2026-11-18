@@ -19,6 +19,7 @@ ASSERT_DIR		:= $(SRC_DIR)/assert
 CPU_DIR			:= $(SRC_DIR)/cpu
 CRT_DIR			:= $(SRC_DIR)/crt
 CTYPE_DIR		:= $(SRC_DIR)/ctype
+DEBUGINFO_DIR	:= $(SRC_DIR)/debuginfo
 ERRNO_DIR		:= $(SRC_DIR)/errno
 FCNTL_DIR		:= $(SRC_DIR)/fcntl
 GETOPT_DIR		:= $(SRC_DIR)/getopt
@@ -32,6 +33,7 @@ STACK_CHK_DIR	:= $(SRC_DIR)/stack_chk
 STAT_DIR		:= $(SRC_DIR)/stat
 STDIO_DIR		:= $(SRC_DIR)/stdio
 STDLIB_DIR		:= $(SRC_DIR)/stdlib
+MALLOC_DIR		:= $(STDLIB_DIR)/malloc
 STRING_DIR		:= $(SRC_DIR)/string
 SYS_DIR			:= $(SRC_DIR)/sys
 THREAD_DIR		:= $(SRC_DIR)/thread
@@ -65,10 +67,18 @@ CRT_SRCS := \
 CTYPE_SRCS := \
 	ctype.c
 
+# debug info
+DEBUGINFO_SRCS := \
+	arena.c \
+	dwarf_line.c \
+	elf.c \
+	lookup.c \
+	../link/dl_iterate_phdr.c
+
 # errno
 ERRNO_SRCS := \
-	errno.c
-#	strerror.c  (needs snprintf, not implemented yet)
+	errno.c \
+	strerror.c
 
 # fcntl
 FCNTL_SRCS := \
@@ -132,7 +142,35 @@ STAT_SRCS :=
 STDIO_SRCS :=
 
 # stdlib-
-STDLIB_SRCS :=
+STDLIB_SRCS := \
+	getenv.c \
+	setenv.c \
+	qsort.c \
+	realpath.c \
+
+MALLOC_SRCS := \
+	alloc.c \
+	arena.c \
+	bitmap.c \
+	bits.c \
+	block.c \
+	heap.c \
+	init.c \
+	leak.c \
+	malloc.c \
+	message.c \
+	meta.c \
+	newdelete.c \
+	options.c \
+	page.c \
+	pagemap.c \
+	posix.c \
+	profile.c \
+	random.c \
+	show.c \
+	stats.c \
+	theap.c \
+	unix.c
 
 # string
 STRING_SRCS := \
@@ -151,8 +189,10 @@ STRING_SRCS := \
 	str/strrchr.c \
 	str/strchrnul.c \
 	str/strcpy.c \
+	str/strdup.c \
 	str/stpcpy.c \
 	str/strncpy.c \
+	str/strndup.c \
 	str/stpncpy.c \
 	str/strlcpy.c \
 	str/strcat.c \
@@ -174,6 +214,7 @@ SYS_SRCS := \
 	auxv.c \
 	getentropy.c \
 	getrandom.c \
+	prctl.c \
 	times.c \
 	waitpid.c \
 
@@ -224,10 +265,15 @@ TIME_SRCS := \
 # unistd-
 UNISTD_SRCS := \
 	close.c \
+	dup2.c \
 	fork.c \
+	getcwd.c \
 	getids.c \
 	getpagesize.c \
+	lseek.c \
+	pipe.c \
 	read.c \
+	readlink.c \
 	sysconf.c \
 	unlink.c \
 	usleep.c \
@@ -238,6 +284,7 @@ ASSERT_SRCS		:= $(addprefix $(ASSERT_DIR)/,$(ASSERT_SRCS))
 CPU_SRCS		:= $(addprefix $(CPU_DIR)/,$(CPU_SRCS))
 CRT_SRCS		:= $(addprefix $(CRT_DIR)/,$(CRT_SRCS))
 CTYPE_SRCS		:= $(addprefix $(CTYPE_DIR)/,$(CTYPE_SRCS))
+DEBUGINFO_SRCS	:= $(addprefix $(DEBUGINFO_DIR)/,$(DEBUGINFO_SRCS))
 ERRNO_SRCS		:= $(addprefix $(ERRNO_DIR)/,$(ERRNO_SRCS))
 FCNTL_SRCS		:= $(addprefix $(FCNTL_DIR)/,$(FCNTL_SRCS))
 GETOPT_SRCS		:= $(addprefix $(GETOPT_DIR)/,$(GETOPT_SRCS))
@@ -251,6 +298,11 @@ STACK_CHK_SRCS	:= $(addprefix $(STACK_CHK_DIR)/,$(STACK_CHK_SRCS))
 STAT_SRCS		:= $(addprefix $(STAT_DIR)/,$(STAT_SRCS))
 STDIO_SRCS		:= $(addprefix $(STDIO_DIR)/,$(STDIO_SRCS))
 STDLIB_SRCS		:= $(addprefix $(STDLIB_DIR)/,$(STDLIB_SRCS))
+MALLOC_SRCS		:= $(addprefix $(MALLOC_DIR)/,$(MALLOC_SRCS))
+
+# Non-allocator libc functions that the LD_PRELOAD allocator must also
+# export, so that their result is owned by hmalloc and not by the host libc.
+MALLOC_SO_EXTRA_SRCS	:= $(addprefix $(STRING_DIR)/,str/strdup.c str/strndup.c)
 STRING_SRCS		:= $(addprefix $(STRING_DIR)/,$(STRING_SRCS))
 SYS_SRCS		:= $(addprefix $(SYS_DIR)/,$(SYS_SRCS))
 THREAD_SRCS		:= $(addprefix $(THREAD_DIR)/,$(THREAD_SRCS))

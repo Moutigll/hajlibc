@@ -27,6 +27,204 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nothing yet
 
+## [0.5.0] - 2026-11-18
+
+This release brings hmalloc, hajlibc's own memory allocator: a
+thread-caching, mmap-only allocator modelled on mimalloc, usable
+from `libhajc.a` or as an `LD_PRELOAD` replacement for the system
+`malloc`. It comes with a Valgrind-style leak report, statistics,
+a sampling profiler, a 42-subject build profile
+(`HMALLOC_FT42`), and the debug-info module (ELF, DWARF line
+tables, `dl_iterate_phdr`) used to symbolize leak traces. The
+release also adds `qsort`, `realpath`, `<stdatomic.h>`, real
+per-thread TLS areas, and a reworked build system.
+
+### Added
+
+#### Memory allocator (`src/stdlib/malloc/`)
+
+- `<malloc.h>`: `malloc`, `free`, `realloc`, `calloc` and the
+  `h*` extension API (`hmallocAligned`, `husableSize`,
+  `hgoodSize`, ...), `malloc_usable_size`, `malloc_size`,
+  `malloc_good_size`, `cfree`, `vfree`, `_aligned_malloc`
+- `<stdlib.h>`: `posix_memalign`, `aligned_alloc`, `memalign`,
+  `valloc`, `pvalloc`, `reallocarray`, `reallocf`, `reallocarr`,
+  C23 `free_sized` / `free_aligned_sized`; glibc aliases
+  `__posix_memalign`, `__libc_memalign`, `__libc_valloc`
+- C++ `operator new` / `operator delete` replacements (sized and
+  aligned variants), also defined in C by their mangled names
+  (`newdelete.c`) so the C-only library replaces them too
+- Arenas: aligned, 64 KiB-sliced regions held in a fixed
+  `subproc->arenas[]` table read without a lock; slices are
+  tracked with concurrent two-level bitmaps (`hmBitmap.h`)
+- Pages: tiny / small / large size classes (64 KiB / 512 KiB /
+  4 MiB pages) with lazily extended free lists; larger blocks get
+  their own mapping
+- Thread-local heaps (theaps): lock-free fast path on the owner
+  thread, deferred cross-thread frees, abandoned-page reclaim,
+  retired pages kept at the head of their bin queue
+- Address → page map (`hmPageMap.h`) used by checked `free`
+- Deferred purge of unused slices (`madvise`), THP control
+  (`prctl(PR_SET_THP_DISABLE)`, `MADV_NOHUGEPAGE`)
+- Fork safety: child handler registered with `pthread_atfork`,
+  theaps left by the fork are abandoned in the child
+- Heap API: `hmSubprocMain`, `hmHeapMain`, `hmHeapOf`,
+  `hmHeapContains`, `hmAnyHeapContains`, `hmHeapVisitBlocks`,
+  `hmHeapVisitAbandonedBlocks`, `hmTheapGetDefault`
+- Runtime options through `HMALLOC_*` environment variables
+  (`SHOW_ERRORS`, `SHOW_STATS`, `VERBOSE`, `PURGE_DELAY`,
+  `PAGE_FULL_RETAIN`, `GUARDED_SAMPLE_RATE`, `PERTURB`, `CHECK`,
+  `CHECK_LEAKS`, `PAGE_RECLAIM_ON_FREE`, `PAGE_MAX_RECLAIM`,
+  `PAGE_CROSS_THREAD_MAX_RECLAIM`, `GENERIC_COLLECT`,
+  `ARENA_PURGE_MULT`, `ARENA_PURGE_MIN_SIZE`,
+  `ARENA_PURGE_IMMEDIATE_SIZE`, `ALLOW_THP`) and `hmOptionGetSize`
+- `<hmConfig.h>`: build-time knobs (`HMALLOC_DEBUG`, `CANARY`,
+  `CHECK`, `LEAK_TRACE`, `ENCODE_FREELIST`, `LOG_*`, `PROFILE`,
+  `STATS`, auto-detected ASAN / TSAN), all `-D` overridable with
+  production-safe defaults
+- Checked builds (`HMALLOC_CHECK`): low, misaligned, foreign and
+  interior pointers are rejected and double frees reported by
+  `free` and `realloc` (`realloc` then returns `NULL` / `EINVAL`
+  and leaves the block untouched); the padding slack is painted
+  and verified on free to catch small overflows
+- Statistics: `hmStatsGet`, `hmStatsGetJson`, `hmStatsPrint`,
+  per-subproc / heap / theap stats, `total` and `peak` counters;
+  compiled to inline stubs when `HMALLOC_STATS=0`
+- Sampling profiler (`hmProfilerStart` / `hmProfilerStop`),
+  opt-in with `HMALLOC_PROFILE`, stubbed otherwise
+- Introspection: `show_alloc_mem` (all zones in address order,
+  TINY / SMALL / LARGE), `show_alloc_mem_ex`, `hmProcessInfo`
+- Callbacks: `hmRegisterOutput`, `hmRegisterError`,
+  `hmRegisterDeferredFree`
+- Leak report (`hmReportLeaks`, automatic at exit with
+  `HMALLOC_CHECK_LEAKS`): Valgrind-style sections and
+  `LEAK SUMMARY` on stderr without stdio; blocks classified as
+  definitely / indirectly / possibly lost or still reachable by a
+  root scan (linker-script symbols or `dl_iterate_phdr`) and a BFS
+  over the block graph; `HMALLOC_REPORT_MAX` caps the blocks shown
+- Optional allocation stack traces (`HMALLOC_LEAK_TRACE=1`),
+  symbolized through `<debuginfo.h>`
+- `HMALLOC_FT42` build profile for the 42 malloc subject: only
+  `mmap` / `munmap` / `sysconf` / `getrlimit` / `write` /
+  pthread are called; TINY ≤ 1 KiB in 128 KiB zones, SMALL
+  ≤ 16 KiB in 2 MiB zones (≥ 100 blocks each, checked at compile
+  time), every LARGE block in its own mapping; zones pre-allocated
+  at load time and returned to the system as soon as they are
+  empty; exact requested sizes in `show_alloc_mem`; pointer checks
+  on by default
+
+#### Debug info and dynamic linking
+
+- `<elf.h>`: ELF64 types (`Elf64_Ehdr`, `Elf64_Shdr`, `Elf64_Sym`,
+  `Elf64_Phdr`, `ElfW()`) and the `ET_*` / `EM_*` / `SHT_*` /
+  `STT_*` / `STB_*` / `SHN_*` / `PT_*` / `PF_*` constants
+- ELF handle (`elf_open`, `elf_open_self`, `elf_close`, section
+  lookup by name or type, `elf_foreach_symbol`)
+- `<link.h>`: `struct dl_phdr_info` and `dl_iterate_phdr`, built
+  on `/proc/self/maps`
+- `<debuginfo.h>`: symbol and source-line lookup (`di_init`,
+  `di_lookup`, `di_object_find_*`, `di_object_foreach_*`,
+  `di_enumerate_loaded`, ...) from `.symtab` and a DWARF 2-5
+  `.debug_line` parser, with an mmap-chunk arena usable from a
+  crash handler
+
+#### C library
+
+- `<stdatomic.h>`: `memory_order`, `atomic_*` types and
+  operations, `atomic_flag`; GCC uses `__atomic_*`, Clang
+  `__c11_atomic_*`
+- `qsort` (pattern-defeating quicksort: in place, O(n log n)
+  worst case)
+- `realpath` (symlinks, `.` / `..`, `SYMLOOP_MAX` 40, `NULL`
+  buffer mode)
+- `getenv`, `setenv`, `unsetenv`, `putenv`
+- `strerror_r`; `strdup`, `strndup`
+- `getcwd`, `pipe`, `dup2`, `lseek`, `readlink`;
+  `STDIN_FILENO` / `STDOUT_FILENO` / `STDERR_FILENO`, `SEEK_*`,
+  raw `syscall()`
+- `<sys/prctl.h>` and `prctl()` (Linux)
+- `SYS_dup3` and `SYS_pipe2` on every target, `SYS_readlinkat`
+  and `SYS_getcwd` where missing, `SYS_getuid` / `SYS_getgid` on
+  Linux aarch64
+- Minimal `<stdio.h>`
+- `<bits/compiler.h>`: `HAJ_OPAQUE_PTR()`; `<bits/types.h>`:
+  unaligned aliasing types `__hajMemU64_t` / `U32` / `U16`
+- `HAJ_STRING_NO_DISPATCH`: `memcpy` / `memset` without the x86_64
+  CPU dispatch
+
+#### Runtime
+
+- Per-thread TLS areas: one contiguous block holding the TLS
+  variables and the TCB (variant I on aarch64, variant II on
+  x86_64), with `__haj_tlsAreaSize`, `__haj_tlsAreaInit` and
+  `__haj_tcbToTp`
+- `<bits/symbols.h>`: the linker-script symbols in one place
+- Stack-protector canary seeded from `AT_RANDOM`
+
+#### Build, tests and benchmarks
+
+- `make malloc`: builds `libft_malloc_$(HOSTTYPE).so` and the
+  `libft_malloc.so` link for `LD_PRELOAD` (dylib on Darwin), with
+  its own object tree and header dependencies
+- `mk/malloc.mk`: standalone `HMALLOC_FT42` build of the 42 library
+- `make SHOW_FLAGS=1` / `UNWIND=1`, `HAJ_EXTRA_CPPFLAGS` /
+  `HAJ_EXTRA_CFLAGS`, `HAJ_LDSCRIPT` and `HAJ_COMMON_CFLAGS`
+- `tests/standalone/malloc/`: allocator test suite run against a
+  compile-time matrix (release, debug4, canary, check, encode,
+  profile, nostats, paranoid, all_on), plus a `test-leak` demo
+- `benchmark/malloc/`: throughput and memory benchmarks against
+  glibc, jemalloc, mimalloc and tcmalloc, with a typed analyzer
+  and an HTML report including a test-machine block
+
+### Changed
+
+- `strerror` uses a sparse table; unknown codes go to a
+  thread-local buffer
+- `__HAJ_THREAD_LOCAL` is always a real TLS qualifier
+- `memcpy` / `memset`: no byte loops; overlapping head / tail
+  stores for small sizes, aligned 4-vector main loop
+- `dup2` goes through `dup3`, `pipe` through `pipe2`, `readlink`
+  through `readlinkat`
+- Condition variables count their waiters and skip the futex wake
+  when nobody waits
+- Mutexes read the caller's TID from the TCB instead of calling
+  `gettid(2)`
+- `pthread_create` gives new threads a full TLS area and passes
+  the thread pointer as `CLONE_SETTLS`
+- Build flags: LTO, `-fno-plt`, `-fno-semantic-interposition`,
+  function / data sections with `--gc-sections`,
+  `-march=native` (not on cross builds), `-z now` / `relro`,
+  `-Bsymbolic-functions`, `-fvisibility=hidden`,
+  `-mno-outline-atomics` on aarch64
+- `mk/config.mk` derives its flags from `mk/hajlib.mk` and drops
+  `-Werror` / `-march=native` on cross builds
+- `mk/hajlibc.ld` rewritten: split `PT_LOAD` segments, sorted
+  ctor / dtor arrays, section and TLS symbols, segments aligned on
+  `MAXPAGESIZE`, no hardcoded output format, and an `ASSERT` on
+  the main-thread TLS size
+- `make fclean` also removes the preload library; an empty
+  `HOSTTYPE` counts as unset
+
+### Fixed
+
+- `strstr` missed matches past the first ~512 bytes of the
+  haystack
+- New threads got a bare TCB instead of a TLS area (`.tdata` not
+  copied, `.tbss` not zeroed)
+- aarch64: `clone` received the TCB address instead of the thread
+  pointer
+- `pthread_once` woke only one waiter
+- Lost wakeup window in `pthread_cond_signal` /
+  `pthread_cond_broadcast`
+
+### Removed
+
+- Nothing
+
+### Deprecated
+
+- Nothing
+
 ## [0.4.0] - 2026-10-05
 
 This release brings full POSIX threads and signals to hajlibc:
@@ -513,7 +711,8 @@ Linux (x86_64 and aarch64) without any dependency on the system libc.
 
 - All `ft_*` sources and headers from the old libft structure
 
-[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.4.0...dev
+[Unreleased]: https://github.com/moutigll/hajlib/compare/v0.5.0...dev
+[0.5.0]: https://github.com/moutigll/hajlib/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/moutigll/hajlib/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/moutigll/hajlib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/moutigll/hajlib/compare/v0.1.0...v0.2.0

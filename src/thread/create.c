@@ -165,14 +165,16 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 	 * CLONE_PARENT_SETTID) and clears it on exit (through
 	 * CLONE_CHILD_CLEARTID), futex-waking any joiner.
 	 *
-	 * tls = tcb: on aarch64, CLONE_SETTLS makes the kernel
-	 * write this pointer into tpidr_el0. On x86_64, it goes
-	 * into fs_base. __haj_tcbSelf() reads it back.
+	 * tls = thread pointer of the new TLS area: on aarch64,
+	 * CLONE_SETTLS makes the kernel write it into tpidr_el0
+	 * (tcb + span, the TLS variables are above it). On x86_64,
+	 * it goes into fs_base (== tcb). __haj_tcbSelf() reads it
+	 * back.
 	 */
 	r = __haj_clone(__haj_threadTrampoline, childStack,
 				 HAJ_CLONE_THREAD_FLAGS, tcb,
 				 (int *)&tcb->tid,	/* parent_tid */
-				 tcb,					/* tls */
+				 __haj_tcbToTp(tcb),	/* tls */
 				 (int *)&tcb->tid);	/* child_tid */
 	if (r < 0) {
 		/*

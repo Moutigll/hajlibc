@@ -60,7 +60,8 @@ int pthread_once(pthread_once_t *once_control, void (*init_routine)(void))
 		 */
 		init_routine();
 		__haj_atomic_store(once_control, HAJ_ONCE_DONE);
-		__haj_futexWakeOp(once_control, 1, 0);
+		/* Wake EVERY waiter: each one only re-checks DONE and returns. */
+		__haj_futexWakeOp(once_control, 0x7fffffff, 0);
 		return (0);
 	}
 

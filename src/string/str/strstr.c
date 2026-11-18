@@ -10,7 +10,7 @@
  * @file strstr.c
  * @brief Implementation of strstr function.
  * @Created: 2026/09/26 03:06:37 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/11/16 14:54:32 by Moutig
  *
  *
  * Strategy (inspired by glibc):
@@ -106,16 +106,22 @@ static inline char	*__hajHorspool(const unsigned char	*hs,
 	{
 		size_t	tmp;
 
+		/*
+		 * Only the first `hsLen` bytes are known: extend the window
+		 * (2 KiB at a time) instead of stopping at its end.
+		 */
 		if (hs > end)
-			return (NULL);
+		{
+			end += strnlen((const char *)(end + m1 + 1), 2048);
+			if (hs > end)
+				return (NULL);
+		}
 
 		do
 		{
 			hs += m1;
-			if (hs > end)
-				return (NULL);
 			tmp = shift[((size_t)hs[0] - ((size_t)hs[-1] << 3)) % 256];
-		} while (tmp == 0);
+		} while (tmp == 0 && hs <= end);
 
 		hs -= tmp;
 		if (tmp < m1)
@@ -160,8 +166,10 @@ char	*strstr(const char *haystack, const char *needle)
 	if (memcmp(hs, ne, neLen) == 0)
 		return ((char *)hs);
 
+	/* Two-Way needs the whole haystack, not just the first window. */
 	if (neLen > 256)
-		return (__hajTwoWay(hs, hsLen, ne, neLen));
+		return (__hajTwoWay(hs, hsLen + strlen((const char *)(hs + hsLen)),
+							ne, neLen));
 
 	return (__hajHorspool(hs, hsLen, ne, neLen));
 }

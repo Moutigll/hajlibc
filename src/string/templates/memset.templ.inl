@@ -10,11 +10,16 @@
  * @file memset.templ.c
  * @brief Template for vectorized memset implementations.
  * @Created: 2026/09/25 20:53:02 by Moutig
- * @Updated: 2026/09/25 20:53:02 by Moutig
+ * @Updated: 2026/11/12 12:00:00 by Moutig
  *
  * This file is included by memset.c with different definitions of
  * HAJ_FUNC_NAME, HAJ_VEC_TYPE, HAJ_VEC_SIZE, HAJ_SET1, HAJ_STORE, and HAJ_TARGET.
  * It implements a vectorized memset using the specified vector type and size.
+ *
+ * No byte loop: sizes below a vector use two overlapping scalar (or
+ * half-vector) stores, sizes up to 4 vectors use overlapping vector stores
+ * from both ends, and larger sizes write an unaligned head and tail around
+ * an aligned 4-vector loop.
  */
 
 #include <stddef.h>
@@ -41,49 +46,95 @@ HAJ_TARGET
 HAJ_ATTR_UNUSED
 static void *HAJ_FUNC_NAME(void *dest, int c, size_t n)
 {
-	unsigned char		*d = (unsigned char *)dest;
-	const unsigned char	v = (unsigned char)c;
+	unsigned char	*d = (unsigned char *)dest;
 
-	/* Small sizes: byte-by-byte. */
+	/* Below one vector: two overlapping stores of the largest fitting width. */
 	if (n < HAJ_VEC_SIZE)
 	{
-		while (n--)
-			*d++ = v;
+		const __haj_u64	w = (__haj_u64)(unsigned char)c * 0x0101010101010101ULL;
+
+#ifdef HAJ_HALF_TYPE
+		if (n >= HAJ_VEC_SIZE / 2)
+		{
+			const HAJ_HALF_TYPE	h = HAJ_HALF_SET1((unsigned char)c);
+
+			HAJ_HALF_STORE(d, h);
+			HAJ_HALF_STORE(d + n - HAJ_VEC_SIZE / 2, h);
+			return (dest);
+		}
+#endif
+		if (n >= 16)
+		{
+			/* Only reached when half a vector is wider than 16 bytes. */
+			*(__hajMemU64_t *)d = w;
+			*(__hajMemU64_t *)(d + 8) = w;
+			*(__hajMemU64_t *)(d + n - 16) = w;
+			*(__hajMemU64_t *)(d + n - 8) = w;
+			return (dest);
+		}
+		if (n >= 8)
+		{
+			*(__hajMemU64_t *)d = w;
+			*(__hajMemU64_t *)(d + n - 8) = w;
+			return (dest);
+		}
+		if (n >= 4)
+		{
+			*(__hajMemU32_t *)d = (__haj_u32)w;
+			*(__hajMemU32_t *)(d + n - 4) = (__haj_u32)w;
+			return (dest);
+		}
+		if (n >= 2)
+		{
+			*(__hajMemU16_t *)d = (__haj_u16)w;
+			*(__hajMemU16_t *)(d + n - 2) = (__haj_u16)w;
+			return (dest);
+		}
+		if (n != 0)
+			*d = (unsigned char)w;
 		return (dest);
 	}
 
-	/* Align dest on vector size. */
-	while (((size_t)d & (HAJ_VEC_SIZE - 1)) && n)
 	{
-		*d++ = v;
-		n--;
-	}
+		const HAJ_VEC_TYPE	vec = HAJ_SET1((unsigned char)c);
+		unsigned char		*end = d + n;
 
-	/* Splat the byte into a vector. */
-	HAJ_VEC_TYPE vec = HAJ_SET1(v);
+		/* Up to 4 vectors: overlapping stores from both ends. */
+		if (n <= 2 * HAJ_VEC_SIZE)
+		{
+			HAJ_STORE(d, vec);
+			HAJ_STORE(end - HAJ_VEC_SIZE, vec);
+			return (dest);
+		}
+		if (n <= 4 * HAJ_VEC_SIZE)
+		{
+			HAJ_STORE(d, vec);
+			HAJ_STORE(d + HAJ_VEC_SIZE, vec);
+			HAJ_STORE(end - 2 * HAJ_VEC_SIZE, vec);
+			HAJ_STORE(end - HAJ_VEC_SIZE, vec);
+			return (dest);
+		}
 
-	/* Main loop: 4 vectors at a time. */
-	while (n >= 4 * HAJ_VEC_SIZE)
-	{
-		HAJ_STORE(d + 0 * HAJ_VEC_SIZE, vec);
-		HAJ_STORE(d + 1 * HAJ_VEC_SIZE, vec);
-		HAJ_STORE(d + 2 * HAJ_VEC_SIZE, vec);
-		HAJ_STORE(d + 3 * HAJ_VEC_SIZE, vec);
-		d += 4 * HAJ_VEC_SIZE;
-		n -= 4 * HAJ_VEC_SIZE;
-	}
-
-	while (n >= HAJ_VEC_SIZE)
-	{
+		/* Unaligned head, then align dest on the vector size. */
 		HAJ_STORE(d, vec);
-		d += HAJ_VEC_SIZE;
-		n -= HAJ_VEC_SIZE;
+		d = (unsigned char *)(((size_t)d + HAJ_VEC_SIZE) & ~(size_t)(HAJ_VEC_SIZE - 1));
+
+		/* Main loop: 4 aligned vectors at a time. */
+		while ((size_t)(end - d) > 4 * HAJ_VEC_SIZE)
+		{
+			HAJ_STORE(d + 0 * HAJ_VEC_SIZE, vec);
+			HAJ_STORE(d + 1 * HAJ_VEC_SIZE, vec);
+			HAJ_STORE(d + 2 * HAJ_VEC_SIZE, vec);
+			HAJ_STORE(d + 3 * HAJ_VEC_SIZE, vec);
+			d += 4 * HAJ_VEC_SIZE;
+		}
+
+		/* Tail: the last 4 vectors, unaligned, overlapping the loop. */
+		HAJ_STORE(end - 4 * HAJ_VEC_SIZE, vec);
+		HAJ_STORE(end - 3 * HAJ_VEC_SIZE, vec);
+		HAJ_STORE(end - 2 * HAJ_VEC_SIZE, vec);
+		HAJ_STORE(end - 1 * HAJ_VEC_SIZE, vec);
 	}
-
-	/* Tail. */
-	while (n--)
-		*d++ = v;
-
 	return (dest);
 }
 
@@ -93,3 +144,6 @@ static void *HAJ_FUNC_NAME(void *dest, int c, size_t n)
 # undef HAJ_SET1
 # undef HAJ_STORE
 # undef HAJ_TARGET
+# undef HAJ_HALF_TYPE
+# undef HAJ_HALF_SET1
+# undef HAJ_HALF_STORE

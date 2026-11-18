@@ -10,7 +10,7 @@
  * @file x86_64.h
  * @brief Linux x86_64 syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/05 11:49:44 by Moutig
+ * @Updated: 2026/11/12 13:34:08 by Moutig
  *
  * Source: <asm/unistd_64.h> from the Linux kernel.
  * These numbers are stable for the Linux x86_64 ABI.
@@ -62,6 +62,7 @@
 # define SYS_select				23
 # define SYS_dup				32
 # define SYS_dup2				33
+# define SYS_dup3				292
 # define SYS_pause				34
 # define SYS_nanosleep			35
 # define SYS_getitimer			36
@@ -112,7 +113,6 @@
 # define SYS_setpriority		141
 # define SYS_sched_yield		24
 # define SYS_madvise			28
-# define SYS_dup3				292
 # define SYS_pipe2				293
 # define SYS_epoll_create		213
 # define SYS_epoll_ctl			233

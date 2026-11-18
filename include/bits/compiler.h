@@ -10,7 +10,7 @@
  * @file compiler.h
  * @brief Compiler-specific macros and attributes.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:15 by Moutig
+ * @Updated: 2026/11/15 22:07:31 by Moutig
  *
  * This header provides portable macros for compiler-specific
  * features: TLS, attributes, and other extensions.
@@ -153,38 +153,28 @@
 
 # endif /* __HAJ_COMPILER_UNKNOWN */
 
-/* ----- Thread-local storage (TLS) ----- */
-/**
- * @brief Thread-local storage (TLS) macro.
- *
- * __HAJ_THREAD_LOCAL expands to the compiler's TLS qualifier.
- *
- * @PLACEHOLDER @TODO: threads are not supported yet. Until
- * __HAJ_HAVE_THREADS is defined, the macro expands to nothing,
- * and the variables are plain globals. This is correct for a
- * single-threaded program.
- *
- * To enable threads later:
- *   1. Define __HAJ_HAVE_THREADS in config.mk.
- *   2. Implement TLS initialization in src/crt/tls.c.
- *   3. Implement the syscalls needed (clone, futex, etc.).
- */
+/* ----- Thread-local storage ----- */
 
+/**
+ * @brief Thread-local storage qualifier.
+ *
+ * hajlibc supports threads since 0.4.0, so the qualifier is
+ * always a real TLS qualifier. On C11+, use _Thread_local; on
+ * older C dialects, fall back to __thread (GCC, Clang, ICC).
+ *
+ * MSVC is not supported (no _Thread_local before VS 2019 16.8,
+ * and __declspec(thread) only works with static TLS).
+ */
 # ifndef __HAJ_THREAD_LOCAL
-#  if defined(__HAJ_HAVE_THREADS)
-#   if defined(__HAJ_COMPILER_MSVC)
-#    define __HAJ_THREAD_LOCAL	__declspec(thread)
-#   elif __HAJ_C_VERSION >= 201112L
-#    define __HAJ_THREAD_LOCAL	_Thread_local
-#   elif defined(__HAJ_COMPILER_GNULIKE)
-#    define __HAJ_THREAD_LOCAL	__thread
-#   else
-#    define __HAJ_THREAD_LOCAL
-#   endif
+#  if __HAJ_C_VERSION >= 201112L
+#   define __HAJ_THREAD_LOCAL	_Thread_local
+#  elif defined(__HAJ_COMPILER_GNULIKE)
+#   define __HAJ_THREAD_LOCAL	__thread
 #  else
-#   define __HAJ_THREAD_LOCAL
+#   error "hajlibc: no TLS qualifier available for this compiler"
 #  endif
 # endif
+
 
 /* ----- C standard dependent macros ----- */
 /**
@@ -344,5 +334,24 @@
 #if defined(_GNU_SOURCE) || defined(_BSD_SOURCE) || defined(_POSIX_C_SOURCE) || defined(__HAJ_COMPILER_GNULIKE)
 # define __HAJ_SOURCE	1
 #endif
+
+/* ----- Opaque pointer macro ----- */
+/**
+ * @brief Hide a pointer from the compiler's optimizer.
+ *
+ * This macro is used to prevent the compiler from optimizing away
+ * NULL checks on pointers that are declared as nonnull in system
+ * headers. It uses an empty inline assembly statement to make the
+ * pointer appear to be modified, without actually changing it.
+ *
+ * Usage:
+ *   HAJ_OPAQUE_PTR(ptr);
+ */
+#if defined(__GNUC__) || defined(__clang__)
+# define HAJ_OPAQUE_PTR(x)	__asm__("" : "+r"(x))
+#else
+# define HAJ_OPAQUE_PTR(x)	((void)0)
+#endif
+
 
 #endif /* _BITS_COMPILER_H */

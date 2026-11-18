@@ -10,7 +10,7 @@
  * @file freebsd.h
  * @brief FreeBSD syscall numbers.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/09/30 09:20:15 by Moutig
+ * @Updated: 2026/11/12 13:28:31 by Moutig
  *
  * Source: <sys/syscall.h> from the FreeBSD kernel.
  * FreeBSD uses the same syscall numbers on all 64-bit
@@ -84,6 +84,7 @@
 # define SYS_umask				60
 # define SYS_dup				41
 # define SYS_dup2				90
+# define SYS_dup3				532
 # define SYS_pipe				42
 # define SYS_pipe2				542
 # define SYS_mknod				14

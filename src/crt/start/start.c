@@ -10,7 +10,7 @@
  * @file start.c
  * @brief C runtime startup code.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/02 09:48:33 by Moutig
+ * @Updated: 2026/10/26 07:52:29 by Moutig
  *
  * This file contains the C runtime startup code. It is called by the
  * __start assembly entry point, which is the first code executed in a
@@ -21,6 +21,7 @@
 #include <bits/crt.h>
 #include <bits/cpu.h>
 #include <bits/thread/tcb.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
 
@@ -47,6 +48,13 @@ char				**environ = 0;
 const unsigned long	*__haj_auxv = 0;
 
 void				*__dso_handle = 0;
+
+/*
+ * The initial stack pointer, as passed to the process by the kernel.
+ * This is used to parse the initial stack layout and extract argc,
+ * argv, envp, and auxv.
+ */
+uintptr_t			__haj_initial_sp = 0;
 
 
 /**
@@ -104,6 +112,8 @@ void __hajlibcStartMain(void *sp, int (*main)(int, char **, char **))
 	char			**envp;
 	unsigned long	*auxv;
 	int				ret;
+
+	__haj_initial_sp = (uintptr_t)sp;
 
 	/*
 	 * Step 1: parse the initial stack.

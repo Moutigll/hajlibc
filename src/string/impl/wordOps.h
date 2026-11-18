@@ -10,7 +10,7 @@
  * @file wordOps.h
  * @brief Helper functions for word-level operations used in memory functions.
  * @Created: 2026/09/25 22:36:12 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/10/27 10:26:44 by Moutig
  *
  * This header provides inline functions for word-level operations, such as
  * splatting a byte across a word and checking for zero bytes in a word. These
@@ -73,6 +73,20 @@ static inline size_t __hajFirstZeroByteIndex(__hajULW_t w)
 }
 
 /**
+ * @brief Mask of non-zero bytes in a word.
+ *
+ * Returns a word with the high bit (0x80) set for every byte that is
+ * non-zero. Inverse of __hajHasZeroByte.
+ */
+static inline __hajULW_t __hajHasNonZeroByte(__hajULW_t w)
+{
+	return (((w | (w >> 1) | (w >> 2) | (w >> 3)
+			  | (w >> 4) | (w >> 5) | (w >> 6) | (w >> 7))
+			  & (__hajULW_t)0x0101010101010101ULL)
+			  * 0xFF);
+}
+
+/**
  * @brief Get the index of the last zero byte in a word.
  *
  * This function returns the index (0..sizeof(word)-1) of the last zero byte in the given word.
@@ -102,7 +116,7 @@ static inline size_t __hajFirstDiffOrZero(__hajULW_t w1, __hajULW_t w2)
 {
 	__hajULW_t z1 = __hajHasZeroByte(w1);
 	__hajULW_t z2 = __hajHasZeroByte(w2);
-	__hajULW_t d = __hajHasZeroByte(w1 ^ w2);
+	__hajULW_t d = __hajHasNonZeroByte(w1 ^ w2);
 	__hajULW_t mask = z1 | z2 | d;
 
 #if defined(__HAJ_LITTLE_ENDIAN)

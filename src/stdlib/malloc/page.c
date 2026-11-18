@@ -125,6 +125,12 @@ static size_t hmallocPageBlockStart(size_t bsize)
 	size_t info = HMALLOC_PAGE_HEADER_SIZE;
 	size_t offset;
 
+#if HMALLOC_FT42
+	/* Room for the requested-size array (one uint16_t per block). */
+	if (bsize != 0)
+		info += hmallocAlignUpAny((hmallocZoneSize(bsize) / bsize) * sizeof(uint16_t),
+			HMALLOC_PAGE_MIN_START_BLOCK_ALIGN);
+#endif
 	if (bsize != 0 && hmallocIsPow2(bsize)
 		&& bsize <= HMALLOC_PAGE_MAX_START_BLOCK_ALIGN2)
 		offset = hmallocAlignUpAny(info, bsize);

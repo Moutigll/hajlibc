@@ -88,34 +88,6 @@ void	_hmallocAssertFail(const char *expr, const char *file, unsigned line, const
 # endif
 
 /**
- * @brief Thread-local storage for the memory allocator.
- *
- * This struct holds thread-local data for the memory allocator, including
- * a lock for thread safety, a key for the thread-local heap, and other
- * relevant information.
- */
-typedef struct s_hmallocTs {
-	t_hmallocLock	lock;			/* Lock for thread-safe access to the thread-local data */
-	pthread_key_t	theapKey;		/* Key for the thread-local heap (theap) */
-	pthread_once_t	theapKeyOnce;	/* Once control for initializing the theapKey */
-	bool			theapKeyValid;	/* Indicates if the theapKey has been initialized and is valid */
-
-	/* Bin-range cache (moved here from theap.c statics). */
-	uint16_t		binRangeStart[HMALLOC_BIN_COUNT];
-	uint16_t		binRangeEnd[HMALLOC_BIN_COUNT];
-	pthread_once_t	binRangeOnce;	/* Once control for initializing the bin-range cache */
-	pthread_once_t	pageMapOnce;	/* Once control for initializing the page map */
-} t_hmallocTs;
-
-/**
- * @brief Global thread-local storage for the memory allocator.
- *
- * This variable holds the global thread-local storage for the memory allocator,
- * allowing for efficient access to thread-specific data across different threads.
- */
-extern t_hmallocTs	g_hmallocTs;
-
-/**
  * @brief Global state for the memory allocator.
  *
  * This variable holds the global state for the memory allocator, including
@@ -152,6 +124,19 @@ typedef struct s_hmallocGlobal {
 	size_t				forkEpoch;			/* Incremented in each forked child */
 	_Atomic size_t		forkPending;		/* Dead theaps of a fork remain to be abandoned */
 	_Atomic bool		initialized;	/* Indicates if the allocator has been initialized */
+
+	/* Process-wide lock and once-controls (the per-thread state is g_hmallocTs). */
+	t_hmallocLock	lock;			/* Init, metadata, show_alloc_mem and profiler lock */
+	pthread_key_t	theapKey;		/* Key whose destructor runs the thread exit hook */
+	pthread_once_t	theapKeyOnce;	/* Once control for creating theapKey */
+	bool			theapKeyValid;	/* theapKey was created */
+	uint16_t		binRangeStart[HMALLOC_BIN_COUNT];	/* Bin-range cache */
+	uint16_t		binRangeEnd[HMALLOC_BIN_COUNT];
+	pthread_once_t	binRangeOnce;	/* Once control for the bin-range cache */
+	pthread_once_t	pageMapOnce;	/* Once control for the page map */
+
+	t_hmallocLock	osBlocksLock;	/* Protects osBlocks */
+	t_hmallocPage	*osBlocks;		/* Blocks with their own mapping, by increasing address */
 
 # if HMALLOC_STATS
 	t_hmallocStats	statsSubproc;

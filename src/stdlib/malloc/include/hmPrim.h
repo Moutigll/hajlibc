@@ -234,11 +234,25 @@ void	hmallocPrimThreadYield(void);
 
 /* ----- Thread identifier ----- */
 #define HMALLOC_TLS_IE  __attribute__((tls_model("initial-exec")))
+
+/**
+ * @brief Per-thread allocator state.
+ *
+ * One of the two globals of the allocator: g_hmalloc holds what all
+ * threads share, g_hmallocTs what each thread owns. Being thread-local,
+ * it is read without any lock, which keeps the fast paths lock-free.
+ */
+typedef struct s_hmallocTs {
+	t_hmallocTheap	*theapDefault;	/* Default theap (the empty sentinel before the first allocation) */
+	t_hmallocTheap	*theapCached;	/* Last theap used through an explicit heap */
+} t_hmallocTs;
+
+extern HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE t_hmallocTs	g_hmallocTs;
+
 # if defined(_WIN32)
 #  include <windows.h>
 #  define hmallocPrimThreadId()	((uintptr_t)NtCurrentTeb())
 # else
-extern HMALLOC_THREAD_LOCAL		HMALLOC_TLS_IE uintptr_t	_hmallocThreadIdHelper;
 
 /*
  * As mimalloc: the thread id is the thread pointer (one load, no TLS
@@ -274,8 +288,9 @@ static inline uintptr_t	hmallocPrimThreadPointer(void)
 /**
  * @brief Return a unique value per thread (used to recognise page owners).
  *
- * The thread pointer when available, otherwise the address of a
- * thread-local variable (also distinct for each thread).
+ * The thread pointer when available, otherwise the address of the
+ * thread-local g_hmallocTs (also distinct for each thread, and pointer
+ * aligned so that its low bits are free for the page flags).
  * @return Opaque thread identifier.
  */
 static inline uintptr_t	hmallocPrimThreadId(void)
@@ -283,15 +298,12 @@ static inline uintptr_t	hmallocPrimThreadId(void)
 #  if defined(HMALLOC_THREAD_POINTER)
 	return (HMALLOC_THREAD_POINTER());
 #  else
-	return ((uintptr_t)&_hmallocThreadIdHelper);
+	return ((uintptr_t)&g_hmallocTs);
 #  endif
 }
 # endif
 
 /* ----- Current theap ----- */
-
-extern HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE t_hmallocTheap	*_hmallocTheapDefault;
-extern HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE t_hmallocTheap	*_hmallocTheapCached;
 
 /**
  * @brief Return the calling thread's default theap.
@@ -304,7 +316,7 @@ extern HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE t_hmallocTheap	*_hmallocTheapCached;
  */
 static inline t_hmallocTheap	*hmallocTheapDefaultGet(void)
 {
-	return (_hmallocTheapDefault);
+	return (g_hmallocTs.theapDefault);
 }
 
 /**
@@ -318,7 +330,7 @@ static inline t_hmallocTheap	*hmallocTheapDefaultGet(void)
  */
 static inline t_hmallocTheap	*hmallocTheapCachedGet(void)
 {
-	return (_hmallocTheapCached);
+	return (g_hmallocTs.theapCached);
 }
 
 /**
@@ -331,7 +343,7 @@ static inline t_hmallocTheap	*hmallocTheapCachedGet(void)
  */
 static inline void	hmallocTheapDefaultSet(t_hmallocTheap *t)
 {
-	_hmallocTheapDefault = t;
+	g_hmallocTs.theapDefault = t;
 }
 
 /**
@@ -340,7 +352,7 @@ static inline void	hmallocTheapDefaultSet(t_hmallocTheap *t)
  */
 static inline void	hmallocTheapCachedSet(t_hmallocTheap *t)
 {
-	_hmallocTheapCached = t;
+	g_hmallocTs.theapCached = t;
 }
 
 

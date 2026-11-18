@@ -40,8 +40,21 @@
  * This keeps at least six blocks per page while reducing the amount
  * stranded in large pages for medium-sized allocations.
  */
-# define HMALLOC_TINY_MAX_OBJ_SIZE		((HMALLOC_TINY_PAGE_SIZE - (4u * 1024u)) / 6u)
-# define HMALLOC_SMALL_MAX_OBJ_SIZE		(HMALLOC_MEDIUM_PAGE_SIZE / 8u)
+/*
+ * 42 build: each zone holds at least 100 blocks of its largest size and
+ * everything above SMALL gets its own mapping (no LARGE pages):
+ *
+ * 	TINY  : n = 1 KiB   -> N = 128 KiB zone
+ * 	SMALL : m = 16 KiB  -> M = 2 MiB zone
+ * 	LARGE : > 16 KiB    -> one mapping per block
+ */
+# if HMALLOC_FT42
+#  define HMALLOC_TINY_MAX_OBJ_SIZE		(1024u)
+#  define HMALLOC_SMALL_MAX_OBJ_SIZE	(16u * 1024u)
+# else
+#  define HMALLOC_TINY_MAX_OBJ_SIZE		((HMALLOC_TINY_PAGE_SIZE - (4u * 1024u)) / 6u)
+#  define HMALLOC_SMALL_MAX_OBJ_SIZE	(HMALLOC_MEDIUM_PAGE_SIZE / 8u)
+# endif
 /*
  * Direct page table: one entry per machine word of request size, up to
  * HMALLOC_SMALL_WSIZE_MAX words (1 KiB on 64-bit), plus room for the
@@ -59,15 +72,42 @@
 # define HMALLOC_DIRECT_MAX_SIZE		HMALLOC_SMALL_SIZE_MAX
 # define HMALLOC_DIRECT_PAGES			(HMALLOC_SMALL_WSIZE_MAX + HMALLOC_PADDING_WSIZE + 1u)
 
-# define HMALLOC_TINY_PAGE_SIZE			(64u * 1024u)		/* N = 64 KiB */
-# define HMALLOC_MEDIUM_PAGE_SIZE		(512u * 1024u)		/* M = 512 KiB */
+# if HMALLOC_FT42
+#  define HMALLOC_TINY_PAGE_SIZE		(128u * 1024u)			/* N = 128 KiB */
+#  define HMALLOC_MEDIUM_PAGE_SIZE		(2u * 1024u * 1024u)	/* M = 2 MiB */
+# else
+#  define HMALLOC_TINY_PAGE_SIZE		(64u * 1024u)		/* N = 64 KiB */
+#  define HMALLOC_MEDIUM_PAGE_SIZE		(512u * 1024u)		/* M = 512 KiB */
+# endif
 
 # define HMALLOC_LARGE_PAGE_SIZE		(4u * 1024u * 1024u)	/* 4 MiB */
-# define HMALLOC_LARGE_MAX_OBJ_SIZE		(HMALLOC_LARGE_PAGE_SIZE / 8u)
+# if HMALLOC_FT42
+#  define HMALLOC_LARGE_MAX_OBJ_SIZE	HMALLOC_SMALL_MAX_OBJ_SIZE
+# else
+#  define HMALLOC_LARGE_MAX_OBJ_SIZE	(HMALLOC_LARGE_PAGE_SIZE / 8u)
+# endif
 # define HMALLOC_LARGE_MAX_OBJ_WSIZE	(HMALLOC_LARGE_MAX_OBJ_SIZE / 8)
 
 /* Historical SMALL bound, anything <= this goes to TINY or SMALL, above goes to LARGE. */
 # define HMALLOC_SMALL_MAX_SIZE			HMALLOC_SMALL_MAX_OBJ_SIZE
+
+# if HMALLOC_FT42
+/*
+ * Subject rules, checked at compile time. For the largest block of a
+ * kind, 16 KiB bounds what precedes the blocks (page header, size array,
+ * cache offset). Zones are whole 64 KiB slices, a multiple of every OS
+ * page size in use (4, 16, 64 KiB); the real page size is checked at init.
+ */
+_Static_assert((HMALLOC_TINY_PAGE_SIZE - 16u * 1024u) / HMALLOC_TINY_MAX_OBJ_SIZE >= 100,
+	"a TINY zone must hold at least 100 blocks of n bytes");
+_Static_assert((HMALLOC_MEDIUM_PAGE_SIZE - 16u * 1024u) / HMALLOC_SMALL_MAX_OBJ_SIZE >= 100,
+	"a SMALL zone must hold at least 100 blocks of m bytes");
+_Static_assert(HMALLOC_TINY_PAGE_SIZE % HMALLOC_SLICE_SIZE == 0
+	&& HMALLOC_MEDIUM_PAGE_SIZE % HMALLOC_SLICE_SIZE == 0,
+	"zones must be whole slices");
+_Static_assert(HMALLOC_SMALL_MAX_OBJ_SIZE <= UINT16_MAX,
+	"arena blocks keep their requested size as a 16-bit delta");
+# endif
 
 
 

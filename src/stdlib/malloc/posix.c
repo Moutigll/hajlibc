@@ -10,7 +10,7 @@
  * @file posix.c
  * @brief POSIX, BSD and GNU allocation functions.
  * @Created: 2026/11/10 12:00:00 by Moutig
- * @Updated: 2026/11/10 12:00:00 by Moutig
+ * @Updated: 2026/11/16 19:44:36 by Moutig
  *
  *   POSIX      posix_memalign
  *   GNU        memalign valloc pvalloc malloc_usable_size

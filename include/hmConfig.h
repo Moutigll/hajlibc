@@ -10,7 +10,7 @@
  * @file hmConfig.h
  * @brief Single source of truth for build-time configuration of the memory allocator.
  * @Created: 2026/10/19 12:04:15 by Moutig
- * @Updated: 2026/10/29 08:00:04 by Moutig
+ * @Updated: 2026/11/18 17:30:38 by Moutig
  *
  * All macros can be overridden from the command line (`-D...`)
  * or from a Makefile target. Defaults aim for a production
@@ -20,6 +20,23 @@
 
 #ifndef HMALLOC_CONFIG_H
 # define HMALLOC_CONFIG_H
+
+/* ---------- 42 subject build ---------- */
+
+/**
+ * @brief Build the allocator for the 42 malloc subject.
+ *
+ * !!! This is slower and bigger only use if needed
+ * Only the functions the subject allows are called (mmap, munmap,
+ * sysconf, getrlimit, write, pthread), each TINY/SMALL zone holds at
+ * least 100 blocks of its largest size, LARGE blocks get their own
+ * mapping, freed zones go back to the system at once, every pointer
+ * given to free/realloc is validated, and the requested size of each
+ * block is kept for show_alloc_mem.
+ */
+# ifndef HMALLOC_FT42
+#  define HMALLOC_FT42	0
+# endif
 
 /* ---------- Debug ---------- */
 
@@ -47,7 +64,7 @@
  * This enables runtime checks for invalid pointer dereferences, double frees, and incorrect sizes.
  */
 # ifndef HMALLOC_CHECK
-#  define HMALLOC_CHECK	0
+#  define HMALLOC_CHECK	HMALLOC_FT42
 # endif
 
 # ifndef HMALLOC_LEAK_TRACE

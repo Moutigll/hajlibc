@@ -191,7 +191,7 @@ static void	hmallocPageMapInitOnce(void)
 
 bool	hmallocPageMapInit(void)
 {
-	pthread_once(&g_hmallocTs.pageMapOnce, hmallocPageMapInitOnce);
+	pthread_once(&g_hmalloc.pageMapOnce, hmallocPageMapInitOnce);
 	return (atomic_load_explicit(&g_hmalloc.pageMap, memory_order_acquire) != NULL);
 }
 

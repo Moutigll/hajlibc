@@ -28,7 +28,9 @@
 
 /* ----- Dispatcher ----- */
 
-#if defined(__ELF__) && (defined(__x86_64__) || defined(_M_X64))
+/* HAJ_STRING_NO_DISPATCH: baseline version only (no CPU probe, no static state). */
+#if defined(__ELF__) && (defined(__x86_64__) || defined(_M_X64)) \
+	&& !defined(HAJ_STRING_NO_DISPATCH)
 
 typedef void *(*hajMemsetFn_t)(void *, int, size_t);
 

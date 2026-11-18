@@ -238,6 +238,22 @@ void	hmallocBlockSplit(t_hmallocPage *page, size_t size)
 	base = (t_hmallocBlock *)((uintptr_t)hmallocPageStart(page)
 		   + (page->capacity * page->blockSize));
 
+#if HMALLOC_FT42
+	/*
+	 * 42 build: only link the blocks that start in the OS page of the
+	 * first new block, so that a page is touched when it is used, not
+	 * ahead of time (keeps the RSS of small programs to what they use).
+	 */
+	{
+		const uintptr_t	osEnd = ((uintptr_t)base | (g_hmalloc.pageSize - 1)) + 1;
+		const size_t	inPage = (osEnd - (uintptr_t)base + page->blockSize - 1)
+			/ page->blockSize;
+
+		if (ext > inPage)
+			ext = (inPage < HMALLOC_MIN_EXTEND) ? HMALLOC_MIN_EXTEND : inPage;
+	}
+#endif
+
 	for (i = 0; i < ext; ++i) {
 		cur = (t_hmallocBlock *)((uintptr_t)base + (i * page->blockSize));
 		next = (i + 1U < ext)

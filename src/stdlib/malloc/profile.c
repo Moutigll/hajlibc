@@ -30,14 +30,14 @@
  * State
  * -----
  * A profiler can be attached to a single heap at a time. It is
- * stored in heap->profiler (guarded by g_hmallocTs.lock). The
+ * stored in heap->profiler (guarded by g_hmalloc.lock). The
  * per-thread sample counter lives in theap->sampleRate and
  * theap->sampleCountdown, and is read lock-free on the fast
  * path (only the owner thread writes it).
  *
  * Threading model
  * ---------------
- * Attach / Disable / Start / Stop take g_hmallocTs.lock. The
+ * Attach / Disable / Start / Stop take g_hmalloc.lock. The
  * allocation fast path reads theap->sampleRate without a lock:
  * it is immutable while the profiler is active, and it is set
  * to 0 by Stop after taking the lock.
@@ -59,17 +59,17 @@ bool	hmHeapProfile(t_hmallocHeap *heap, t_hmallocProfiler *prof)
 	if (!atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire))
 		_hmallocAutoProcessInit();
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
 	if (heap->profiler != NULL && heap->profiler != prof) {
-		hmallocLockRelease(&g_hmallocTs.lock);
+		hmallocLockRelease(&g_hmalloc.lock);
 		return (false);
 	}
 
 	heap->profiler	= prof;
 	prof->heap		= heap;
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 	return (true);
 }
 
@@ -78,7 +78,7 @@ void	hmHeapProfileDisable(t_hmallocHeap *heap)
 	if (heap == NULL)
 		return;
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
 	if (heap->profiler != NULL) {
 		heap->profiler->active	= false;
@@ -86,7 +86,7 @@ void	hmHeapProfileDisable(t_hmallocHeap *heap)
 		heap->profiler			= NULL;
 	}
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 }
 
 bool	hmProfile(t_hmallocProfiler *prof)
@@ -115,7 +115,7 @@ bool	hmProfilerStart(t_hmallocProfiler *prof)
 			return (false);
 	}
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
 	prof->sampleRate			= prof->initialSampleRate;
 	prof->sampleCountdown		= prof->sampleRate;
@@ -133,7 +133,7 @@ bool	hmProfilerStart(t_hmallocProfiler *prof)
 		th->sampleCountdown	= prof->sampleRate;
 	}
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 	return (true);
 }
 
@@ -147,7 +147,7 @@ bool	hmProfilerStop(t_hmallocProfiler *prof)
 
 	heap = prof->heap;
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
 	__atomic_store_n(&prof->active, false, __ATOMIC_RELEASE);
 	prof->sampleCountdown	= SIZE_MAX;	/* "never" on the fast path */
@@ -170,7 +170,7 @@ bool	hmProfilerStop(t_hmallocProfiler *prof)
 		}
 	}
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 
 	if (prof->onStop != NULL)
 		prof->onStop(prof->arg);

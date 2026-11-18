@@ -29,7 +29,7 @@
  * hmallocTheapUpdateDirect refreshes the `pagesFreeDirect[]` fast
  * path table. Because the mapping bin <-> direct index is fixed
  * at compile time, the bounds are computed once with
- * pthread_once. The cache lives in g_hmallocTs (42-subject
+ * pthread_once. The cache lives in g_hmalloc (42-subject
  * conformance: only two globals allowed).
  */
 
@@ -648,8 +648,8 @@ void	hmallocTheapAbandonAll(t_hmallocTheap *th)
 static void	hmallocTheapInitBinRange(void)
 {
 	for (size_t bin = 0; bin < HMALLOC_BIN_COUNT; ++bin) {
-		g_hmallocTs.binRangeStart[bin]	= UINT16_MAX;
-		g_hmallocTs.binRangeEnd[bin]	= 0;
+		g_hmalloc.binRangeStart[bin]	= UINT16_MAX;
+		g_hmalloc.binRangeEnd[bin]	= 0;
 	}
 
 	for (size_t i = 0; i < HMALLOC_DIRECT_PAGES; ++i) {
@@ -658,10 +658,10 @@ static void	hmallocTheapInitBinRange(void)
 
 		if (b >= HMALLOC_BIN_COUNT)
 			continue;
-		if (i < g_hmallocTs.binRangeStart[b])
-			g_hmallocTs.binRangeStart[b] = (uint16_t)i;
-		if (i > g_hmallocTs.binRangeEnd[b])
-			g_hmallocTs.binRangeEnd[b] = (uint16_t)i;
+		if (i < g_hmalloc.binRangeStart[b])
+			g_hmalloc.binRangeStart[b] = (uint16_t)i;
+		if (i > g_hmalloc.binRangeEnd[b])
+			g_hmalloc.binRangeEnd[b] = (uint16_t)i;
 	}
 }
 
@@ -672,13 +672,13 @@ void	hmallocTheapUpdateDirect(t_hmallocTheap *th, size_t bin)
 	if (th == NULL || bin >= HMALLOC_BIN_COUNT)
 		return;
 
-	pthread_once(&g_hmallocTs.binRangeOnce, hmallocTheapInitBinRange);
+	pthread_once(&g_hmalloc.binRangeOnce, hmallocTheapInitBinRange);
 
-	if (g_hmallocTs.binRangeStart[bin] > g_hmallocTs.binRangeEnd[bin])
+	if (g_hmalloc.binRangeStart[bin] > g_hmalloc.binRangeEnd[bin])
 		return;
 
 	first = th->pages[bin].first;
-	for (size_t i = g_hmallocTs.binRangeStart[bin]; i <= g_hmallocTs.binRangeEnd[bin]; ++i)
+	for (size_t i = g_hmalloc.binRangeStart[bin]; i <= g_hmalloc.binRangeEnd[bin]; ++i)
 	{
 		th->pagesFreeDirect[i] = (first != NULL)
 			? first

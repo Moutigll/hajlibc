@@ -10,7 +10,7 @@
  * @file strndup.c
  * @brief POSIX strndup implementation.
  * @Created: 2026/11/10 12:00:00 by Moutig
- * @Updated: 2026/11/15 22:08:29 by Moutig
+ * @Updated: 2026/11/18 11:33:49 by Moutig
  *
  * Copies at most `n` characters into a malloc'ed, always terminated
  * string. A NULL `s` returns NULL (as mimalloc).
@@ -21,6 +21,14 @@
 
 #include <string.h>
 #include <stdlib.h>
+
+#ifndef HAJ_OPAQUE_PTR
+# if defined(__GNUC__) || defined(__clang__)
+#  define HAJ_OPAQUE_PTR(x)	__asm__("" : "+r"(x))
+# else
+#  define HAJ_OPAQUE_PTR(x)	((void)0)
+# endif
+#endif
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((__visibility__("default")))

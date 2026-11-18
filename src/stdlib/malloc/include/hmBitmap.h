@@ -10,7 +10,7 @@
  * @file hmBitmap.h
  * @brief Two-level and binned bitmaps for tracking abandoned pages and free slices.
  * @Created: 2026/11/16 16:04:13 by Moutig
- * @Updated: 2026/11/16 16:04:30 by Moutig
+ * @Updated: 2026/11/18 17:55:53 by Moutig
  *
  * Layout:
  *
@@ -70,7 +70,15 @@
  * - purgeBitmap: a bitmap of slices that are eligible for purging (not used for a while).
  */
 # ifndef HMALLOC_ARENA_SIZE
-#  define HMALLOC_ARENA_SIZE	(256 * HMALLOC_MIB)	/* 256 MiB */
+/*
+ * 42 build: 32 MiB arenas (one bitmap chunk), so that an arena header is
+ * about 5 OS pages instead of 21 (the first malloc touches all of it).
+ */
+#  if HMALLOC_FT42
+#   define HMALLOC_ARENA_SIZE	(32 * HMALLOC_MIB)	/* 32 MiB */
+#  else
+#   define HMALLOC_ARENA_SIZE	(256 * HMALLOC_MIB)	/* 256 MiB */
+#  endif
 # endif
 
 /**

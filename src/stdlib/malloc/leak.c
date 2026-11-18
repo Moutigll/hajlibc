@@ -21,6 +21,7 @@
  * support added to hmallocFmt in message.c covers the whole report.
  */
 
+#define HMALLOC_LEAK_IMPL	/* defines hmLeakOnAlloc / hmLeakOnFree */
 #include "include/hmPrivate.h"
 #include "../../../include/bits/symbols.h"
 #include "../../../include/debuginfo.h"
@@ -503,7 +504,7 @@ static size_t collectLive(t_lkLive *out, size_t cap)
 	size_t	n = 0;
 	int		cat;
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 	for (cat = 0; cat < 3; cat++) {
 		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
 		size_t			nArenas = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
@@ -560,7 +561,7 @@ static size_t collectLive(t_lkLive *out, size_t cap)
 			}
 		}
 	}
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 	qsort(out, n, sizeof(*out), cmpPtr);
 	return (n);
 }
@@ -832,7 +833,7 @@ void hmReportLeaks(void)
 						 "classification is unreliable]\n");
 
 	cap = 1024;
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 	for (int cat = 0; cat < 3; cat++) {
 		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
 		size_t			nArenas = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
@@ -847,7 +848,7 @@ void hmReportLeaks(void)
 			}
 		}
 	}
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 
 	{
 		size_t pageSize = g_hmalloc.pageSize;
@@ -866,9 +867,9 @@ void hmReportLeaks(void)
 		}
 		live = (t_lkLive *)bufAddr;
 
-		hmallocLockAcquire(&g_hmallocTs.lock);
+		hmallocLockAcquire(&g_hmalloc.lock);
 		n = collectLive(live, cap);
-		hmallocLockRelease(&g_hmallocTs.lock);
+		hmallocLockRelease(&g_hmalloc.lock);
 
 		if (n == 0) {
 			lkFmt(&o, "  [no live blocks]\n");

@@ -203,6 +203,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_aligned_malloc`; subproc / heap / theap API (`hmSubprocMain`,
   `hmHeapMain`, `hmHeapOf`, `hmHeapContains`, `hmHeapVisitBlocks`...);
   per-subproc and per-theap stats
+- `HMALLOC_FT42` build mode (`<hmConfig.h>`, default 0) for the 42
+  malloc subject: only mmap / munmap / sysconf / getrlimit / write /
+  pthread are called; TINY ≤ 1 KiB in 128 KiB zones, SMALL ≤ 16 KiB
+  in 2 MiB zones (≥ 100 blocks each, checked by `_Static_assert`),
+  every LARGE block in its own mapping; 32 MiB arenas; zones
+  pre-allocated by a load-time constructor; freed zones returned at
+  once (`PURGE_DELAY` 0) and no THP / huge pages; free lists extended
+  one OS page at a time; requested sizes kept outside the blocks for
+  `show_alloc_mem`; `HMALLOC_CHECK` on by default
+- `realloc` validates its pointer in checked builds
+  (`hmallocCheckLivePtr`): unknown, interior or freed pointers give
+  `NULL` / `EINVAL` and leave the block untouched
+- `HAJ_STRING_NO_DISPATCH`: `memcpy` / `memset` built without the
+  x86_64 CPU dispatch (no probe, no static state)
 
 ### Changed
 
@@ -211,8 +225,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The statistics and profiler APIs are backed by inline stubs when
   `HMALLOC_STATS` / `HMALLOC_PROFILE` is 0, so callers always link
 - `hmPrimTls.h` is gone: its TLS accessors now live in `hmPrim.h`
-- The bin-range cache moved into `g_hmallocTs`, keeping the
-  two-globals rule intact
 - Allocator internals renamed to match `<hmConfig.h>`:
   `pages_abandoned` → `pagesAbandoned`,
   `chunkmap_bins` → `chunkmapBins`

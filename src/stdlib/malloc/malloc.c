@@ -85,6 +85,14 @@ _hmDeclExport void	*realloc(void *ptr, size_t newsize)
 	if (ptr == NULL)
 		return (hmallocAllocInternal(newsize));
 
+#if HMALLOC_CHECK
+	/* Unknown, interior, misaligned or freed pointers: NULL, ptr untouched. */
+	if (!hmallocCheckLivePtr(ptr, "realloc")) {
+		errno = EINVAL;
+		return (NULL);
+	}
+#endif
+
 	if (newsize == 0) {
 		hmallocFreeInternal(ptr);
 		return (hmallocAllocInternal(1));

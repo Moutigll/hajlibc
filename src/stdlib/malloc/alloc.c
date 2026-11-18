@@ -110,6 +110,64 @@ static void	hmallocTheapProfileSync(t_hmallocTheap *th)
 _Static_assert(offsetof(t_hmallocArena, metas) == 0,
 	"aligned page lookup reads metas[] at the start of the region");
 
+/*
+ * Layout of a block with its own mapping. The region only needs the
+ * arena alignment when free finds pages through the aligned lookup; the
+ * page map alone needs slice alignment. The 42 build keeps the requested
+ * size between the page header and the block.
+ */
+#if HMALLOC_PAGE_META_IS_ALIGNED
+# define HM_OS_BLOCK_ALIGN	HMALLOC_PAGE_META_ALIGNMENT
+#else
+# define HM_OS_BLOCK_ALIGN	HMALLOC_SLICE_SIZE
+#endif
+#if HMALLOC_FT42 && !HMALLOC_CANARY
+# define HM_OS_BLOCK_OFFSET	(HMALLOC_PAGE_HEADER_SIZE + HMALLOC_REQ_OS_SIZE)
+#else
+# define HM_OS_BLOCK_OFFSET	HMALLOC_PAGE_HEADER_SIZE
+#endif
+
+/*
+ * Blocks with their own mapping are in no arena: keep them in a list
+ * sorted by address (through the unused page queue links) so that
+ * show_alloc_mem can list them. Only taken on those mmap/munmap paths.
+ */
+static void hmallocOsBlockLink(t_hmallocPage *page)
+{
+	t_hmallocPage	*prev = NULL;
+	t_hmallocPage	*cur;
+
+	hmallocLockAcquire(&g_hmalloc.osBlocksLock);
+	cur = g_hmalloc.osBlocks;
+	while (cur != NULL && (uintptr_t)cur < (uintptr_t)page) {
+		prev = cur;
+		cur = cur->next;
+	}
+	page->prev = prev;
+	page->next = cur;
+	if (cur != NULL)
+		cur->prev = page;
+	if (prev != NULL)
+		prev->next = page;
+	else
+		g_hmalloc.osBlocks = page;
+	hmallocLockRelease(&g_hmalloc.osBlocksLock);
+}
+
+static void hmallocOsBlockUnlink(t_hmallocPage *page)
+{
+	hmallocLockAcquire(&g_hmalloc.osBlocksLock);
+	if (page->prev != NULL)
+		page->prev->next = page->next;
+	else if (g_hmalloc.osBlocks == page)
+		g_hmalloc.osBlocks = page->next;
+	if (page->next != NULL)
+		page->next->prev = page->prev;
+	page->next = NULL;
+	page->prev = NULL;
+	hmallocLockRelease(&g_hmalloc.osBlocksLock);
+}
+
 /**
  * @brief Allocate a large block of memory directly from the operating system.
  *
@@ -133,23 +191,25 @@ static void *hmallocOsLargeAlloc(t_hmallocTheap *th, size_t padded)
 	t_hmallocPage	*page;
 	size_t			need;
 	size_t			zone;
-	size_t			metaSlices;
 	bool			isLarge = false;
 	bool			isZero = false;
 	void			*base = NULL;
+#if HMALLOC_PAGE_META_IS_ALIGNED
+	size_t			metaSlices;
 	_Atomic(t_hmallocPage *) *metas;
+#endif
 
 	if (g_hmalloc.pageSize == 0
-		|| padded > SIZE_MAX - HMALLOC_PAGE_HEADER_SIZE - HMALLOC_SLICE_SIZE
-		|| padded + HMALLOC_PAGE_HEADER_SIZE + HMALLOC_SLICE_SIZE
+		|| padded > SIZE_MAX - HM_OS_BLOCK_OFFSET - HMALLOC_SLICE_SIZE
+		|| padded + HM_OS_BLOCK_OFFSET + HMALLOC_SLICE_SIZE
 			> SIZE_MAX - (g_hmalloc.pageSize - 1)) {
 		errno = ENOMEM;
 		return (NULL);
 	}
 
-	need = HMALLOC_SLICE_SIZE + HMALLOC_PAGE_HEADER_SIZE + padded;
+	need = HMALLOC_SLICE_SIZE + HM_OS_BLOCK_OFFSET + padded;
 	zone = (need + g_hmalloc.pageSize - 1) & ~(g_hmalloc.pageSize - 1);
-	if (hmallocPrimAlloc(NULL, zone, HMALLOC_PAGE_META_ALIGNMENT, true, false,
+	if (hmallocPrimAlloc(NULL, zone, HM_OS_BLOCK_ALIGN, true, false,
 			&isLarge, &isZero, &base) != 0 || base == NULL) {
 		errno = ENOMEM;
 		return (NULL);
@@ -157,8 +217,8 @@ static void *hmallocOsLargeAlloc(t_hmallocTheap *th, size_t padded)
 
 	page = (t_hmallocPage *)((uintptr_t)base + HMALLOC_SLICE_SIZE);
 	memset(page, 0, sizeof(*page));
-	page->blockSize = zone - HMALLOC_SLICE_SIZE - HMALLOC_PAGE_HEADER_SIZE;
-	page->pageOffset = HMALLOC_PAGE_HEADER_SIZE;
+	page->blockSize = zone - HMALLOC_SLICE_SIZE - HM_OS_BLOCK_OFFSET;
+	page->pageOffset = HM_OS_BLOCK_OFFSET;
 	page->capacity = 1;
 	page->reserved = 1;
 	page->used = 1;
@@ -176,18 +236,22 @@ static void *hmallocOsLargeAlloc(t_hmallocTheap *th, size_t padded)
 	page->keys[1] = hmallocPageKeyNext((th != NULL) ? th->tld : NULL,
 		(uintptr_t)0xBF58476D1CE4E5B9ULL);
 
+	/* metas[] only serves the aligned lookup; untouched otherwise. */
+#if HMALLOC_PAGE_META_IS_ALIGNED
 	metas = (_Atomic(t_hmallocPage *) *)base;
 	metaSlices = ((zone - HMALLOC_SLICE_SIZE > HMALLOC_LARGE_PAGE_SIZE)
 		? HMALLOC_LARGE_PAGE_SIZE : zone - HMALLOC_SLICE_SIZE)
 		>> HMALLOC_SLICE_SHIFT;
 	for (size_t i = 0; i < metaSlices && 1 + i < HMALLOC_PAGE_META_COUNT; i++)
 		atomic_store_explicit(&metas[1 + i], page, memory_order_release);
+#endif
 
 	if (!hmallocPageMapRegister(page, page, zone - HMALLOC_SLICE_SIZE)) {
 		(void)hmallocPrimFree(base, zone);
 		errno = ENOMEM;
 		return (NULL);
 	}
+	hmallocOsBlockLink(page);
 
 	hmMaybePadSet(page, hmallocPageStart(page), padded - HMALLOC_PADDING_SIZE);
 	hmStatsOnPageAlloc(page->blockSize, zone);
@@ -201,6 +265,7 @@ void hmallocOsBlockFree(t_hmallocPage *page)
 	if (page == NULL || page->osBase == NULL)
 		return;
 	hmStatsHeapDecrease(page->heap, pagesOsAllocated, 1);
+	hmallocOsBlockUnlink(page);
 	hmallocPageMapUnregister(page, page->osBlockSize - HMALLOC_SLICE_SIZE);
 	if (hmallocPrimFree(page->osBase, page->osBlockSize) != 0)
 		_hmallocErrorMessage(errno, "free(): could not unmap oversized allocation\n");
@@ -239,6 +304,11 @@ static void *hmallocLargeAlloc(t_hmallocTheap *th, size_t padded)
 		errno = ENOMEM;
 		return (NULL);
 	}
+
+#if HMALLOC_FT42
+	/* 42 build: every LARGE block lives in its own mapping. */
+	return (hmallocOsLargeAlloc(th, padded));
+#endif
 
 	need = padded + HMALLOC_PAGE_HEADER_SIZE;
 	zone = (need + HMALLOC_SLICE_SIZE - 1) & ~(HMALLOC_SLICE_SIZE - 1);
@@ -1039,18 +1109,19 @@ static bool hmallocListHas(const t_hmallocPage *page, const t_hmallocBlock *head
 	return (false);
 }
 
-static bool hmallocCheckFree(t_hmallocPage *page, void *blk, bool owner)
+static bool hmallocCheckFree(t_hmallocPage *page, void *blk, bool owner,
+							 const char *who)
 {
 	uintptr_t	start	= (uintptr_t)hmallocPageStart(page);
 	uintptr_t	addr	= (uintptr_t)blk;
 	size_t		span	= (size_t)page->capacity * page->blockSize;
 
 	if (addr < start || addr >= start + span) {
-		_hmallocErrorMessage(EINVAL, "free(): invalid pointer\n");
+		_hmallocErrorMessage(EINVAL, "%s(): invalid pointer\n", who);
 		return (false);
 	}
 	if (((addr - start) % page->blockSize) != 0) {
-		_hmallocErrorMessage(EINVAL, "free(): misaligned pointer\n");
+		_hmallocErrorMessage(EINVAL, "%s(): misaligned pointer\n", who);
 		return (false);
 	}
 
@@ -1062,10 +1133,44 @@ static bool hmallocCheckFree(t_hmallocPage *page, void *blk, bool owner)
 		|| hmallocListHas(page,
 			(t_hmallocBlock *)(atomic_load_explicit(&page->xthreadFree,
 				memory_order_acquire) & ~(uintptr_t)HMALLOC_XTHREAD_OWNED), blk)) {
-		_hmallocErrorMessage(EINVAL, "free(): double free detected\n");
+		_hmallocErrorMessage(EINVAL, "%s(): double free detected\n", who);
 		return (false);
 	}
 	return (true);
+}
+
+/*
+ * Validate a pointer before realloc touches it, with the same rules as a
+ * checked free: it must be the start of a live block of a known page
+ * (an aligned allocation may also give an interior pointer).
+ */
+bool hmallocCheckLivePtr(void *p, const char *who)
+{
+	t_hmallocPage	*page;
+	uintptr_t		xtid;
+	void			*blk;
+
+	if ((uintptr_t)p < 4096 || ((uintptr_t)p & (HMALLOC_ALIGNMENT - 1)) != 0) {
+		_hmallocErrorMessage(EINVAL, "%s(): invalid pointer\n", who);
+		return (false);
+	}
+	page = hmallocPtrPage(p);
+	if (page == NULL) {
+		_hmallocErrorMessage(EINVAL, "%s(): invalid pointer\n", who);
+		return (false);
+	}
+	xtid = atomic_load_explicit(&page->xthreadId, memory_order_relaxed);
+	blk = (xtid & HMALLOC_PAGE_HAS_INTERIOR_POINTERS)
+		? (void *)hmallocBlockStart(page, p) : p;
+	if (page->arena == NULL) {
+		if (blk != hmallocPageStart(page) || page->used == 0) {
+			_hmallocErrorMessage(EINVAL, "%s(): invalid pointer\n", who);
+			return (false);
+		}
+		return (true);
+	}
+	return (hmallocCheckFree(page, blk,
+		(xtid & ~HMALLOC_PAGE_FLAG_MASK) == hmallocPrimThreadId(), who));
 }
 #endif
 
@@ -1166,7 +1271,7 @@ hmallocFreeNonnull(void *p, t_hmallocPage *page)
 			? (void *)hmallocBlockStart(page, p) : p;
 		bool owner = ((xtid & ~HMALLOC_PAGE_FLAG_MASK) == tid);
 
-		if (!hmallocCheckFree(page, blk, owner))
+		if (!hmallocCheckFree(page, blk, owner, "free"))
 			return ;
 	}
 #endif

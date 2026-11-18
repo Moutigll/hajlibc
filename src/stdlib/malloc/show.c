@@ -112,17 +112,35 @@ static void	hmShowMarkList(const t_hmallocPage *page, t_hmallocBlock *head, uint
 	}
 }
 
-static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page, size_t *total)
+static const char	*hmShowCategoryName(t_hmallocCategory cat)
+{
+	if (cat == HMALLOC_CAT_TINY)
+		return ("TINY : ");
+	if (cat == HMALLOC_CAT_SMALL)
+		return ("SMALL : ");
+	return ("LARGE : ");
+}
+
+/*
+ * Print one zone (a page) and its live blocks in increasing address order.
+ * A zone without any live block is skipped, so only zones that hold
+ * allocations appear, as in the subject's example.
+ */
+static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page,
+						t_hmallocCategory cat, size_t *total)
 {
 	uint64_t	map[HM_SHOW_MAP_WORDS];
 	size_t		cap;
 	size_t		i;
-	uintptr_t	zone = (uintptr_t)hmallocPageStart(page);
-	uint8_t		*base = (uint8_t *)zone;
+	size_t		nfree;
+	uintptr_t	zone;
+	uint8_t		*base;
 
 	if (page == NULL || page->capacity == 0 || page->blockSize == 0)
 		return ;
 
+	zone = (uintptr_t)hmallocPageStart(page);
+	base = (uint8_t *)zone;
 	cap = page->capacity;
 	if (cap > HM_SHOW_MAX_BLOCKS)
 		cap = HM_SHOW_MAX_BLOCKS;
@@ -136,9 +154,13 @@ static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page, size_t *total)
 			memory_order_relaxed) & ~(uintptr_t)1),
 		map, cap);
 
-	hmShowPuts(b, (page->blockSize <= HMALLOC_TINY_MAX_OBJ_SIZE) ? "TINY : "
-			  : (page->blockSize <= HMALLOC_SMALL_MAX_SIZE) ? "SMALL : "
-			  : "LARGE : ");
+	nfree = 0;
+	for (i = 0; i < cap; i++)
+		nfree += hmShowBitGet(map, i) ? 1 : 0;
+	if (nfree == cap)
+		return ;
+
+	hmShowPuts(b, hmShowCategoryName(cat));
 	hmShowPutHex(b, zone);
 	hmShowNewline(b);
 
@@ -192,28 +214,69 @@ static void	hmShowArena(t_hmShowBuf *b, const t_hmallocArena *a, size_t *total)
 		if (pageAddr == lastPage)
 			continue;
 		lastPage = pageAddr;
-		hmShowPage(b, page, total);
+		hmShowPage(b, page, a->category, total);
 	}
+}
+
+/*
+ * Print the blocks with their own mapping (LARGE) that lie below `limit`;
+ * the list is sorted by address.
+ */
+static void	hmShowOsBlocksBelow(t_hmShowBuf *b, const t_hmallocPage **cur,
+								uintptr_t limit, size_t *total)
+{
+	while (*cur != NULL && (uintptr_t)*cur < limit) {
+		hmShowPage(b, *cur, HMALLOC_CAT_LARGE, total);
+		*cur = (*cur)->next;
+	}
+}
+
+/*
+ * Print every zone of every category in increasing address order. Arenas
+ * never overlap and slices inside an arena are walked upwards, so sorting
+ * the arenas by start address orders all zones and blocks globally; the
+ * sorted list of blocks with their own mapping is merged in between.
+ */
+static void	hmShowAllZones(t_hmShowBuf *b, size_t *total)
+{
+	t_hmallocArena		*arenas[HMALLOC_MAX_ARENAS];
+	const t_hmallocPage	*os;
+	size_t				n = 0;
+	int					cat;
+
+	for (cat = HMALLOC_CAT_TINY; cat <= HMALLOC_CAT_LARGE; cat++)
+		n += hmallocArenaSnapshot((t_hmallocCategory)cat, arenas + n);
+
+	for (size_t i = 1; i < n; i++)
+	{
+		t_hmallocArena	*a = arenas[i];
+		size_t			j = i;
+
+		for (; j > 0 && (uintptr_t)arenas[j - 1]->start > (uintptr_t)a->start; j--)
+			arenas[j] = arenas[j - 1];
+		arenas[j] = a;
+	}
+
+	hmallocLockAcquire(&g_hmalloc.osBlocksLock);
+	os = g_hmalloc.osBlocks;
+	for (size_t i = 0; i < n; i++) {
+		hmShowOsBlocksBelow(b, &os, (uintptr_t)arenas[i]->start, total);
+		hmShowArena(b, arenas[i], total);
+	}
+	hmShowOsBlocksBelow(b, &os, UINTPTR_MAX, total);
+	hmallocLockRelease(&g_hmalloc.osBlocksLock);
 }
 
 void	show_alloc_mem(void)
 {
 	t_hmShowBuf		b;
 	size_t			total = 0;
-	int				cat;
 
 	b.pos = 0;
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
-	for (cat = 0; cat < 3; cat++)
-	{
-		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
-		size_t			n = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
-
-		for (size_t i = 0; i < n; i++)
-			hmShowArena(&b, arenas[i], &total);
-	}
+	hmShowAllZones(&b, &total);
 
 	hmShowPuts(&b, "Total : ");
 	hmShowPutU64(&b, (uint64_t)total);
@@ -221,7 +284,7 @@ void	show_alloc_mem(void)
 	hmShowNewline(&b);
 	hmShowFlush(&b);
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 }
 
 static void	hmShowHexdump(t_hmShowBuf *b, const void *p, size_t n)
@@ -270,7 +333,6 @@ void	show_alloc_mem_ex(void)
 {
 	t_hmShowBuf	b;
 	size_t		total = 0;
-	int			cat;
 	long		limit;
 
 	b.pos = 0;
@@ -279,16 +341,9 @@ void	show_alloc_mem_ex(void)
 	if (limit <= 0)
 		limit = 64;
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
-	for (cat = 0; cat < 3; cat++)
-	{
-		t_hmallocArena	*arenas[HMALLOC_MAX_ARENAS];
-		size_t			n = hmallocArenaSnapshot((t_hmallocCategory)cat, arenas);
-
-		for (size_t i = 0; i < n; i++)
-			hmShowArena(&b, arenas[i], &total);
-	}
+	hmShowAllZones(&b, &total);
 
 	hmShowPuts(&b, "--- hexdump (limit=");
 	hmShowPutU64(&b, (uint64_t)limit);
@@ -327,5 +382,5 @@ void	show_alloc_mem_ex(void)
 	hmShowNewline(&b);
 	hmShowFlush(&b);
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 }

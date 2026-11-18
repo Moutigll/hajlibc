@@ -24,21 +24,21 @@
 # include <pthread.h>
 #endif
 
-HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	t_hmallocTheap	*_hmallocTheapDefault = NULL;
-HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	uintptr_t		_hmallocThreadIdHelper;
-HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	t_hmallocTheap	*_hmallocTheapCached = NULL;
-
-t_hmallocTs	g_hmallocTs = {
+/* The allocator's only two globals: shared state, and per-thread state. */
+t_hmallocGlobal	g_hmalloc = {
+	.addrLimit		= SIZE_MAX,
 	.lock			= HMALLOC_LOCK_INITIALIZER,
 	.theapKey		= 0,
 	.theapKeyOnce	= PTHREAD_ONCE_INIT,
 	.theapKeyValid	= false,
 	.binRangeOnce	= PTHREAD_ONCE_INIT,
 	.pageMapOnce	= PTHREAD_ONCE_INIT,
+	.osBlocksLock	= HMALLOC_LOCK_INITIALIZER,
 };
 
-t_hmallocGlobal	g_hmalloc = {
-	.addrLimit = SIZE_MAX,
+HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	t_hmallocTs	g_hmallocTs = {
+	.theapDefault	= NULL,
+	.theapCached	= NULL,
 };
 
 static void	hmallocInitTheapSentinel(t_hmallocTheap *theap)
@@ -63,11 +63,25 @@ void	_hmallocOsInit(void)
 	g_hmalloc.pageSize = g_hmalloc.memConfig.pageSize;
 	if (g_hmalloc.pageSize == 0)
 		g_hmalloc.pageSize = 4096U;
+#if HMALLOC_FT42
+	/*
+	 * Zones are whole slices, so they are multiples of the page size only
+	 * if the page size divides the slice size. Otherwise refuse to map
+	 * anything (malloc returns NULL) rather than abort.
+	 */
+	if (g_hmalloc.pageSize > HMALLOC_SLICE_SIZE
+		|| (HMALLOC_SLICE_SIZE % g_hmalloc.pageSize) != 0) {
+		_hmallocErrorMessage(ENOMEM,
+			"page size does not divide the slice size\n");
+		g_hmalloc.addrLimit = 0;
+	}
+#else
 	if (g_hmalloc.pageSize > HMALLOC_SLICE_SIZE) {
 		_hmallocErrorMessage(ENOMEM,
 			"page size exceeds slice size for allocator bootstrap");
 		abort();
 	}
+#endif
 }
 
 size_t	_hmallocOsPageSize(void)
@@ -79,9 +93,9 @@ void	_hmallocAutoProcessInit(void)
 {
 	if (atomic_load_explicit(&g_hmalloc.initialized, memory_order_acquire))
 		return;
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 	if (atomic_load_explicit(&g_hmalloc.initialized, memory_order_relaxed)) {
-		hmallocLockRelease(&g_hmallocTs.lock);
+		hmallocLockRelease(&g_hmalloc.lock);
 		return;
 	}
 	/* Options first: the OS setup reads some of them (allow_thp). */
@@ -101,14 +115,14 @@ void	_hmallocAutoProcessInit(void)
 	hmallocInitTheapSentinel(&g_hmalloc.theapEmpty);
 	_hmallocStatsInit();
 	hmStatsSubprocIncrease(heaps, 1);	/* the main heap */
-	_hmallocTheapDefault = &g_hmalloc.theapEmpty;
-	_hmallocTheapCached = &g_hmalloc.theapEmpty;
+	hmallocTheapDefaultSet(&g_hmalloc.theapEmpty);
+	hmallocTheapCachedSet(&g_hmalloc.theapEmpty);
 	hmallocPrimThreadInitAutoDone();
 	atomic_store_explicit(&g_hmalloc.initialized, true, memory_order_release);
 #if HMALLOC_LEAK_TRACE
 	hmLeakSetTrace(true);
 #endif
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 
 	/* After the init lock: registering the handler may allocate. */
 	_hmallocForkInit();
@@ -139,6 +153,33 @@ t_hmallocTheap	*_hmallocThreadInit(void)
 	_hmallocForkChildTryCollect();
 	return (theap);
 }
+
+#if HMALLOC_FT42
+/*
+ * 42 build: set the allocator up when the library is loaded, with the
+ * TINY and SMALL zones pre-allocated as the subject asks: process state,
+ * the main thread's heap, and one arena per zone kind. A program's first
+ * malloc then only touches the zone it allocates in.
+ */
+__attribute__((constructor))
+static void	hmallocFt42Preload(void)
+{
+	t_hmallocSubproc	*subproc = &g_hmalloc.subprocMain;
+	t_hmallocArena		*arenas[HMALLOC_MAX_ARENAS];
+	int					cat;
+
+	(void)_hmallocThreadInit();
+	hmallocLockAcquire(&subproc->arenaReserveLock);
+	for (cat = HMALLOC_CAT_TINY; cat <= HMALLOC_CAT_SMALL; cat++)
+		if (hmallocArenaSnapshot((t_hmallocCategory)cat, arenas) == 0)
+			(void)hmallocArenaCreate(0, (t_hmallocCategory)cat);
+	hmallocLockRelease(&subproc->arenaReserveLock);
+
+	/* Open a first TINY and SMALL zone (kept while retired, then reused). */
+	hmallocFreeInternal(hmallocAllocInternal(1));
+	hmallocFreeInternal(hmallocAllocInternal(HMALLOC_TINY_MAX_OBJ_SIZE + 1));
+}
+#endif
 
 void	_hmallocThreadDone(t_hmallocTheap *theap)
 {

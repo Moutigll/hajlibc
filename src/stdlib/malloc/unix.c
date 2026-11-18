@@ -90,7 +90,14 @@
 # define HAJ_MAX_THP_PAGE_SIZE	(8UL * 1024UL * 1024UL)
 
 
-#if defined(HAJ_PLATFORM_POSIX)
+/*
+ * The 42 build only calls mmap, munmap, sysconf, getrlimit, write and
+ * pthread: no sysfs/proc probing, no madvise/mprotect, no clock, no OS
+ * entropy and no sched_yield. Each primitive below says what it does
+ * instead.
+ */
+
+#if defined(HAJ_PLATFORM_POSIX) && !HMALLOC_FT42
 
 /**
  * @brief Read a small file into a caller buffer.
@@ -154,7 +161,7 @@ static size_t	hajVirtualAddressBits(void)
 
 #if defined(HAJ_PLATFORM_POSIX)
 
-# if defined(__linux__)
+# if defined(__linux__) && !HMALLOC_FT42
 
 /**
  * @brief Probe Linux-specific memory features.
@@ -220,13 +227,14 @@ void	hmallocPrimMemInit(t_hmallocOsMemConfig *config)
 	config->hasVirtualReserve = true;
 	config->hasPartialFree = true;
 
-# if defined(__linux__)
+	/* 42 build: no huge pages (largePageSize and THP stay 0/false). */
+# if defined(__linux__) && !HMALLOC_FT42
 	hajProbeLinux(config);
 # endif
 
 	config->virtualAddressBits = hajVirtualAddressBits();
 
-# if defined(__linux__) && defined(PR_GET_THP_DISABLE)
+# if defined(__linux__) && defined(PR_GET_THP_DISABLE) && !HMALLOC_FT42
 	/* allow_thp == 0: no THP for this process, without touching the system setting. */
 	if (hmOptionGet(HMALLOC_OPT_ALLOW_THP) == 0) {
 		config->hasTransparentHugePages = false;
@@ -266,7 +274,7 @@ void	hmallocPrimMemInit(t_hmallocOsMemConfig *config)
 
 int	hmallocPrimAdviseHuge(void *addr, size_t size)
 {
-#if defined(HAJ_PLATFORM_POSIX) && defined(__linux__)
+#if defined(HAJ_PLATFORM_POSIX) && defined(__linux__) && !HMALLOC_FT42
 	if (!g_hmalloc.memConfig.hasTransparentHugePages)
 		return (0);
 	return (madvise(addr, size, MADV_HUGEPAGE));
@@ -279,7 +287,7 @@ int	hmallocPrimAdviseHuge(void *addr, size_t size)
 
 int	hmallocPrimAdviseNoHuge(void *addr, size_t size)
 {
-#if defined(HAJ_PLATFORM_POSIX) && defined(__linux__)
+#if defined(HAJ_PLATFORM_POSIX) && defined(__linux__) && !HMALLOC_FT42
 	if (!g_hmalloc.memConfig.hasTransparentHugePages)
 		return (0);
 	return (madvise(addr, size, MADV_NOHUGEPAGE));
@@ -341,7 +349,8 @@ int	hmallocPrimAlloc(void *hint, size_t size, size_t align, bool commit,
 		pageSize = HAJ_PAGE_SIZE_FALLBACK;
 	if (align == 0 || align < pageSize)
 		align = pageSize;
-	prot = commit ? (PROT_READ | PROT_WRITE) : PROT_NONE;
+	/* 42 build: always read-write, so that no commit (mprotect) is needed. */
+	prot = (commit || HMALLOC_FT42) ? (PROT_READ | PROT_WRITE) : PROT_NONE;
 	flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE;
 
 # if defined(MAP_HUGETLB)
@@ -523,7 +532,9 @@ int	hmallocPrimCommit(void *addr, size_t size)
 		return (-1);
 	}
 	hmStatsSubprocCounter(commitCalls, 1);
-#if defined(HAJ_PLATFORM_POSIX)
+#if HMALLOC_FT42
+	return (0);		/* mapped read-write from the start */
+#elif defined(HAJ_PLATFORM_POSIX)
 	if (mprotect(addr, size, PROT_READ | PROT_WRITE) != 0)
 		return (-1);
 	return (0);
@@ -544,7 +555,17 @@ int	hmallocPrimDecommit(void *addr, size_t size, bool *needsRecommit)
 		errno = EINVAL;
 		return (-1);
 	}
-#if defined(HAJ_PLATFORM_POSIX)
+#if HMALLOC_FT42
+	/*
+	 * Map fresh pages over the range: the old physical pages go back to
+	 * the system at once. Unlike munmap + mmap, the range is never left
+	 * free, so no other mapping can land in it meanwhile.
+	 */
+	if (mmap(addr, size, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED, -1, 0) == MAP_FAILED)
+		return (-1);
+	return (0);
+#elif defined(HAJ_PLATFORM_POSIX)
 	(void)madvise(addr, size, MADV_DONTNEED);
 	return (0);
 #else
@@ -560,7 +581,9 @@ int	hmallocPrimDecommit(void *addr, size_t size, bool *needsRecommit)
 
 t_hmMsecs	hmallocPrimClockNow(void)
 {
-#if defined(HAJ_PLATFORM_POSIX)
+#if HMALLOC_FT42
+	return (0);		/* no clock: the 42 build purges right away (delay 0) */
+#elif defined(HAJ_PLATFORM_POSIX)
 	struct timespec	ts;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
@@ -579,7 +602,7 @@ t_hmMsecs	hmallocPrimClockNow(void)
 #endif
 }
 
-#if defined(HAJ_PLATFORM_POSIX)
+#if defined(HAJ_PLATFORM_POSIX) && !HMALLOC_FT42
 
 /**
  * @brief Read the resident set size from /proc/self/statm.
@@ -739,7 +762,7 @@ int	hmallocPrimGetenv(const char *name, char *result, size_t resultSize)
 	return (-1);
 }
 
-#if defined(__linux__)
+#if defined(__linux__) && !HMALLOC_FT42
 
 bool	hmallocPrimRandomBuf(void *buf, size_t len)
 {
@@ -801,29 +824,40 @@ static void	hajThreadDestructor(void *value)
 
 static void	hajThreadKeyInit(void)
 {
-	if (pthread_key_create(&g_hmallocTs.theapKey,
+	if (pthread_key_create(&g_hmalloc.theapKey,
 						   hajThreadDestructor) == 0)
-		g_hmallocTs.theapKeyValid = true;
+		g_hmalloc.theapKeyValid = true;
 }
 
 void	hmallocPrimThreadInitAutoDone(void)
 {
-	pthread_once(&g_hmallocTs.theapKeyOnce, hajThreadKeyInit);
-	if (!g_hmallocTs.theapKeyValid)
+	pthread_once(&g_hmalloc.theapKeyOnce, hajThreadKeyInit);
+	if (!g_hmalloc.theapKeyValid)
 		return ;
-	pthread_setspecific(g_hmallocTs.theapKey, (void *)1);
+	pthread_setspecific(g_hmalloc.theapKey, (void *)1);
 }
 
 void	hmallocPrimThreadDoneAutoDone(void)
 {
-	if (!g_hmallocTs.theapKeyValid)
+	if (!g_hmalloc.theapKeyValid)
 		return ;
-	pthread_setspecific(g_hmallocTs.theapKey, NULL);
+	pthread_setspecific(g_hmalloc.theapKey, NULL);
 }
 
 void	hmallocPrimThreadYield(void)
 {
+#if HMALLOC_FT42
+	/* No sched_yield in the 42 build: a CPU spin hint, then retry. */
+# if defined(__x86_64__) || defined(__i386__)
+	__builtin_ia32_pause();
+# elif defined(__aarch64__)
+	__asm__ __volatile__("yield" ::: "memory");
+# else
+	__asm__ __volatile__("" ::: "memory");
+# endif
+#else
 	(void)sched_yield();
+#endif
 }
 
 #else  /* HAJ_PLATFORM_WINDOWS */
@@ -834,27 +868,27 @@ static void	hajThreadKeyInit(void)
 
 	key = TlsAlloc();
 	if (key != TLS_OUT_OF_INDEXES) {
-		g_hmallocTs.theapKey = key;
-		g_hmallocTs.theapKeyValid = true;
+		g_hmalloc.theapKey = key;
+		g_hmalloc.theapKeyValid = true;
 	}
 }
 
 void	hmallocPrimThreadInitAutoDone(void)
 {
-	if (g_hmallocTs.theapKeyOnce == 0) {
+	if (g_hmalloc.theapKeyOnce == 0) {
 		hajThreadKeyInit();
-		g_hmallocTs.theapKeyOnce = 1;
+		g_hmalloc.theapKeyOnce = 1;
 	}
-	if (!g_hmallocTs.theapKeyValid)
+	if (!g_hmalloc.theapKeyValid)
 		return ;
-	TlsSetValue(g_hmallocTs.theapKey, (void *)1);
+	TlsSetValue(g_hmalloc.theapKey, (void *)1);
 }
 
 void	hmallocPrimThreadDoneAutoDone(void)
 {
-	if (!g_hmallocTs.theapKeyValid)
+	if (!g_hmalloc.theapKeyValid)
 		return ;
-	TlsSetValue(g_hmallocTs.theapKey, NULL);
+	TlsSetValue(g_hmalloc.theapKey, NULL);
 }
 
 void	hmallocPrimThreadYield(void)

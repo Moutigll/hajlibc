@@ -240,6 +240,16 @@ void	hmallocFreeInternal(void *ptr);
  */
 void	hmallocFreeSmallInternal(void *ptr);
 
+# if HMALLOC_CHECK
+/**
+ * @brief Check that a pointer is the start of a live block (checked builds).
+ * @param ptr The pointer to check.
+ * @param who Name of the calling function, for the error message.
+ * @return true if the pointer can be used, false (message emitted) otherwise.
+ */
+bool	hmallocCheckLivePtr(void *ptr, const char *who);
+# endif
+
 /* ----- Thread / heap lifecycle ----- */
 
 /**
@@ -694,6 +704,51 @@ size_t	hmallocPadGet(t_hmallocPage *page, const void *ptr);
  * @param ptr The pointer to the block.
  */
 void	hmallocPadCheck(t_hmallocPage *page, const void *ptr);
+# elif HMALLOC_FT42
+/*
+ * 42 build: the requested size of each block lives outside the block, in
+ * an array right after the page header, so show_alloc_mem prints exact
+ * sizes without padding the blocks. Arena pages keep one 16-bit delta per
+ * block (blockSize - requested, blocks are at most 16 KiB); a block with
+ * its own mapping keeps its size in one size_t.
+ */
+#  define HMALLOC_PADDING_SIZE	0
+#  define HMALLOC_REQ_OS_SIZE	16u
+#  define hmMaybePadSet(page, ptr, req)	hmallocReqSet(page, ptr, req)
+#  define hmMaybePadCheck(page, ptr)	((void)0)
+#  define hmMaybePadGet(page, ptr)		hmallocReqGet(page, ptr)
+
+static __HAJ_INLINE _hmInlineUnused
+uint8_t	*hmallocReqArray(const t_hmallocPage *page)
+{
+	return ((uint8_t *)page + HMALLOC_PAGE_HEADER_SIZE);
+}
+
+static __HAJ_INLINE _hmInlineUnused
+size_t	hmallocReqIndex(const t_hmallocPage *page, const void *ptr)
+{
+	return (((uintptr_t)ptr - (uintptr_t)hmallocPageStart(page)) / page->blockSize);
+}
+
+static __HAJ_INLINE _hmInlineUnused
+void	hmallocReqSet(t_hmallocPage *page, const void *ptr, size_t req)
+{
+	if (page->arena == NULL) {
+		*(size_t *)(void *)hmallocReqArray(page) = req;
+		return ;
+	}
+	((uint16_t *)(void *)hmallocReqArray(page))[hmallocReqIndex(page, ptr)]
+		= (uint16_t)(page->blockSize - req);
+}
+
+static __HAJ_INLINE _hmInlineUnused
+size_t	hmallocReqGet(const t_hmallocPage *page, const void *ptr)
+{
+	if (page->arena == NULL)
+		return (*(const size_t *)(const void *)hmallocReqArray(page));
+	return (page->blockSize
+		- ((const uint16_t *)(const void *)hmallocReqArray(page))[hmallocReqIndex(page, ptr)]);
+}
 # else
 #  define HMALLOC_PADDING_SIZE	0
 #  define hmMaybePadSet(page, ptr, req)	((void)0)
@@ -703,6 +758,12 @@ void	hmallocPadCheck(t_hmallocPage *page, const void *ptr);
 
 _Static_assert(HMALLOC_PADDING_WSIZE * sizeof(size_t) >= HMALLOC_PADDING_SIZE,
 	"HMALLOC_PADDING_WSIZE must cover HMALLOC_PADDING_SIZE");
+
+/* The 42 build has no leak tracker: leak.c is not part of it. */
+# if HMALLOC_FT42 && !defined(HMALLOC_LEAK_IMPL)
+#  define hmLeakOnAlloc(ptr, size)	((void)0)
+#  define hmLeakOnFree(ptr)			((void)0)
+# endif
 
 /* ----- Size helpers for the public API ----- */
 

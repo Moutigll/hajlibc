@@ -53,7 +53,7 @@
  * Thread safety
  * -------------
  * The free list and the bump pointer live in g_hmalloc and are
- * protected by g_hmallocTs.lock. Callers must not hold that lock:
+ * protected by g_hmalloc.lock. Callers must not hold that lock:
  * both entry points acquire it internally. mmap itself is safe
  * to call without the lock (the kernel serialises it), but the
  * bump pointer cannot be shared without a lock.
@@ -229,7 +229,7 @@ void	*_hmallocMetaZalloc(t_hmallocSubproc *subproc, size_t size, t_hmallocMemId 
 
 	total = hmMetaRound(size) + sizeof(struct hmMetaFree);
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
 	/* ---- Step 1: try the free list. ---- */
 	result = hmMetaTakeFromFree(total);
@@ -241,7 +241,7 @@ void	*_hmallocMetaZalloc(t_hmallocSubproc *subproc, size_t size, t_hmallocMemId 
 			memid->size		= total;
 			memid->memkind	= HMALLOC_MEM_OS;
 		}
-		hmallocLockRelease(&g_hmallocTs.lock);
+		hmallocLockRelease(&g_hmalloc.lock);
 		return (result);
 	}
 
@@ -262,7 +262,7 @@ void	*_hmallocMetaZalloc(t_hmallocSubproc *subproc, size_t size, t_hmallocMemId 
 			memid->size		= total;
 			memid->memkind	= HMALLOC_MEM_OS;
 		}
-		hmallocLockRelease(&g_hmallocTs.lock);
+		hmallocLockRelease(&g_hmalloc.lock);
 		return (result);
 	}
 
@@ -272,7 +272,7 @@ void	*_hmallocMetaZalloc(t_hmallocSubproc *subproc, size_t size, t_hmallocMemId 
 		size_t	slabSize;
 
 		if (!hmMetaMapSlab(&base, &slabSize)) {
-			hmallocLockRelease(&g_hmallocTs.lock);
+			hmallocLockRelease(&g_hmalloc.lock);
 			return (NULL);
 		}
 
@@ -296,7 +296,7 @@ void	*_hmallocMetaZalloc(t_hmallocSubproc *subproc, size_t size, t_hmallocMemId 
 		}
 	}
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 	return (result);
 }
 
@@ -331,10 +331,10 @@ void	_hmallocMetaFree(t_hmallocSubproc *subproc, void *p, t_hmallocMemId memid)
 		return ;
 	}
 
-	hmallocLockAcquire(&g_hmallocTs.lock);
+	hmallocLockAcquire(&g_hmalloc.lock);
 
 	block->next			= g_hmalloc.metaFree;
 	g_hmalloc.metaFree	= block;
 
-	hmallocLockRelease(&g_hmallocTs.lock);
+	hmallocLockRelease(&g_hmalloc.lock);
 }

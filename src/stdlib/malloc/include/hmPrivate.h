@@ -709,7 +709,7 @@ void	hmallocPadCheck(t_hmallocPage *page, const void *ptr);
  * 42 build: the requested size of each block lives outside the block, in
  * an array right after the page header, so show_alloc_mem prints exact
  * sizes without padding the blocks. Arena pages keep one 16-bit delta per
- * block (blockSize - requested, blocks are at most 16 KiB); a block with
+ * block (blockSize - requested, blocks are at most 32 KiB); a block with
  * its own mapping keeps its size in one size_t.
  */
 #  define HMALLOC_PADDING_SIZE	0

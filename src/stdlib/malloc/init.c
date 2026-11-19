@@ -10,7 +10,7 @@
  * @file init.c
  * @brief Initialization functions for the hajlibc allocator.
  * @Created: 2026/10/19 10:45:07 by Moutig
- * @Updated: 2026/11/16 19:25:08 by Moutig
+ * @Updated: 2026/11/19 20:00:46 by Moutig
  *
  * This file implements the initialization functions for the hajlibc allocator.
  * It provides functions for setting up the allocator's internal structures,
@@ -34,6 +34,10 @@ t_hmallocGlobal	g_hmalloc = {
 	.binRangeOnce	= PTHREAD_ONCE_INIT,
 	.pageMapOnce	= PTHREAD_ONCE_INIT,
 	.osBlocksLock	= HMALLOC_LOCK_INITIALIZER,
+#if HMALLOC_FT42
+	/* Made recursive by hmallocFt42MutexInit (no portable static initializer). */
+	.ft42Mutex		= PTHREAD_MUTEX_INITIALIZER,
+#endif
 };
 
 HMALLOC_THREAD_LOCAL HMALLOC_TLS_IE	t_hmallocTs	g_hmallocTs = {
@@ -155,6 +159,23 @@ t_hmallocTheap	*_hmallocThreadInit(void)
 }
 
 #if HMALLOC_FT42
+
+/*
+ * Make ft42Mutex recursive (see malloc.c). Called by the constructor,
+ * before any other thread exists, and in a forked child, where the mutex
+ * may be left locked by the forking thread (whose thread ID changed).
+ */
+static void	hmallocFt42MutexInit(void)
+{
+	pthread_mutexattr_t	attr;
+
+	if (pthread_mutexattr_init(&attr) != 0)
+		return ;
+	if (pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE) == 0)
+		(void)pthread_mutex_init(&g_hmalloc.ft42Mutex, &attr);
+	(void)pthread_mutexattr_destroy(&attr);
+}
+
 /*
  * 42 build: set the allocator up when the library is loaded, with the
  * TINY and SMALL zones pre-allocated as the subject asks: process state,
@@ -168,6 +189,7 @@ static void	hmallocFt42Preload(void)
 	t_hmallocArena		*arenas[HMALLOC_MAX_ARENAS];
 	int					cat;
 
+	hmallocFt42MutexInit();
 	(void)_hmallocThreadInit();
 	hmallocLockAcquire(&subproc->arenaReserveLock);
 	for (cat = HMALLOC_CAT_TINY; cat <= HMALLOC_CAT_SMALL; cat++)
@@ -302,9 +324,36 @@ void	_hmallocForkChild(void)
 	atomic_store_explicit(&g_hmalloc.forkPending, 1, memory_order_release);
 }
 
+#if HMALLOC_FT42
+/*
+ * 42 build: no thread may hold ft42Mutex across fork(). The forking
+ * thread takes it in prepare and releases it in the parent; the child
+ * gets a fresh mutex.
+ */
+static void	hmallocFt42ForkPrepare(void)
+{
+	pthread_mutex_lock(&g_hmalloc.ft42Mutex);
+}
+
+static void	hmallocFt42ForkParent(void)
+{
+	pthread_mutex_unlock(&g_hmalloc.ft42Mutex);
+}
+
+static void	hmallocFt42ForkChild(void)
+{
+	hmallocFt42MutexInit();
+	_hmallocForkChild();
+}
+#endif
+
 void	_hmallocForkInit(void)
 {
-#if !defined(_WIN32)
+#if HMALLOC_FT42
+	if (pthread_atfork(&hmallocFt42ForkPrepare, &hmallocFt42ForkParent,
+			&hmallocFt42ForkChild) != 0)
+		_hmallocWarningMessage("unable to register the pthread fork handler\n");
+#elif !defined(_WIN32)
 	if (pthread_atfork(NULL, NULL, &_hmallocForkChild) != 0)
 		_hmallocWarningMessage("unable to register the pthread fork handler\n");
 #endif

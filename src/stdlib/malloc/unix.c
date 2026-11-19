@@ -10,7 +10,7 @@
  * @file unix.c
  * @brief OS primitives for the allocator (POSIX and Windows).
  * @Created: 2026/10/06 12:47:16 by Moutig
- * @Updated: 2026/10/23 17:16:41 by Moutig
+ * @Updated: 2026/11/19 20:04:13 by Moutig
  *
  * Virtual memory, page size, huge pages, time, process
  * information, output, environment access, OS entropy, and the
@@ -351,7 +351,14 @@ int	hmallocPrimAlloc(void *hint, size_t size, size_t align, bool commit,
 		align = pageSize;
 	/* 42 build: always read-write, so that no commit (mprotect) is needed. */
 	prot = (commit || HMALLOC_FT42) ? (PROT_READ | PROT_WRITE) : PROT_NONE;
-	flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE;
+	/*
+	 * 42 build: no MAP_NORESERVE, so the kernel's overcommit check refuses
+	 * absurd sizes (malloc returns NULL, as the subject asks) instead of
+	 * handing out memory whose first write gets the process OOM-killed.
+	 */
+	flags = MAP_PRIVATE | MAP_ANONYMOUS;
+	if (!HMALLOC_FT42)
+		flags |= MAP_NORESERVE;
 
 # if defined(MAP_HUGETLB)
 	if (allowLarge && g_hmalloc.memConfig.largePageSize != 0

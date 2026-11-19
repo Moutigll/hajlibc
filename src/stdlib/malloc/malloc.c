@@ -36,14 +36,108 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* ----- 42 build: subject mutex, debug options, history ----- */
+
+#if HMALLOC_FT42
+/*
+ * The allocator itself is thread-safe without it (thread-local heaps,
+ * atomic thread-free lists), but the 42 subject asks for a mutex in
+ * malloc, free, realloc and show_alloc_mem: ft42Mutex is a recursive
+ * pthread mutex held around each public call, so nested calls
+ * (free_sized -> free, show_alloc_mem_ex -> show_alloc_history) cannot
+ * deadlock.
+ *
+ * The thread is set up before taking the mutex: the first setup
+ * registers the fork handler, and pthread_atfork must not run under the
+ * mutex (fork takes the atfork lock, then our prepare handler the mutex).
+ */
+static void	hmFt42Lock(void)
+{
+	t_hmallocTheap	*theap = hmallocTheapDefaultGet();
+
+	if (theap == NULL || theap == &g_hmalloc.theapEmpty)
+		(void)_hmallocThreadInit();
+	pthread_mutex_lock(&g_hmalloc.ft42Mutex);
+}
+
+static void	hmFt42Unlock(void)
+{
+	pthread_mutex_unlock(&g_hmalloc.ft42Mutex);
+}
+
+/* Record a call in the history ring (HMALLOC_HISTORY=1). Mutex held. */
+static void	hmFt42Record(t_hmallocHistoryOp op, void *ptr, void *old, size_t size)
+{
+	t_hmallocHistory		*h = &g_hmalloc.history;
+	t_hmallocHistoryEntry	*e;
+
+	if (hmOptionGet(HMALLOC_OPT_HISTORY) <= 0)
+		return ;
+	e = &h->entries[h->count % HMALLOC_HISTORY_SIZE];
+	e->ptr = ptr;
+	e->old = old;
+	e->size = size;
+	e->op = op;
+	h->count++;
+}
+
+/*
+ * HMALLOC_PERTURB=N, as glibc's MALLOC_PERTURB_: new blocks are filled
+ * with N ^ 0xFF and freed blocks with N, to expose reads of uninitialised
+ * or freed memory. 0 (the default) disables it.
+ */
+static void	hmFt42PerturbAlloc(void *p, size_t size)
+{
+	long	n = hmOptionGet(HMALLOC_OPT_PERTURB);
+
+	if (n != 0 && p != NULL)
+		memset(p, (int)((n ^ 0xFF) & 0xFF), size);
+}
+
+/* Fill a block about to be freed; false if `p` is not a live block. */
+static bool	hmFt42PerturbFree(void *p)
+{
+	long			n = hmOptionGet(HMALLOC_OPT_PERTURB);
+	t_hmallocPage	*page;
+
+	if (n == 0 || p == NULL)
+		return (true);
+	if (!hmallocCheckLivePtr(p, "free")) {
+		errno = EINVAL;
+		return (false);
+	}
+	page = hmallocPageMapGet(p);
+	if (page != NULL)
+		memset(p, (int)(n & 0xFF), hmMaybePadGet(page, p));
+	return (true);
+}
+#else
+# define hmFt42Lock()						((void)0)
+# define hmFt42Unlock()						((void)0)
+# define hmFt42Record(op, ptr, old, size)	((void)0)
+# define hmFt42PerturbAlloc(p, size)		((void)0)
+# define hmFt42PerturbFree(p)				(true)
+#endif
+
 /* ----- C standard ----- */
 
 _hmDeclExport void	*malloc(size_t size)
 {
+#if HMALLOC_FT42
+	void	*p;
+
+	hmFt42Lock();
+	p = hmallocAllocInternal(size);
+	hmFt42PerturbAlloc(p, size);
+	hmFt42Record(HMALLOC_HIST_MALLOC, p, NULL, size);
+	hmFt42Unlock();
+	return (p);
+#else
 	return (hmallocAllocInternal(size));
+#endif
 }
 
-_hmDeclExport void	*calloc(size_t count, size_t size)
+static __HAJ_INLINE void	*hmCallocImpl(size_t count, size_t size)
 {
 	size_t	total;
 	void	*p;
@@ -73,7 +167,7 @@ _hmDeclExport void	*calloc(size_t count, size_t size)
 	return (p);
 }
 
-_hmDeclExport void	*realloc(void *ptr, size_t newsize)
+static __HAJ_INLINE void	*hmReallocImpl(void *ptr, size_t newsize)
 {
 	t_hmallocPage	*page;
 	t_hmallocBlock	*real;
@@ -149,9 +243,37 @@ _hmDeclExport void	*realloc(void *ptr, size_t newsize)
 	return (q);
 }
 
+_hmDeclExport void	*calloc(size_t count, size_t size)
+{
+	void	*p;
+
+	hmFt42Lock();
+	p = hmCallocImpl(count, size);
+	hmFt42Record(HMALLOC_HIST_CALLOC, p, NULL, (p != NULL) ? count * size : 0);
+	hmFt42Unlock();
+	return (p);
+}
+
+_hmDeclExport void	*realloc(void *ptr, size_t newsize)
+{
+	void	*p;
+
+	hmFt42Lock();
+	p = hmReallocImpl(ptr, newsize);
+	hmFt42Record(HMALLOC_HIST_REALLOC, p, ptr, newsize);
+	hmFt42Unlock();
+	return (p);
+}
+
 _hmDeclExport void	free(void *ptr)
 {
-	hmallocFreeInternal(ptr);
+	hmFt42Lock();
+	if (hmFt42PerturbFree(ptr)) {
+		hmallocFreeInternal(ptr);
+		if (ptr != NULL)
+			hmFt42Record(HMALLOC_HIST_FREE, ptr, NULL, 0);
+	}
+	hmFt42Unlock();
 }
 
 /*

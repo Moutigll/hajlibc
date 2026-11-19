@@ -93,6 +93,32 @@ void	_hmallocAssertFail(const char *expr, const char *file, unsigned line, const
  * This variable holds the global state for the memory allocator, including
  * configuration options, memory management data, and other relevant information.
  */
+# if HMALLOC_FT42
+/* ----- Allocation history (42 build, HMALLOC_HISTORY=1) ----- */
+
+#  define HMALLOC_HISTORY_SIZE	256u	/* Calls kept; older ones are overwritten */
+
+typedef enum e_hmallocHistoryOp {
+	HMALLOC_HIST_MALLOC = 0,
+	HMALLOC_HIST_CALLOC,
+	HMALLOC_HIST_REALLOC,
+	HMALLOC_HIST_FREE,
+}	t_hmallocHistoryOp;
+
+typedef struct s_hmallocHistoryEntry {
+	void				*ptr;	/* Block returned (or freed) */
+	void				*old;	/* realloc: block passed in */
+	size_t				size;	/* Requested size (0 for free) */
+	t_hmallocHistoryOp	op;
+}	t_hmallocHistoryEntry;
+
+/* Ring buffer written under ft42Mutex; untouched unless enabled. */
+typedef struct s_hmallocHistory {
+	t_hmallocHistoryEntry	entries[HMALLOC_HISTORY_SIZE];
+	size_t					count;	/* Calls recorded so far, all time */
+}	t_hmallocHistory;
+# endif
+
 typedef struct s_hmallocGlobal {
 	t_hmallocOsMemConfig	memConfig;		/* Operating system memory configuration */
 	size_t					pageSize;		/* Size of a memory page in bytes */
@@ -137,6 +163,13 @@ typedef struct s_hmallocGlobal {
 
 	t_hmallocLock	osBlocksLock;	/* Protects osBlocks */
 	t_hmallocPage	*osBlocks;		/* Blocks with their own mapping, by increasing address */
+
+# if HMALLOC_FT42
+	/* 42 build (see malloc.c): the subject's mutex and the allocation
+	 * history live here, not in extra globals. */
+	pthread_mutex_t		ft42Mutex;	/* Held by malloc, free, realloc, show_alloc_mem */
+	t_hmallocHistory	history;	/* Last allocator calls (HMALLOC_HISTORY) */
+# endif
 
 # if HMALLOC_STATS
 	t_hmallocStats	statsSubproc;

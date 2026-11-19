@@ -9,10 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Nothing yet
+- 42 build (`HMALLOC_FT42`): a recursive `pthread_mutex` held by
+  `malloc`, `calloc`, `realloc` and `free`, kept in `g_hmalloc` (no
+  extra global); `fork` handlers take it in the parent and give the
+  child a fresh one
+- 42 build: `HMALLOC_PERTURB=<n>` fills new blocks with `n ^ 0xFF` and
+  freed blocks with `n`, as glibc's `MALLOC_PERTURB_`
+- 42 build: allocation history, a 256-entry ring buffer in `g_hmalloc`
+  recording `malloc`, `calloc`, `realloc` and `free` calls
 
 ### Changed
 
+- 42 build: SMALL blocks go up to 32 KiB in 4 MiB zones (was 16 KiB in
+  2 MiB zones): 32 KiB requests now land in a SMALL zone instead of
+  their own mapping
 - License headers also cover `.inl` templates: the pre-commit hook
   and `scripts/header-update.sh` handle `.inl`, `make headers-add`
   handles `.hpp`, `.cpp` and `.inl`, and the VS Code on-save update
@@ -20,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Nothing yet
+- 42 build: mappings are made without `MAP_NORESERVE`, so `malloc`
+  of an absurd size returns `NULL` instead of memory whose first
+  write gets the process OOM-killed
 
 ### Removed
 

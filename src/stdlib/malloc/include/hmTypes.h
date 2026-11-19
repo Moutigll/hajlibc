@@ -45,12 +45,12 @@
  * everything above SMALL gets its own mapping (no LARGE pages):
  *
  * 	TINY  : n = 1 KiB   -> N = 128 KiB zone
- * 	SMALL : m = 16 KiB  -> M = 2 MiB zone
- * 	LARGE : > 16 KiB    -> one mapping per block
+ * 	SMALL : m = 32 KiB  -> M = 4 MiB zone
+ * 	LARGE : > 32 KiB    -> one mapping per block
  */
 # if HMALLOC_FT42
 #  define HMALLOC_TINY_MAX_OBJ_SIZE		(1024u)
-#  define HMALLOC_SMALL_MAX_OBJ_SIZE	(16u * 1024u)
+#  define HMALLOC_SMALL_MAX_OBJ_SIZE	(32u * 1024u)
 # else
 #  define HMALLOC_TINY_MAX_OBJ_SIZE		((HMALLOC_TINY_PAGE_SIZE - (4u * 1024u)) / 6u)
 #  define HMALLOC_SMALL_MAX_OBJ_SIZE	(HMALLOC_MEDIUM_PAGE_SIZE / 8u)
@@ -74,7 +74,7 @@
 
 # if HMALLOC_FT42
 #  define HMALLOC_TINY_PAGE_SIZE		(128u * 1024u)			/* N = 128 KiB */
-#  define HMALLOC_MEDIUM_PAGE_SIZE		(2u * 1024u * 1024u)	/* M = 2 MiB */
+#  define HMALLOC_MEDIUM_PAGE_SIZE		(4u * 1024u * 1024u)	/* M = 4 MiB */
 # else
 #  define HMALLOC_TINY_PAGE_SIZE		(64u * 1024u)		/* N = 64 KiB */
 #  define HMALLOC_MEDIUM_PAGE_SIZE		(512u * 1024u)		/* M = 512 KiB */

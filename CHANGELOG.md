@@ -9,7 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Nothing yet
+#### Number conversion (`src/stdlib/strto/`)
+
+- `strtol`, `strtoll` and `strtoimax`, generated from one template
+  (`strtoInt.templ.inl`) parameterised by type and limits: leading
+  white space, optional sign, bases 2 to 36, base 0 picking 8, 10 or
+  16 from the prefix, and `0x` consumed only if a hex digit follows
+  (`"0xz"` parses as 0 with `*endptr` on the `x`)
+- Range errors return the type's `MIN`/`MAX` with `errno = ERANGE` and
+  still consume every digit; an invalid base returns 0 with
+  `errno = EINVAL`; when no digit is read, `*endptr` is `nptr`
+- Internal `__haj_digit` helper (`digit.h`), shared by the strto
+  family
+
+#### Greatest-width integers (`src/stdlib/`)
+
+- `imaxabs` and `imaxdiv`
 
 ### Changed
 

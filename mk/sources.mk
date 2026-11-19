@@ -147,6 +147,11 @@ STDLIB_SRCS := \
 	setenv.c \
 	qsort.c \
 	realpath.c \
+	imaxabs.c \
+	imaxdiv.c \
+	strto/long.c \
+	strto/longLong.c \
+	strto/intmax.c
 
 MALLOC_SRCS := \
 	alloc.c \

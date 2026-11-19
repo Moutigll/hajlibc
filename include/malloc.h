@@ -10,7 +10,7 @@
  * @file malloc.h
  * @brief Public API of the hmalloc allocator.
  * @Created: 2026/10/05 15:16:12 by Moutig
- * @Updated: 2026/11/16 14:51:27 by Moutig
+ * @Updated: 2026/11/19 11:56:47 by Moutig
  *
  * hmalloc is the dynamic memory allocator of hajlibc. It implements the
  * standard allocation functions (malloc, free, posix_memalign, operator
@@ -455,6 +455,25 @@ void	hmLeakOnFree(void *ptr);
  * "at 0x...: ..." lines are omitted.
  */
 void	hmReportLeaks(void);
+
+/* ----- C23 sized deallocation ----- */
+
+/**
+ * @brief Release a block whose requested size is known.
+ *
+ * @param ptr  Block to free, or NULL.
+ * @param size Size passed to the allocation function.
+ */
+void	free_sized(void *ptr, size_t size);
+
+/**
+ * @brief Release an aligned block whose alignment and size are known.
+ *
+ * @param ptr       Block to free, or NULL.
+ * @param alignment Alignment passed to aligned_alloc().
+ * @param size      Size passed to aligned_alloc().
+ */
+void	free_aligned_sized(void *ptr, size_t alignment, size_t size);
 
 /* ----- 6. Statistics types ----- */
 

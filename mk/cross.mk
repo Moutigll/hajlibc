@@ -37,17 +37,23 @@ else ifeq ($(findstring CYGWIN,$(OS)),CYGWIN)
   DETECTED_OS := Windows
 endif
 
+# --- Native archiver ---
+# Give ar the compiler's LTO plugin when it ships one (clang: LLVMgold.so).
+_HAJ_LTO_PLUGIN := $(shell p=$$($(CC) -print-file-name=LLVMgold.so 2>/dev/null); \
+	[ -f "$$p" ] && echo "$$p")
+HAJ_NATIVE_AR := ar$(if $(_HAJ_LTO_PLUGIN), --plugin $(_HAJ_LTO_PLUGIN))
+
 # --- Default native compilation ---
 ifeq ($(NATIVE),1)
   CC ?= clang
-  AR := ar
+  AR := $(HAJ_NATIVE_AR)
   TARGET_EXT :=
   CROSS_COMPILING := 0
 else ifneq ($(WIN32),1)
   ifneq ($(WIN64),1)
     ifneq ($(CROSS_WIN),1)
       CC ?= clang
-      AR := ar
+      AR := $(HAJ_NATIVE_AR)
       TARGET_EXT :=
       CROSS_COMPILING := 0
     endif

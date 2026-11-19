@@ -10,7 +10,7 @@
  * @file strdup.c
  * @brief POSIX strdup implementation.
  * @Created: 2026/11/10 12:00:00 by Moutig
- * @Updated: 2026/11/18 11:33:40 by Moutig
+ * @Updated: 2026/11/19 11:59:55 by Moutig
  *
  * The copy is allocated with malloc. As in mimalloc, a NULL `s` returns
  * NULL instead of crashing.
@@ -39,7 +39,14 @@ char	*strdup(const char *s)
 	char	*p;
 
 	HAJ_OPAQUE_PTR(s);
+#if defined(__clang__)
+# pragma clang diagnostic push
+# pragma clang diagnostic ignored "-Wtautological-pointer-compare"
+#endif
 	if (s == NULL)
+#if defined(__clang__)
+# pragma clang diagnostic pop
+#endif
 		return (NULL);
 	len = strlen(s) + 1;
 	p = (char *)malloc(len);

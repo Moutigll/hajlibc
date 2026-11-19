@@ -10,7 +10,7 @@
  * @file newdelete.c
  * @brief C++ operator new / delete, defined in C by their mangled names.
  * @Created: 2026/11/10 12:00:00 by Moutig
- * @Updated: 2026/11/16 19:32:36 by Moutig
+ * @Updated: 2026/11/19 11:53:58 by Moutig
  *
  * Defining the Itanium-ABI names from C lets the library (static or
  * preloaded) replace every global allocation operator without being
@@ -32,6 +32,7 @@
 
 #include "include/hmPrivate.h"
 #include "include/hmInternal.h"
+#include "../../../include/malloc.h"
 
 #include <errno.h>
 #include <stdlib.h>

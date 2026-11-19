@@ -10,7 +10,7 @@
  * @file strndup.c
  * @brief POSIX strndup implementation.
  * @Created: 2026/11/10 12:00:00 by Moutig
- * @Updated: 2026/11/18 11:33:49 by Moutig
+ * @Updated: 2026/11/19 12:00:33 by Moutig
  *
  * Copies at most `n` characters into a malloc'ed, always terminated
  * string. A NULL `s` returns NULL (as mimalloc).
@@ -39,8 +39,15 @@ char	*strndup(const char *s, size_t n)
 	char	*p;
 
 	HAJ_OPAQUE_PTR(s);
+#if defined(__clang__)
+# pragma clang diagnostic push
+# pragma clang diagnostic ignored "-Wtautological-pointer-compare"
+#endif
 	if (s == NULL)
 		return (NULL);
+#if defined(__clang__)
+# pragma clang diagnostic pop
+#endif
 	len = strnlen(s, n);
 	p = (char *)malloc(len + 1);
 	if (p != NULL) {

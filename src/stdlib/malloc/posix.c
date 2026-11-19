@@ -10,7 +10,7 @@
  * @file posix.c
  * @brief POSIX, BSD and GNU allocation functions.
  * @Created: 2026/11/10 12:00:00 by Moutig
- * @Updated: 2026/11/16 19:44:36 by Moutig
+ * @Updated: 2026/11/19 11:59:01 by Moutig
  *
  *   POSIX      posix_memalign
  *   GNU        memalign valloc pvalloc malloc_usable_size
@@ -51,8 +51,15 @@ _hmDeclExport int	posix_memalign(void **p, size_t alignment, size_t size)
 	void	*q;
 
 	HAJ_OPAQUE_PTR(p);
+#if defined(__clang__)
+# pragma clang diagnostic push
+# pragma clang diagnostic ignored "-Wtautological-pointer-compare"
+#endif
 	if (p == NULL)
 		return (EINVAL);
+#if defined(__clang__)
+# pragma clang diagnostic pop
+#endif
 	if (alignment < sizeof(void *) || !hmIsPow2Strict(alignment))
 		return (EINVAL);
 	q = hmallocAligned(size, alignment);

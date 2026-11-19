@@ -10,7 +10,7 @@
  * @file dwarf_line.c
  * @brief DWARF line number program parsing and callback handling.
  * @Created: 2026/10/28 09:11:10 by Moutig
- * @Updated: 2026/10/29 12:47:49 by Moutig
+ * @Updated: 2026/11/19 12:03:29 by Moutig
  *
  * Emits one callback per row. Storage of the rows is entirely
  * delegated to the caller; nothing is allocated here except the
@@ -18,7 +18,7 @@
  */
 
 #include "./internal.h"
-#include "../../include/stddef.h"
+#include <stddef.h>
 
 /**
  * @brief Global string table for DWARF line number information.

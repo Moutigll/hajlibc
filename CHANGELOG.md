@@ -26,13 +26,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `imaxabs` and `imaxdiv`
 
+#### Headers
+
+- `<inttypes.h>`: `imaxdiv_t`, declarations of `imaxabs`, `imaxdiv`
+  and `strtoimax`, and every printf / scanf format macro: `PRI*` and
+  `SCN*` for `d i o u x` (plus `PRIX*`), for the exact-width (`8`,
+  `16`, `32`, `64`), `LEAST`, `FAST`, `MAX` and `PTR` types. Their
+  length modifiers follow the types picked by `<bits/types.h>`
+  (`int64_t` is `long` on LP64, `long long` otherwise)
+- `<stdlib.h>`: `strtol` and `strtoll` declarations
+
 ### Changed
 
-- Nothing yet
+- `<stdint.h>`: the `PRI*` format macros moved to `<inttypes.h>`,
+  where the C standard and POSIX define them
 
 ### Fixed
 
-- Nothing yet
+- `PRIdPTR`, `PRIiPTR`, `PRIuPTR`, `PRIxPTR` and `PRIXPTR` used the
+  64-bit length modifier on 32-bit platforms, where `intptr_t` is an
+  `int`
 
 ### Removed
 

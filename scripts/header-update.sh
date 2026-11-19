@@ -9,7 +9,7 @@
 #   - If it has a header, update the @Updated line.
 #
 # Only files with these extensions are processed:
-#   .c .h .hpp .cpp .S
+#   .c .h .hpp .cpp .inl .S
 #
 # Files with other extensions are silently ignored.
 #

@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Nothing yet
+- License headers also cover `.inl` templates: the pre-commit hook
+  and `scripts/header-update.sh` handle `.inl`, `make headers-add`
+  handles `.hpp`, `.cpp` and `.inl`, and the VS Code on-save update
+  handles `.hpp`, `.cpp`, `.inl` and `.S`
 
 ### Fixed
 

@@ -166,7 +166,7 @@ init:
 	@echo "Done. Git hooks are now active."
 
 headers-add:
-	@for f in $$(find src include -type f \( -name '*.c' -o -name '*.h' -o -name '*.S' \)); do \
+	@for f in $$(find src include -type f \( -name '*.c' -o -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.inl' -o -name '*.S' \)); do \
 		./scripts/header.sh "$$f"; \
 	done
 

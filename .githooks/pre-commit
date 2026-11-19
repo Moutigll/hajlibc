@@ -20,7 +20,7 @@ SCRIPTS_DIR="$REPO_ROOT/scripts"
 # Collect staged files (Added, Copied, Modified, Renamed)
 # matching the supported extensions.
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR | \
-         grep -E '\.(c|h|hpp|cpp|S)$' || true)
+         grep -E '\.(c|h|hpp|cpp|inl|S)$' || true)
 
 if [ -z "$STAGED" ]; then
     # Nothing to check

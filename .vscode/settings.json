@@ -40,7 +40,7 @@
     "emeraldwalk.runonsave": {
         "commands": [
             {
-                "match": "\\.(c|h)$",
+                "match": "\\.(c|h|hpp|cpp|inl|S)$",
                 "cmd": "${workspaceFolder}/scripts/header-update.sh ${file}"
             }
         ]

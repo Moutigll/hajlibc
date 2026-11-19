@@ -88,6 +88,7 @@ static const t_hmOptionDef	g_optionDefs[] = {
 	/* 8 * HMALLOC_LARGE_PAGE_SIZE = 32 MiB, in KiB */
 	{ HMALLOC_OPT_ARENA_PURGE_IMMEDIATE_SIZE,
 		"HMALLOC_ARENA_PURGE_IMMEDIATE_SIZE",						32768 },
+	{ HMALLOC_OPT_HISTORY,				"HMALLOC_HISTORY",				0 },
 };
 
 #define HMOPT_DEF_COUNT	(sizeof(g_optionDefs) / sizeof(g_optionDefs[0]))

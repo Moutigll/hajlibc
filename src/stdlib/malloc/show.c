@@ -31,7 +31,20 @@ typedef struct s_hmShowBuf
 {
 	char	buf[256];
 	size_t	pos;
+	size_t	dump;	/* Bytes of each block to hexdump (0: none) */
 }	t_hmShowBuf;
+
+/*
+ * 42 build: the subject's mutex (see malloc.c) is held while printing.
+ * The process-wide spin lock is taken too, as in the other builds.
+ */
+#if HMALLOC_FT42
+# define HM_SHOW_LOCK()		pthread_mutex_lock(&g_hmalloc.ft42Mutex)
+# define HM_SHOW_UNLOCK()	pthread_mutex_unlock(&g_hmalloc.ft42Mutex)
+#else
+# define HM_SHOW_LOCK()		((void)0)
+# define HM_SHOW_UNLOCK()	((void)0)
+#endif
 
 static void	hmShowFlush(t_hmShowBuf *b)
 {
@@ -92,6 +105,49 @@ static __HAJ_INLINE size_t	hmShowBlockIndex(const t_hmallocPage *page,
 	uintptr_t	start = (uintptr_t)hmallocPageStart(page);
 
 	return (((uintptr_t)p - start) / page->blockSize);
+}
+
+/* Hexdump of `n` bytes, 16 per line, with their printable characters. */
+static void	hmShowHexdump(t_hmShowBuf *b, const void *p, size_t n)
+{
+	const uint8_t	*bytes = (const uint8_t *)p;
+	size_t			off;
+
+	for (off = 0; off < n; off += 16)
+	{
+		size_t	row = (n - off < 16) ? (n - off) : 16;
+		size_t	i;
+
+		hmShowPutHex(b, (uintptr_t)(bytes + off));
+		hmShowPuts(b, "  ");
+
+		for (i = 0; i < 16; i++)
+		{
+			if (i < row)
+			{
+				static const char	hex[] = "0123456789ABCDEF";
+
+				hmShowPutc(b, hex[(bytes[off + i] >> 4) & 0xF]);
+				hmShowPutc(b, hex[bytes[off + i] & 0xF]);
+			}
+			else
+			{
+				hmShowPutc(b, ' ');
+				hmShowPutc(b, ' ');
+			}
+			hmShowPutc(b, ' ');
+		}
+
+		hmShowPutc(b, '|');
+		for (i = 0; i < row; i++)
+		{
+			uint8_t	c = bytes[off + i];
+
+			hmShowPutc(b, (c >= 0x20 && c < 0x7F) ? (char)c : '.');
+		}
+		hmShowPutc(b, '|');
+		hmShowNewline(b);
+	}
 }
 
 static void	hmShowMarkList(const t_hmallocPage *page, t_hmallocBlock *head, uint64_t *map, size_t cap)
@@ -183,6 +239,8 @@ static void	hmShowPage(t_hmShowBuf *b, const t_hmallocPage *page,
 			hmShowPutU64(b, (uint64_t)req);
 			hmShowPuts(b, " bytes");
 			hmShowNewline(b);
+			if (b->dump != 0)
+				hmShowHexdump(b, p, (req < b->dump) ? req : b->dump);
 
 			*total += req;
 		}
@@ -267,12 +325,14 @@ static void	hmShowAllZones(t_hmShowBuf *b, size_t *total)
 	hmallocLockRelease(&g_hmalloc.osBlocksLock);
 }
 
-void	show_alloc_mem(void)
+/* Print every zone and the total; `dump` bytes of each block are hexdumped. */
+static void	hmShowAll(size_t dump)
 {
-	t_hmShowBuf		b;
-	size_t			total = 0;
+	t_hmShowBuf	b;
+	size_t		total = 0;
 
 	b.pos = 0;
+	b.dump = dump;
 
 	hmallocLockAcquire(&g_hmalloc.lock);
 
@@ -287,100 +347,120 @@ void	show_alloc_mem(void)
 	hmallocLockRelease(&g_hmalloc.lock);
 }
 
-static void	hmShowHexdump(t_hmShowBuf *b, const void *p, size_t n)
+void	show_alloc_mem(void)
 {
-	const uint8_t	*bytes = (const uint8_t *)p;
-	size_t			off;
-
-	for (off = 0; off < n; off += 16)
-	{
-		size_t	row = (n - off < 16) ? (n - off) : 16;
-		size_t	i;
-
-		hmShowPutHex(b, (uintptr_t)(bytes + off));
-		hmShowPuts(b, "  ");
-
-		for (i = 0; i < 16; i++)
-		{
-			if (i < row)
-			{
-				static const char	hex[] = "0123456789ABCDEF";
-
-				hmShowPutc(b, hex[(bytes[off + i] >> 4) & 0xF]);
-				hmShowPutc(b, hex[bytes[off + i] & 0xF]);
-			}
-			else
-			{
-				hmShowPutc(b, ' ');
-				hmShowPutc(b, ' ');
-			}
-			hmShowPutc(b, ' ');
-		}
-
-		hmShowPutc(b, '|');
-		for (i = 0; i < row; i++)
-		{
-			uint8_t	c = bytes[off + i];
-
-			hmShowPutc(b, (c >= 0x20 && c < 0x7F) ? (char)c : '.');
-		}
-		hmShowPutc(b, '|');
-		hmShowNewline(b);
-	}
+	HM_SHOW_LOCK();
+	hmShowAll(0);
+	HM_SHOW_UNLOCK();
 }
 
+/*
+ * show_alloc_mem with a hexdump of the first HMALLOC_VERBOSE (64) bytes of
+ * each block, then the allocation history if HMALLOC_HISTORY=1.
+ */
 void	show_alloc_mem_ex(void)
 {
-	t_hmShowBuf	b;
-	size_t		total = 0;
-	long		limit;
-
-	b.pos = 0;
+	long	limit;
 
 	limit = hmOptionGet(HMALLOC_OPT_VERBOSE);
 	if (limit <= 0)
 		limit = 64;
+	HM_SHOW_LOCK();
+	hmShowAll((size_t)limit);
+#if HMALLOC_FT42
+	/* The mutex is recursive: show_alloc_history takes it again. */
+	if (hmOptionGet(HMALLOC_OPT_HISTORY) > 0)
+		show_alloc_history();
+#endif
+	HM_SHOW_UNLOCK();
+}
 
-	hmallocLockAcquire(&g_hmalloc.lock);
+/* ----- Allocation history ----- */
 
-	hmShowAllZones(&b, &total);
-
-	hmShowPuts(&b, "--- hexdump (limit=");
-	hmShowPutU64(&b, (uint64_t)limit);
-	hmShowPuts(&b, " bytes/block) ---");
-	hmShowNewline(&b);
-
-	t_hmallocArena	*large[HMALLOC_MAX_ARENAS];
-	size_t			nLarge = hmallocArenaSnapshot(HMALLOC_CAT_LARGE, large);
-
-	for (size_t li = 0; li < nLarge; li++)
-	{
-		t_hmallocArena	*a = large[li];
-		t_hmallocPage	*page = hmallocPageMapGet(a->start);
-
-		if (page == NULL || page->used == 0)
-			continue;
-
-		{
-			void	*p = hmallocPageStart(page);
-			size_t	n = hmMaybePadGet(page, p);
-
-			if ((long)n > limit)
-				n = (size_t)limit;
-			hmShowPutHex(&b, (uintptr_t)p);
-			hmShowPuts(&b, " : ");
-			hmShowPutU64(&b, (uint64_t)n);
-			hmShowPuts(&b, " bytes");
-			hmShowNewline(&b);
-			hmShowHexdump(&b, p, n);
-		}
+#if HMALLOC_FT42
+static void	hmShowHistoryEntry(t_hmShowBuf *b, size_t seq,
+								const t_hmallocHistoryEntry *e)
+{
+	hmShowPutc(b, '#');
+	hmShowPutU64(b, (uint64_t)seq);
+	hmShowPutc(b, ' ');
+	if (e->op == HMALLOC_HIST_MALLOC)
+		hmShowPuts(b, "malloc(");
+	else if (e->op == HMALLOC_HIST_CALLOC)
+		hmShowPuts(b, "calloc(");
+	else if (e->op == HMALLOC_HIST_REALLOC)
+		hmShowPuts(b, "realloc(");
+	else
+		hmShowPuts(b, "free(");
+	if (e->op == HMALLOC_HIST_REALLOC) {
+		hmShowPutHex(b, (uintptr_t)e->old);
+		hmShowPuts(b, ", ");
 	}
+	if (e->op == HMALLOC_HIST_FREE)
+		hmShowPutHex(b, (uintptr_t)e->ptr);
+	else
+		hmShowPutU64(b, (uint64_t)e->size);
+	hmShowPutc(b, ')');
+	if (e->op != HMALLOC_HIST_FREE) {
+		hmShowPuts(b, " = ");
+		if (e->ptr == NULL)
+			hmShowPuts(b, "NULL");
+		else
+			hmShowPutHex(b, (uintptr_t)e->ptr);
+	}
+	hmShowNewline(b);
+}
+#endif
 
-	hmShowPuts(&b, "Total : ");
-	hmShowPutU64(&b, (uint64_t)total);
-	hmShowPuts(&b, " bytes");
+void	show_alloc_history(void)
+{
+	t_hmShowBuf	b;
+
+	b.pos = 0;
+	b.dump = 0;
+#if HMALLOC_FT42
+	HM_SHOW_LOCK();
+	if (hmOptionGet(HMALLOC_OPT_HISTORY) > 0) {
+		const t_hmallocHistory	*h = &g_hmalloc.history;
+		size_t					first = 0;
+
+		if (h->count > HMALLOC_HISTORY_SIZE)
+			first = h->count - HMALLOC_HISTORY_SIZE;
+		hmShowPuts(&b, "--- last ");
+		hmShowPutU64(&b, (uint64_t)(h->count - first));
+		hmShowPuts(&b, " of ");
+		hmShowPutU64(&b, (uint64_t)h->count);
+		hmShowPuts(&b, " calls ---");
+		hmShowNewline(&b);
+		for (size_t i = first; i < h->count; i++)
+			hmShowHistoryEntry(&b, i + 1,
+				&h->entries[i % HMALLOC_HISTORY_SIZE]);
+	}
+	else {
+		hmShowPuts(&b, "history disabled (set HMALLOC_HISTORY=1)");
+		hmShowNewline(&b);
+	}
+	hmShowFlush(&b);
+	HM_SHOW_UNLOCK();
+#else
+	hmShowPuts(&b, "history not available (42 build only)");
 	hmShowNewline(&b);
 	hmShowFlush(&b);
-
-	hmallocLockRelease(&g_hmalloc.lock);
+#endif
 }
+
+#if HMALLOC_FT42
+/*
+ * HMALLOC_SHOW_STATS=1: print the zones (and the history, if recorded)
+ * when the program exits, to spot leaks without changing the program.
+ */
+__attribute__((destructor))
+static void	hmShowAtExit(void)
+{
+	if (hmOptionGet(HMALLOC_OPT_SHOW_STATS) <= 0)
+		return ;
+	if (hmOptionGet(HMALLOC_OPT_HISTORY) > 0)
+		show_alloc_history();
+	show_alloc_mem();
+}
+#endif

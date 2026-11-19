@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   freed blocks with `n`, as glibc's `MALLOC_PERTURB_`
 - 42 build: allocation history, a 256-entry ring buffer in `g_hmalloc`
   recording `malloc`, `calloc`, `realloc` and `free` calls
+- 42 build: `show_alloc_history` prints the last 256 calls when
+  `HMALLOC_HISTORY=1` (option `HMALLOC_OPT_HISTORY`), and
+  `show_alloc_mem_ex` prints them after the zones
+- 42 build: `HMALLOC_SHOW_STATS=1` prints the zones (and the history,
+  if recorded) when the program exits
+- 42 build: `show_alloc_mem`, `show_alloc_mem_ex` and
+  `show_alloc_history` hold the subject mutex while printing
 
 ### Changed
 
@@ -33,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 42 build: mappings are made without `MAP_NORESERVE`, so `malloc`
   of an absurd size returns `NULL` instead of memory whose first
   write gets the process OOM-killed
+- `show_alloc_mem_ex` printed no hexdump: it only walked LARGE arenas,
+  which the 42 build does not have. Every block is now listed as in
+  `show_alloc_mem`, followed by a hexdump of its first
+  `HMALLOC_VERBOSE` bytes (64 by default)
 
 ### Removed
 

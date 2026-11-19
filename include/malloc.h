@@ -38,6 +38,7 @@
  *   8. Global helpers           hmCollect hmIsRedirected hmProcessInfo
  *   9. Callbacks                hmRegister*
  *  10. 42 project               show_alloc_mem show_alloc_mem_ex
+ *                               show_alloc_history
  *  11. Options                  hmOptionSet hmOptionGet
  *  12. Statistics               hmStats* hmSubprocStats* hmTheapStats*
  *                               (stubs when HMALLOC_STATS == 0)
@@ -916,14 +917,33 @@ _hmDeclExport
 void	show_alloc_mem(void);
 
 /**
- * @brief Print the state of all allocated blocks, with details.
+ * @brief Print the state of all allocated blocks, with a hexdump.
  *
- * Same as `show_alloc_mem`, plus a hexdump of the first bytes
- * of each block and, when tracing is enabled, the allocation
- * history.
+ * Same as `show_alloc_mem`, with each block followed by a hexdump of its
+ * first bytes (64 by default, `HMALLOC_VERBOSE=<n>` to change it):
+ *
+ *     0xA0020  48 65 6C 6C 6F 00 ...  |Hello.|
+ *
+ * In the 42 build with `HMALLOC_HISTORY=1`, the allocation history
+ * (see `show_alloc_history`) follows.
  */
 _hmDeclExport
 void	show_alloc_mem_ex(void);
+
+/**
+ * @brief Print the last calls to malloc, calloc, realloc and free.
+ *
+ * 42 build only, with `HMALLOC_HISTORY=1`: the last 256 calls are kept
+ * in a ring buffer and printed oldest first, one per line:
+ *
+ *     #12 malloc(42) = 0xA0020
+ *     #13 realloc(0xA0020, 100) = 0xA0080
+ *     #14 free(0xA0080)
+ *
+ * Without the option (or in other builds) only a notice is printed.
+ */
+_hmDeclExport
+void	show_alloc_history(void);
 
 /* ----- 11. Options ----- */
 
@@ -952,6 +972,7 @@ typedef enum e_hmallocOption {
 	HMALLOC_OPT_ALLOW_THP,						/* 0 disable THP, 1 allow, 2 allow and purge by whole huge pages */
 	HMALLOC_OPT_ARENA_PURGE_MIN_SIZE,			/* minimal purge size in KiB (0: huge page with THP, else OS page) */
 	HMALLOC_OPT_ARENA_PURGE_IMMEDIATE_SIZE,		/* ranges of at least this size (KiB) are purged right away */
+	HMALLOC_OPT_HISTORY,						/* 42 build: record the calls for show_alloc_history */
 	HMALLOC_OPT_LAST
 } t_hmallocOption;
 

@@ -230,6 +230,7 @@ SYS_SRCS := \
 	resource/priority.c \
 	resource/rlimit.c \
 	auxv.c \
+	ioctl.c \
 	getentropy.c \
 	getrandom.c \
 	prctl.c \
@@ -288,6 +289,7 @@ UNISTD_SRCS := \
 	getcwd.c \
 	getids.c \
 	getpagesize.c \
+	isatty.c \
 	lseek.c \
 	pipe.c \
 	read.c \

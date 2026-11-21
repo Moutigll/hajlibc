@@ -10,7 +10,7 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/11/21 20:22:10 by Moutig
+ * @Updated: 2026/11/22 00:04:52 by Moutig
  *
  * This header defines symbolic constants and types used in POSIX
  * systems. It includes the necessary headers for fixed-width integer
@@ -383,6 +383,14 @@ ssize_t readlink(const char *path, char *buf, size_t bufsiz);
  *         (ERANGE if `buf` is too small, ENOENT if unreachable).
  */
 char	*getcwd(char *buf, size_t size);
+
+/**
+ * @brief Test whether @p fd refers to a terminal.
+ *
+ * @param fd File descriptor to test.
+ * @return 1 if @p fd is a terminal, 0 otherwise (errno = ENOTTY).
+ */
+int		isatty(int fd);
 
 # ifdef __cplusplus
 }

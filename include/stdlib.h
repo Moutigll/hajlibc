@@ -124,6 +124,36 @@ long		strtol(const char *restrict nptr, char **restrict endptr, int base);
  */
 long long	strtoll(const char *restrict nptr, char **restrict endptr, int base);
 
+/**
+ * @brief Convert the start of a string to an unsigned long.
+ *
+ * Same rules as strtol(). A '-' sign is accepted and negates the result
+ * in the unsigned type: "-1" gives ULONG_MAX.
+ *
+ * @param nptr   String to convert.
+ * @param endptr If not NULL, receives the address of the first character
+ *               not converted, or `nptr` if no digit was read.
+ * @param base   0, or 2 to 36.
+ * @return The converted value; 0 if no digit was read; ULONG_MAX with
+ *         errno = ERANGE if out of range (even with a '-' sign); 0 with
+ *         errno = EINVAL if `base` is invalid.
+ */
+unsigned long	strtoul(const char *restrict nptr, char **restrict endptr, int base);
+
+/**
+ * @brief Convert the start of a string to an unsigned long long.
+ *
+ * Same rules as strtoul().
+ *
+ * @param nptr   String to convert.
+ * @param endptr If not NULL, receives the address of the first character
+ *               not converted, or `nptr` if no digit was read.
+ * @param base   0, or 2 to 36.
+ * @return The converted value; ULLONG_MAX with errno = ERANGE if out of
+ *         range.
+ */
+unsigned long long	strtoull(const char *restrict nptr, char **restrict endptr, int base);
+
 /* ----- Memory allocation (C standard + POSIX extensions) ----- */
 
 /**

@@ -151,7 +151,10 @@ STDLIB_SRCS := \
 	imaxdiv.c \
 	strto/long.c \
 	strto/longLong.c \
-	strto/intmax.c
+	strto/intmax.c \
+	strto/unsignedLong.c \
+	strto/unsignedLongLong.c \
+	strto/uintmax.c
 
 MALLOC_SRCS := \
 	alloc.c \

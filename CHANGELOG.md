@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Range errors return the type's `MIN`/`MAX` with `errno = ERANGE` and
   still consume every digit; an invalid base returns 0 with
   `errno = EINVAL`; when no digit is read, `*endptr` is `nptr`
+- `strtoul`, `strtoull` and `strtoumax`, generated from a matching
+  unsigned template (`strtoUint.templ.inl`) with the same parsing
+  rules; a `-` sign negates the result in the unsigned type (`"-1"`
+  gives `ULONG_MAX`), and out-of-range input returns the type's `MAX`
+  with `errno = ERANGE`, even with a `-` sign
 - Internal `__haj_digit` helper (`digit.h`), shared by the strto
   family
 

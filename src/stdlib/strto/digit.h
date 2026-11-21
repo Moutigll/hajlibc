@@ -8,12 +8,12 @@
 
 /**
  * @file digit.h
- * @brief Simple character base convertor
+ * @brief Digit value of a character, for the strto family.
  * @Created: 2026/11/19 15:32:38 by Moutig
  * @Updated: 2026/11/19 15:46:04 by Moutig
  *
- * Inline helper to convert a char C into a into an int in the base specified
- * It is use as a common helper in the family of function "strto..."
+ * Inline helper that converts a character into its digit value in a
+ * given base. It is shared by the strto family of functions.
  */
 
 #ifndef HAJ_STRTO_DIGIT_H
@@ -21,6 +21,15 @@
 
 #include <ctype.h>
 
+/**
+ * @brief Value of a digit character in a base.
+ *
+ * '0'-'9' are 0 to 9, 'a'-'z' and 'A'-'Z' are 10 to 35.
+ *
+ * @param c    Character, as an unsigned char value.
+ * @param base Base, 2 to 36.
+ * @return The digit value, or -1 if `c` is not a digit of `base`.
+ */
 static inline int __haj_digit(int c, int base)
 {
 	int v;

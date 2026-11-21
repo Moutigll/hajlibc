@@ -327,4 +327,18 @@ imaxdiv_t	imaxdiv(intmax_t numer, intmax_t denom);
  */
 intmax_t	strtoimax(const char *restrict nptr, char **restrict endptr, int base);
 
+/**
+ * @brief Convert the start of a string to an uintmax_t.
+ *
+ * Same rules as strtoul() (see <stdlib.h>).
+ *
+ * @param nptr   String to convert.
+ * @param endptr If not NULL, receives the address of the first character
+ *               not converted, or `nptr` if no digit was read.
+ * @param base   0, or 2 to 36.
+ * @return The converted value; UINTMAX_MAX with errno = ERANGE if out of
+ *         range.
+ */
+uintmax_t	strtoumax(const char *restrict nptr, char **restrict endptr, int base);
+
 #endif /* _INTTYPES_H */

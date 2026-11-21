@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules; a `-` sign negates the result in the unsigned type (`"-1"`
   gives `ULONG_MAX`), and out-of-range input returns the type's `MAX`
   with `errno = ERANGE`, even with a `-` sign
+- `atoi`, `atol` and `atoll`, thin base-10 wrappers over `strtol` /
+  `strtoll` (no error reporting, as the standard allows)
 - Internal `__haj_digit` helper (`digit.h`), shared by the strto
   family
 

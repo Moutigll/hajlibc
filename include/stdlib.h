@@ -154,6 +154,38 @@ unsigned long	strtoul(const char *restrict nptr, char **restrict endptr, int bas
  */
 unsigned long long	strtoull(const char *restrict nptr, char **restrict endptr, int base);
 
+/**
+ * @brief Convert the start of a string to an int, in base 10.
+ *
+ * Same as (int)strtol(nptr, NULL, 10). Errors cannot be told apart from
+ * a real 0: the result is undefined (here, truncated) if the value does
+ * not fit in an int.
+ *
+ * @param nptr String to convert.
+ * @return The converted value, or 0 if no digit was read.
+ */
+int			atoi(const char *nptr);
+
+/**
+ * @brief Convert the start of a string to a long, in base 10.
+ *
+ * Same as strtol(nptr, NULL, 10).
+ *
+ * @param nptr String to convert.
+ * @return The converted value, or 0 if no digit was read.
+ */
+long		atol(const char *nptr);
+
+/**
+ * @brief Convert the start of a string to a long long, in base 10.
+ *
+ * Same as strtoll(nptr, NULL, 10).
+ *
+ * @param nptr String to convert.
+ * @return The converted value, or 0 if no digit was read.
+ */
+long long	atoll(const char *nptr);
+
 /* ----- Memory allocation (C standard + POSIX extensions) ----- */
 
 /**

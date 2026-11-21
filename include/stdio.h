@@ -10,7 +10,7 @@
  * @file stdio.h
  * @brief Standard I/O definitions.
  * @Created: 2026/10/03 15:57:41 by Moutig
- * @Updated: 2026/11/21 19:23:23 by Moutig
+ * @Updated: 2026/11/22 00:40:42 by Moutig
  *
  * Declares the FILE object and the types, macros and functions of the
  * C standard I/O library, as specified by ISO C11 and POSIX.1-2024.
@@ -51,5 +51,16 @@ typedef struct
 extern FILE *stdin;		/**< Standard input stream. */
 extern FILE *stdout;	/**< Standard output stream. */
 extern FILE *stderr;	/**< Standard error stream. */
+
+/* ----- Formatted output ----- */
+
+/*
+ * Declared ahead of the stdio formatting engine so that the existing
+ * callers (psignal, assert, sysconf, __stack_chk_fail, ...) compile.
+ * Not implemented yet.
+ */
+int	snprintf(char *restrict str, size_t size, const char *restrict format, ...);
+int	fprintf(FILE *restrict stream, const char *restrict format, ...);
+
 
 #endif /* _STDIO_H */

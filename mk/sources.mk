@@ -136,7 +136,8 @@ STACK_CHK_SRCS := \
 	stack_chk_guard.c
 
 # stat
-STAT_SRCS :=
+STAT_SRCS := \
+	fstat.c
 
 # stdio
 STDIO_SRCS := \

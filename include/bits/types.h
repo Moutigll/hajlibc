@@ -146,7 +146,8 @@ typedef __haj_u64			__haj_dev;
 /*
  * nlink_t: link count.
  *
- * Linux/FreeBSD : 64 bits unsigned.
+ * Linux x86_64, FreeBSD : 64 bits unsigned.
+ * Linux aarch64 (asm-generic) : 32 bits unsigned.
  * Darwin        : 16 bits unsigned.
  *
  * Using the correct width is required for struct stat layout
@@ -155,6 +156,8 @@ typedef __haj_u64			__haj_dev;
  */
 # if defined(HAJ_OS_DARWIN)
 typedef unsigned short __haj_nlink;
+# elif defined(HAJ_OS_LINUX) && !defined(HAJ_ARCH_X86_64)
+typedef __haj_u32 __haj_nlink;	/* asm-generic struct stat (aarch64) */
 # else
 typedef __haj_u64 __haj_nlink;
 # endif
@@ -311,7 +314,11 @@ typedef __haj_nlink		nlink_t;
  *
  * Used by struct stat.
  */
+#  if defined(HAJ_OS_LINUX) && !defined(HAJ_ARCH_X86_64)
+typedef int				blksize_t;	/* asm-generic struct stat */
+#  else
 typedef long			blksize_t;
+#  endif
 # endif
 
 # ifndef __blkcnt_t_defined

@@ -33,8 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `imaxabs` and `imaxdiv`
 
+#### File status and terminals
+
+- `fstat`, thin wrapper over the `fstat` syscall
+- `isatty`: `TCGETS` on the descriptor, 1 on success, 0 with
+  `errno = ENOTTY` otherwise
+- `ioctl`, variadic, third argument passed as `unsigned long`
+
 #### Headers
 
+- `<sys/stat.h>`: `fstat` declaration; `<bits/stat.h>`: `struct stat`
+  matching the kernel layout of x86_64 and aarch64 (asm-generic),
+  `st_atim` / `st_mtim` / `st_ctim` with the `st_atime` / `st_mtime` /
+  `st_ctime` macros, the `S_IF*` type bits, the `S_IS*` tests and the
+  permission bits
+- `<termios.h>` and `<bits/termios.h>`: `struct termios` (kernel ABI)
+  and the `TCGETS` / `TCSETS` / `TCSETSW` / `TCSETSF` requests
+- `<sys/ioctl.h>`: `ioctl` declaration
+- `<unistd.h>`: `isatty` declaration
 - `<inttypes.h>`: `imaxdiv_t`, declarations of `imaxabs`, `imaxdiv`
   and `strtoimax`, and every printf / scanf format macro: `PRI*` and
   `SCN*` for `d i o u x` (plus `PRIX*`), for the exact-width (`8`,
@@ -50,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `<bits/types.h>`: `nlink_t` and `blksize_t` are 32 bits on aarch64,
+  matching the asm-generic `struct stat`; they stay 64 bits
+  on x86_64
 - License headers also cover `.inl` templates: the pre-commit hook
   and `scripts/header-update.sh` handle `.inl`, `make headers-add`
   handles `.hpp`, `.cpp` and `.inl`, and the VS Code on-save update

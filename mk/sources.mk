@@ -142,7 +142,8 @@ STAT_SRCS :=
 STDIO_SRCS := \
 	internal/lock.c \
 	internal/ofl.c \
-	internal/fdBackend.c
+	internal/fdBackend.c \
+	internal/modeFlags.c
 
 # stdlib-
 STDLIB_SRCS := \

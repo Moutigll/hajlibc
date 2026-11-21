@@ -9,7 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Nothing yet
+#### Number conversion (`src/stdlib/strto/`)
+
+- `strtol`, `strtoll` and `strtoimax`, generated from one template
+  (`strtoInt.templ.inl`) parameterised by type and limits: leading
+  white space, optional sign, bases 2 to 36, base 0 picking 8, 10 or
+  16 from the prefix, and `0x` consumed only if a hex digit follows
+  (`"0xz"` parses as 0 with `*endptr` on the `x`)
+- Range errors return the type's `MIN`/`MAX` with `errno = ERANGE` and
+  still consume every digit; an invalid base returns 0 with
+  `errno = EINVAL`; when no digit is read, `*endptr` is `nptr`
+- `strtoul`, `strtoull` and `strtoumax`, generated from a matching
+  unsigned template (`strtoUint.templ.inl`) with the same parsing
+  rules; a `-` sign negates the result in the unsigned type (`"-1"`
+  gives `ULONG_MAX`), and out-of-range input returns the type's `MAX`
+  with `errno = ERANGE`, even with a `-` sign
+- `atoi`, `atol` and `atoll`, thin base-10 wrappers over `strtol` /
+  `strtoll` (no error reporting, as the standard allows)
+- Internal `__haj_digit` helper (`digit.h`), shared by the strto
+  family
+
+#### Greatest-width integers (`src/stdlib/`)
+
+- `imaxabs` and `imaxdiv`
+
+#### Headers
+
+- `<inttypes.h>`: `imaxdiv_t`, declarations of `imaxabs`, `imaxdiv`
+  and `strtoimax`, and every printf / scanf format macro: `PRI*` and
+  `SCN*` for `d i o u x` (plus `PRIX*`), for the exact-width (`8`,
+  `16`, `32`, `64`), `LEAST`, `FAST`, `MAX` and `PTR` types. Their
+  length modifiers follow the types picked by `<bits/types.h>`
+  (`int64_t` is `long` on LP64, `long long` otherwise)
+- `<stdlib.h>`: `strtol` and `strtoll` declarations
 
 ### Changed
 
@@ -17,10 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `scripts/header-update.sh` handle `.inl`, `make headers-add`
   handles `.hpp`, `.cpp` and `.inl`, and the VS Code on-save update
   handles `.hpp`, `.cpp`, `.inl` and `.S`
+- `<stdint.h>`: the `PRI*` format macros moved to `<inttypes.h>`,
+  where the C standard and POSIX define them
 
 ### Fixed
 
-- Nothing yet
+- `PRIdPTR`, `PRIiPTR`, `PRIuPTR`, `PRIxPTR` and `PRIXPTR` used the
+  64-bit length modifier on 32-bit platforms, where `intptr_t` is an
+  `int`
 
 ### Removed
 

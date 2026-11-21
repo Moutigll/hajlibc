@@ -8,26 +8,9 @@
 
 /**
  * @file waitpid.c
- * @brief TODO: brief description.
- * @Created: 2026/10/03 09:47:31 by Moutig
- * @Updated: 2026/10/03 09:50:26 by Moutig
- *
- * TODO: description.
- */
-
-/*
- * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 Moutig <ele-lean@student.42lehavre.fr>
- *
- * This file is part of hajlibc.
- * See LICENSE for the full license text.
- */
-
-/**
- * @file waitpid.c
  * @brief Implementation of waitpid() and wait().
- * @Created: 2026/10/03 13:00:00 by Moutig
- * @Updated: 2026/10/03 09:50:26 by Moutig
+ * @Created: 2026/10/03 09:47:31 by Moutig
+ * @Updated: 2026/11/21 18:39:18 by Moutig
  *
  * waitpid() waits for a child process to change state. The
  * kernel call is wait4() on Linux, FreeBSD, and Darwin. It

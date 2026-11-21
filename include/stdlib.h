@@ -90,6 +90,102 @@ int		unsetenv(const char *name);
  */
 int		putenv(char *string);
 
+/* ----- Number conversion ----- */
+
+/**
+ * @brief Convert the start of a string to a long.
+ *
+ * Skips leading white space (isspace), reads an optional sign, then the
+ * longest run of digits valid in `base`. With base 0 the base is taken
+ * from the prefix: "0x"/"0X" for 16, "0" for 8, 10 otherwise. Base 16
+ * also accepts the "0x" prefix. Letters a-z / A-Z are the digits 10 to 35.
+ *
+ * @param nptr   String to convert.
+ * @param endptr If not NULL, receives the address of the first character
+ *               not converted, or `nptr` if no digit was read.
+ * @param base   0, or 2 to 36.
+ * @return The converted value; 0 if no digit was read; LONG_MIN or
+ *         LONG_MAX with errno = ERANGE if out of range; 0 with
+ *         errno = EINVAL if `base` is invalid.
+ */
+long		strtol(const char *restrict nptr, char **restrict endptr, int base);
+
+/**
+ * @brief Convert the start of a string to a long long.
+ *
+ * Same rules as strtol().
+ *
+ * @param nptr   String to convert.
+ * @param endptr If not NULL, receives the address of the first character
+ *               not converted, or `nptr` if no digit was read.
+ * @param base   0, or 2 to 36.
+ * @return The converted value; LLONG_MIN or LLONG_MAX with
+ *         errno = ERANGE if out of range.
+ */
+long long	strtoll(const char *restrict nptr, char **restrict endptr, int base);
+
+/**
+ * @brief Convert the start of a string to an unsigned long.
+ *
+ * Same rules as strtol(). A '-' sign is accepted and negates the result
+ * in the unsigned type: "-1" gives ULONG_MAX.
+ *
+ * @param nptr   String to convert.
+ * @param endptr If not NULL, receives the address of the first character
+ *               not converted, or `nptr` if no digit was read.
+ * @param base   0, or 2 to 36.
+ * @return The converted value; 0 if no digit was read; ULONG_MAX with
+ *         errno = ERANGE if out of range (even with a '-' sign); 0 with
+ *         errno = EINVAL if `base` is invalid.
+ */
+unsigned long	strtoul(const char *restrict nptr, char **restrict endptr, int base);
+
+/**
+ * @brief Convert the start of a string to an unsigned long long.
+ *
+ * Same rules as strtoul().
+ *
+ * @param nptr   String to convert.
+ * @param endptr If not NULL, receives the address of the first character
+ *               not converted, or `nptr` if no digit was read.
+ * @param base   0, or 2 to 36.
+ * @return The converted value; ULLONG_MAX with errno = ERANGE if out of
+ *         range.
+ */
+unsigned long long	strtoull(const char *restrict nptr, char **restrict endptr, int base);
+
+/**
+ * @brief Convert the start of a string to an int, in base 10.
+ *
+ * Same as (int)strtol(nptr, NULL, 10). Errors cannot be told apart from
+ * a real 0: the result is undefined (here, truncated) if the value does
+ * not fit in an int.
+ *
+ * @param nptr String to convert.
+ * @return The converted value, or 0 if no digit was read.
+ */
+int			atoi(const char *nptr);
+
+/**
+ * @brief Convert the start of a string to a long, in base 10.
+ *
+ * Same as strtol(nptr, NULL, 10).
+ *
+ * @param nptr String to convert.
+ * @return The converted value, or 0 if no digit was read.
+ */
+long		atol(const char *nptr);
+
+/**
+ * @brief Convert the start of a string to a long long, in base 10.
+ *
+ * Same as strtoll(nptr, NULL, 10).
+ *
+ * @param nptr String to convert.
+ * @return The converted value, or 0 if no digit was read.
+ */
+long long	atoll(const char *nptr);
+
 /* ----- Memory allocation (C standard + POSIX extensions) ----- */
 
 /**

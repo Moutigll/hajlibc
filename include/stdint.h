@@ -10,7 +10,7 @@
  * @file stdint.h
  * @brief Fixed-width integer types.
  * @Created: 2026/09/24 15:06:43 by Moutig
- * @Updated: 2026/09/30 09:20:14 by Moutig
+ * @Updated: 2026/11/19 18:22:15 by Moutig
  *
  * This header defines int8_t..int64_t, uint8_t..uint64_t, their
  * _least and _fast variants, intptr_t, uintptr_t, intmax_t,
@@ -194,47 +194,6 @@ typedef __haj_uintmax	uintmax_t;
 # define PTRDIFF_MIN		INTPTR_MIN
 # define PTRDIFF_MAX		INTPTR_MAX
 # define SIZE_MAX			UINTPTR_MAX
-
-/* ----- Format macros for printf ----- */
-/**
- * These are needed for printf-style format strings. The actual
- * strings depend on the platform's int64_t type: long on LP64,
- * long long on LLP64 (Windows).
- */
-
-# if __HAJ_SIZEOF_LONG == 8
-#  define PRId8				"d"
-#  define PRId16			"d"
-#  define PRId32			"d"
-#  define PRId64			"ld"
-#  define PRIi64			"li"
-#  define PRIu64			"lu"
-#  define PRIx64			"lx"
-#  define PRIX64			"lX"
-#  define PRIo64			"lo"
-# else
-#  define PRId8				"d"
-#  define PRId16			"d"
-#  define PRId32			"d"
-#  define PRId64			"lld"
-#  define PRIi64			"lli"
-#  define PRIu64			"llu"
-#  define PRIx64			"llx"
-#  define PRIX64			"llX"
-#  define PRIo64			"llo"
-# endif
-
-# define PRIdPTR			PRId64
-# define PRIiPTR			PRIi64
-# define PRIuPTR			PRIu64
-# define PRIxPTR			PRIx64
-# define PRIXPTR			PRIX64
-
-# define PRIdMAX			PRId64
-# define PRIiMAX			PRIi64
-# define PRIuMAX			PRIu64
-# define PRIxMAX			PRIx64
-# define PRIXMAX			PRIX64
 
 /* ----- Constant macros for specifying minimum-width integer constants ----- */
 /**

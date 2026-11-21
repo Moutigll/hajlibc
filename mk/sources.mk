@@ -147,6 +147,17 @@ STDLIB_SRCS := \
 	setenv.c \
 	qsort.c \
 	realpath.c \
+	imaxabs.c \
+	imaxdiv.c \
+	strto/long.c \
+	strto/longLong.c \
+	strto/intmax.c \
+	strto/unsignedLong.c \
+	strto/unsignedLongLong.c \
+	strto/uintmax.c \
+	strto/atoi.c \
+	strto/atol.c \
+	strto/atoll.c
 
 MALLOC_SRCS := \
 	alloc.c \

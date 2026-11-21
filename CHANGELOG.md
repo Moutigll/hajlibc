@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   length modifiers follow the types picked by `<bits/types.h>`
   (`int64_t` is `long` on LP64, `long long` otherwise)
 - `<stdlib.h>`: `strtol` and `strtoll` declarations
+- `<stdio.h>`: `fpos_t`, `EOF`, and the constants of `<bits/stdio.h>`
+- `<bits/stdio.h>`: internal header for the constants shared by
+  `<stdio.h>` and `<unistd.h>`: `SEEK_SET` / `SEEK_CUR` / `SEEK_END`,
+  `BUFSIZ`, `FILENAME_MAX`, `FOPEN_MAX`, `L_ctermid`, `L_tmpnam`,
+  `TMP_MAX`, and the `_IOFBF` / `_IOLBF` / `_IONBF` buffering modes
 
 ### Changed
 

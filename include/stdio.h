@@ -10,24 +10,46 @@
  * @file stdio.h
  * @brief Standard I/O definitions.
  * @Created: 2026/10/03 15:57:41 by Moutig
- * @Updated: 2026/10/19 10:32:55 by Moutig
+ * @Updated: 2026/11/21 19:23:23 by Moutig
  *
- * This header defines the `FILE` type and the standard streams
- * `stdin`, `stdout` and `stderr`. It also declares the `snprintf`
- * and `fprintf` functions.
+ * Declares the FILE object and the types, macros and functions of the
+ * C standard I/O library, as specified by ISO C11 and POSIX.1-2024.
  */
 
 #ifndef _STDIO_H
 # define _STDIO_H
 
-#include <stddef.h>
-typedef struct FILE FILE;
-/* stdin stdout and stderr definitions: */
-extern FILE *stdin;
-extern FILE *stdout;
-extern FILE *stderr;
+# include <stdarg.h>
+# include <stddef.h>
+# include <sys/types.h>
+# include <bits/stdio.h>
 
-int snprintf(char *str, size_t size, const char *format, ...);
-int fprintf(FILE *stream, const char *format, ...);
+/* ----- Types ----- */
+
+/**
+ * @brief Opaque handle to a stream.
+ */
+typedef struct FILE FILE;
+
+/**
+ * @brief File position for fgetpos() / fsetpos().
+ *
+ * Wide enough to hold an off_t plus, later, the multibyte conversion
+ * state.
+ */
+typedef struct
+{
+	off_t	__pos;
+} fpos_t;
+
+/* ----- Macros ----- */
+
+/** End-of-file return value. */
+# define EOF (-1)
+
+/** Standard streams. */
+extern FILE *stdin;		/**< Standard input stream. */
+extern FILE *stdout;	/**< Standard output stream. */
+extern FILE *stderr;	/**< Standard error stream. */
 
 #endif /* _STDIO_H */

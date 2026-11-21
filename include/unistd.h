@@ -10,7 +10,7 @@
  * @file unistd.h
  * @brief Standard symbolic constants and types.
  * @Created: 2026/09/30 07:56:24 by Moutig
- * @Updated: 2026/11/15 22:16:35 by Moutig
+ * @Updated: 2026/11/21 20:22:10 by Moutig
  *
  * This header defines symbolic constants and types used in POSIX
  * systems. It includes the necessary headers for fixed-width integer
@@ -22,12 +22,13 @@
 #ifndef _UNISTD_H
 # define _UNISTD_H
 
-#include "bits/types.h"
-#include "stdarg.h"
+# include "bits/types.h"
+# include "stdarg.h"
 # include <stddef.h>
 # include <sys/types.h>
 # include <bits/sysconf.h>
-#include <bits/syscall.h>
+# include <bits/syscall.h>
+# include <bits/stdio.h>
 
 # ifdef __cplusplus
 extern "C" {
@@ -138,9 +139,6 @@ extern "C" {
 #define STDOUT_FILENO	1
 #define STDERR_FILENO	2
 
-# define SEEK_SET	0
-# define SEEK_CUR	1
-# define SEEK_END	2
 # define SEEK_HOLE	3
 # define SEEK_DATA	4
 

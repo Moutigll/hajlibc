@@ -139,7 +139,8 @@ STACK_CHK_SRCS := \
 STAT_SRCS :=
 
 # stdio
-STDIO_SRCS :=
+STDIO_SRCS := \
+	internal/lock.c
 
 # stdlib-
 STDLIB_SRCS := \

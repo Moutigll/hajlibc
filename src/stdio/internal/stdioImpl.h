@@ -10,7 +10,7 @@
  * @file stdioImpl.h
  * @brief Internal FILE structure, flags and private helpers.
  * @Created: 2026/11/21 20:26:40 by Moutig
- * @Updated: 2026/11/21 21:17:03 by Moutig
+ * @Updated: 2026/11/21 21:40:44 by Moutig
  *
  * Defines the concrete layout of struct FILE (opaque to user code),
  * the F_* state flags, and the __haj_* prototypes shared by the stdio
@@ -127,6 +127,17 @@ extern volatile int __haj_stdioThreaded;
  * @param f Stream to lock.
  */
 void	__haj_lockFile(struct FILE *f);
+
+/**
+ * @brief Try to acquire the recursive lock of @p f without blocking.
+ *
+ * Returns 0 on success (the lock is held by the caller), -1 with
+ * errno = EBUSY if another thread owns it.
+ *
+ * @param f Stream to lock.
+ * @return 0 on success, -1 on failure.
+ */
+int		__haj_tryLockFile(struct FILE *f);
 
 /**
  * @brief Release one level of the recursive lock of @p f.

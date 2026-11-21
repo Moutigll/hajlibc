@@ -145,7 +145,8 @@ STDIO_SRCS := \
 	internal/fdBackend.c \
 	internal/modeFlags.c \
 	internal/toRead.c \
-	internal/toWrite.c
+	internal/toWrite.c \
+	internal/files.c
 
 # stdlib-
 STDLIB_SRCS := \

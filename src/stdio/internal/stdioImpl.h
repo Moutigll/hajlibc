@@ -10,7 +10,7 @@
  * @file stdioImpl.h
  * @brief Internal FILE structure, flags and private helpers.
  * @Created: 2026/11/21 20:26:40 by Moutig
- * @Updated: 2026/11/21 21:59:52 by Moutig
+ * @Updated: 2026/11/21 23:48:18 by Moutig
  *
  * Defines the concrete layout of struct FILE (opaque to user code),
  * the F_* state flags, and the __haj_* prototypes shared by the stdio
@@ -192,16 +192,35 @@ void	__haj_oflForeach(void (*cb)(struct FILE *, void *), void *arg, int trylock)
 /* ----- Mode switching ----- */
 
 /**
- * @brief Switch @p f to read mode (flush and reposition if needed).
- * @param f Stream to switch.
- * @return 0 on success, -1 on error (errno set).
+ * @brief Switch @p f to read mode.
+ *
+ * If the stream was in write mode (there are pending bytes in
+ * [wbase, wpos)), flushes them through the write backend and
+ * repositions the descriptor if the backend supports it. Then
+ * clears F_NORD and F_APP (append only makes sense for writes;
+ * the F_APP flag is preserved across the switch because POSIX says
+ * the append property sticks to the stream, so we keep it but the
+ * caller's write will re-seek to the end).
+ *
+ * Does nothing if the stream is already in read mode (no pending
+ * write bytes).
+ *
+ * @param f Stream to switch (must not be NULL).
+ * @return 0 on success, -1 on error (errno set, F_ERR set on f).
  */
 int		__haj_toRead(struct FILE *f);
 
 /**
- * @brief Switch @p f to write mode (reposition if needed).
- * @param f Stream to switch.
- * @return 0 on success, -1 on error (errno set).
+ * @brief Switch @p f to write mode.
+ *
+ * If the stream was in read mode (there are unread bytes in
+ * [rpos, rend)), repositions the descriptor back to the logical
+ * position and discards the read buffer. The append flag is left
+ * untouched: in append mode, fwrite re-seeks to the end before
+ * every write (POSIX: each write is a separate append).
+ *
+ * @param f Stream to switch (must not be NULL).
+ * @return 0 on success, -1 on error (errno set, F_ERR set on f).
  */
 int		__haj_toWrite(struct FILE *f);
 

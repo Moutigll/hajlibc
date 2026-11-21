@@ -10,7 +10,7 @@
  * @file stdioImpl.h
  * @brief Internal FILE structure, flags and private helpers.
  * @Created: 2026/11/21 20:26:40 by Moutig
- * @Updated: 2026/11/21 21:40:44 by Moutig
+ * @Updated: 2026/11/21 21:59:52 by Moutig
  *
  * Defines the concrete layout of struct FILE (opaque to user code),
  * the F_* state flags, and the __haj_* prototypes shared by the stdio
@@ -150,6 +150,11 @@ void	__haj_unlockFile(struct FILE *f);
 
 /**
  * @brief Add @p f to the global open-file list.
+ *
+ * Insertion is at the head, O(1). The caller must have initialised
+ * f->prev and f->next to NULL; the function does not check, because
+ * a stream can only be added once.
+ *
  * @param f Stream to register.
  */
 void	__haj_oflAdd(struct FILE *f);

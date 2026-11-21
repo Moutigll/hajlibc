@@ -140,7 +140,8 @@ STAT_SRCS :=
 
 # stdio
 STDIO_SRCS := \
-	internal/lock.c
+	internal/lock.c \
+	internal/ofl.c
 
 # stdlib-
 STDLIB_SRCS := \

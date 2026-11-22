@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internal stream locks are inline wrappers that skip the call while
   the process is single-threaded; the trylock used by `fflush(NULL)`
   no longer sets `errno`
+- `exit` flushes every stream (step 4, after the `atexit` handlers
+  and the destructors), with a trylock so a stream held by another
+  thread is skipped instead of deadlocking; streams are synced, not
+  closed. `_exit` still does not flush
+- `fork` keeps stdio usable in the child: the open-file list lock is
+  held across the fork, and in the child the locks of the forking
+  thread are handed to the child's tid while those of the other
+  (vanished) threads are cleared. The stdio hooks run after the
+  user's `pthread_atfork` prepare handlers and before the child ones
 
 #### File status and terminals
 

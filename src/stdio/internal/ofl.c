@@ -10,7 +10,7 @@
  * @file ofl.c
  * @brief Global list of open FILE streams.
  * @Created: 2026/11/21 21:39:31 by Moutig
- * @Updated: 2026/11/21 22:05:04 by Moutig
+ * @Updated: 2026/11/23 00:05:17 by Moutig
  *
  * Every FILE opened through fopen/fdopen/freopen is registered here
  * so that fflush(NULL), exit and the pthread_atfork handler can walk
@@ -164,4 +164,18 @@ void	__haj_oflForeach(void (*cb)(struct FILE *, void *), void *arg, int trylock)
 		f = next;
 	}
 	__haj_oflUnlock();
+}
+
+void	__haj_oflAfterFork(int parentTid, int childTid)
+{
+	struct FILE	*f;
+
+	/* Single thread in the child: walk the list without its lock. */
+	f = gOflHead.next;
+	while (f != &gOflHead)
+	{
+		__haj_lockFileAfterFork(f, parentTid, childTid);
+		f = f->next;
+	}
+	gOflLock = 0;
 }

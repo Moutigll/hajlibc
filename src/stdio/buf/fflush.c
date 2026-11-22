@@ -34,19 +34,6 @@
 #include <stdio.h>
 
 /**
- * @brief Flush one stream; the caller holds its lock.
- *
- * @param f Stream.
- * @return 0 on success, -1 on error.
- */
-static int	hajFlushLocked(struct FILE *f)
-{
-	if (__haj_flushWrites(f) < 0)
-		return (-1);
-	return (__haj_dropRead(f));
-}
-
-/**
  * @brief __haj_oflForeach callback for fflush(NULL).
  *
  * @param f   Stream (locked by __haj_oflForeach).
@@ -54,7 +41,7 @@ static int	hajFlushLocked(struct FILE *f)
  */
 static void	hajFlushCb(struct FILE *f, void *arg)
 {
-	if (hajFlushLocked(f) < 0)
+	if (__haj_syncFile(f) < 0)
 		*(int *)arg = 1;
 }
 
@@ -69,7 +56,7 @@ static int	hajFlushOne(struct FILE *f)
 	int	r;
 
 	__haj_lockFile(f);
-	r = hajFlushLocked(f);
+	r = __haj_syncFile(f);
 	__haj_unlockFile(f);
 	return (r);
 }

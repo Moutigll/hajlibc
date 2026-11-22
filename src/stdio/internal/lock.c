@@ -10,7 +10,7 @@
  * @file lock.c
  * @brief Per-FILE recursive futex lock.
  * @Created: 2026/11/21 21:16:19 by Moutig
- * @Updated: 2026/11/21 21:41:08 by Moutig
+ * @Updated: 2026/11/23 00:05:15 by Moutig
  *
  * Implements the recursive lock carried inline in struct FILE
  * (fields lock and lockCount). The lock is owned by a thread id
@@ -143,5 +143,19 @@ void	__haj_unlockFileSlow(struct FILE *f)
 	{
 		__atomic_store_n(&f->lock, 0, __ATOMIC_RELEASE);
 		__haj_futexWakeOp((int *)&f->lock, 1, 0);
+	}
+}
+
+void	__haj_lockFileAfterFork(struct FILE *f, int parentTid, int childTid)
+{
+	/* Single thread in the child: plain accesses are enough. */
+	if (f->lock == 0)
+		return ;
+	if (f->lock == parentTid)
+		f->lock = childTid;
+	else
+	{
+		f->lock = 0;
+		f->lockCount = 0;
 	}
 }

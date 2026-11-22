@@ -10,7 +10,7 @@
  * @file stdioImpl.h
  * @brief Internal FILE structure, flags and private helpers.
  * @Created: 2026/11/21 20:26:40 by Moutig
- * @Updated: 2026/11/22 23:24:22 by Moutig
+ * @Updated: 2026/11/23 00:06:16 by Moutig
  *
  * Defines the concrete layout of struct FILE (opaque to user code),
  * the F_* state flags, and the __haj_* prototypes shared by the stdio
@@ -198,6 +198,19 @@ static void	__haj_unlockFile(struct FILE *f)
 		__haj_unlockFileSlow(f);
 }
 
+/**
+ * @brief Fix the lock of @p f in a fork child.
+ *
+ * A lock owned by the forking thread (@p parentTid) is handed to
+ * @p childTid with its recursion count; a lock owned by any other
+ * thread (gone in the child) is cleared.
+ *
+ * @param f         Stream.
+ * @param parentTid tid of the thread that called fork().
+ * @param childTid  tid of the child's only thread.
+ */
+void	__haj_lockFileAfterFork(struct FILE *f, int parentTid, int childTid);
+
 
 /* ----- Global open-file list ----- */
 
@@ -240,6 +253,17 @@ void	__haj_oflUnlock(void);
  * @param trylock Non-zero to use a trylock on the per-FILE lock.
  */
 void	__haj_oflForeach(void (*cb)(struct FILE *, void *), void *arg, int trylock);
+
+/**
+ * @brief Reset the open-file list lock and the lock of every listed
+ *        stream in a fork child (see __haj_lockFileAfterFork).
+ *
+ * Must only be called in the child, while it has a single thread.
+ *
+ * @param parentTid tid of the thread that called fork().
+ * @param childTid  tid of the child's only thread.
+ */
+void	__haj_oflAfterFork(int parentTid, int childTid);
 
 
 /* ----- Mode switching ----- */
@@ -365,6 +389,21 @@ int		__haj_flushWrites(struct FILE *f);
 int		__haj_dropRead(struct FILE *f);
 
 /**
+ * @brief Sync @p f with its descriptor: __haj_flushWrites, then
+ *        __haj_dropRead. Used by fflush and exit.
+ * @param f Stream (locked by the caller).
+ * @return 0 on success, -1 on error (F_ERR set).
+ */
+__HAJ_INLINE
+static int	__haj_syncFile(struct FILE *f)
+{
+	if (__haj_flushWrites(f) < 0)
+		return (-1);
+	return (__haj_dropRead(f));
+}
+
+
+/**
  * @brief Point both windows at the start of f->buf (empty buffer).
  * @param f Stream.
  */
@@ -428,16 +467,5 @@ static int	__haj_blockSize(struct FILE *f, size_t size,
 	*out = size * nmemb;
 	return (0);
 }
-
-
-/* ----- Exit hook ----- */
-
-/**
- * @brief Flush every open stream (without closing them).
- *
- * Called from exit() step 4. Uses trylock on the per-FILE locks so it
- * cannot deadlock against a thread that already holds one.
- */
-void	__haj_stdioExit(void);
 
 #endif /* _STDIO_IMPL_H */

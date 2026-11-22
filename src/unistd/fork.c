@@ -10,7 +10,7 @@
  * @file fork.c
  * @brief Implementation of fork().
  * @Created: 2026/10/01 08:39:40 by Moutig
- * @Updated: 2026/10/05 11:10:47 by Moutig
+ * @Updated: 2026/11/23 00:17:55 by Moutig
  *
  * fork() creates a new process that is a copy of the calling
  * process. The child gets a copy of the address space
@@ -26,11 +26,14 @@
  * control all the argument registers of the clone syscall.
  */
 
+#include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 #include <bits/syscall.h>
 #include <bits/os.h>
 #include <bits/thread/thread.h>
+
+#include "../stdio/internal/stdioImpl.h"
 
 #if defined(HAJ_OS_LINUX) && defined(HAJ_ARCH_AARCH64)
 
@@ -65,8 +68,12 @@ static pid_t hajForkAarch64(void)
 pid_t fork(void)
 {
 	pid_t	pid;
+	int		forkTid;
 
+	/* User prepare handlers first: they may still use stdio. */
 	__haj_atforkPrepare();
+	__haj_oflLock();
+	forkTid = __haj_gettid();
 
 #if defined(HAJ_OS_LINUX) && defined(HAJ_ARCH_AARCH64)
 	pid = hajForkAarch64();
@@ -75,6 +82,7 @@ pid_t fork(void)
 #endif
 
 	if (pid < 0) {
+		__haj_oflUnlock();
 		__haj_atforkParent();
 		errno = (int)-pid;
 		return (-1);
@@ -87,8 +95,17 @@ pid_t fork(void)
 #endif
 		tcb->tid = __haj_gettid();
 		__haj_threadListReset(tcb);
+
+		/* Reset the stdio locks before the user child handlers. */
+		__haj_lockFileAfterFork(stdin, forkTid, tcb->tid);
+		__haj_lockFileAfterFork(stdout, forkTid, tcb->tid);
+		__haj_lockFileAfterFork(stderr, forkTid, tcb->tid);
+		__haj_oflAfterFork(forkTid, tcb->tid);
+
 		__haj_atforkChild();
-	} else
+	} else {
+		__haj_oflUnlock();
 		__haj_atforkParent();
+	}
 	return (pid);
 }

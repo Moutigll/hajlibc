@@ -72,6 +72,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of waiting for a full buffer
 - `feof`, `ferror` and `clearerr` on the stream's end-of-file and
   error indicators
+- `fseek`, `fseeko`, `ftell`, `ftello`, `rewind`, `fgetpos` and
+  `fsetpos`: seeking flushes pending writes, drops the read window and
+  clears the end-of-file indicator on success (`rewind` also clears
+  the error indicator); `ftell` reports the logical position (kernel
+  offset minus unread bytes) and fails with `EOVERFLOW` past
+  `LONG_MAX`. A rejected seek (`ESPIPE`, `EINVAL`) does not set the
+  error indicator. `fpos_t` holds a plain `off_t` (byte-oriented
+  streams only)
+- `clearerr` takes the stream lock
 
 #### File status and terminals
 

@@ -10,7 +10,7 @@
  * @file stdioImpl.h
  * @brief Internal FILE structure, flags and private helpers.
  * @Created: 2026/11/21 20:26:40 by Moutig
- * @Updated: 2026/11/22 22:51:08 by Moutig
+ * @Updated: 2026/11/22 23:24:22 by Moutig
  *
  * Defines the concrete layout of struct FILE (opaque to user code),
  * the F_* state flags, and the __haj_* prototypes shared by the stdio
@@ -36,7 +36,7 @@
 /** End-of-file indicator (sticky until clearerr / rewind / fseek / ungetc). */
 # define F_EOF		0x0001u
 
-/** Error indicator (sticky until clearerr / rewind / fseek). */
+/** Error indicator (sticky until clearerr / rewind). */
 # define F_ERR		0x0002u
 
 /** Read is forbidden on this stream (opened write-only). */
@@ -317,7 +317,8 @@ int		__haj_dropRead(struct FILE *f);
  * @brief Point both windows at the start of f->buf (empty buffer).
  * @param f Stream.
  */
-static void __HAJ_INLINE __haj_resetWindows(struct FILE *f)
+__HAJ_INLINE
+static void __haj_resetWindows(struct FILE *f)
 {
 	f->rpos = f->buf;
 	f->rend = f->buf;
@@ -363,7 +364,8 @@ struct FILE	*__haj_newFdFile(int fd, int fdflags);
  * @param out   Output: total byte count.
  * @return 0 on success, -1 on overflow (errno = EOVERFLOW).
  */
-static __HAJ_INLINE int	__haj_blockSize(struct FILE *f, size_t size,
+__HAJ_INLINE
+static int	__haj_blockSize(struct FILE *f, size_t size,
 	size_t nmemb, size_t *out)
 {
 	if (nmemb > SIZE_MAX / size)

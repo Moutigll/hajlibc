@@ -16,9 +16,8 @@
  * not clear errno, does not touch the buffer, and does not change
  * the file position.
  *
- * The standard streams may have their indicators cleared at any
- * time; a non-standard stream that hit an error may need an
- * explicit fseek or clearerr before further I/O succeeds.
+ * The flags word is shared with the I/O paths, so the update is
+ * done under the stream lock.
  */
 
 #include "../internal/stdioImpl.h"
@@ -28,5 +27,7 @@ void	clearerr(FILE *f)
 {
 	if (f == NULL)
 		return ;
+	__haj_lockFile(f);
 	f->flags &= ~(F_EOF | F_ERR);
+	__haj_unlockFile(f);
 }

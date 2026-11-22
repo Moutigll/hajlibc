@@ -31,8 +31,8 @@
  * The write backend writes the full request or fails with F_ERR
  * set (see fdBackend.c), so no partial-write loop is needed here.
  *
- * On error, F_ERR is set. The flag is sticky until clearerr /
- * rewind / fseek.
+ * On error, F_ERR is set. The flag is sticky until clearerr or
+ * rewind.
  */
 
 #include "../internal/stdioImpl.h"

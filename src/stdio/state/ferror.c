@@ -14,8 +14,8 @@
  *
  * ferror() returns non-zero if the error indicator is set on the
  * stream. The indicator is set by any I/O operation that fails
- * (read, write, seek, close) and is cleared by clearerr() or a
- * successful fseek().
+ * (read, write, flush) and is cleared only by clearerr() and
+ * rewind(); a successful fseek() leaves it set.
  *
  * ferror() does not return the error code: the caller reads errno
  * for that, immediately after the failing operation.

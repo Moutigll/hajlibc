@@ -163,7 +163,14 @@ STDIO_SRCS := \
 	io/fwrite.c \
 	state/clearerr.c \
 	state/feof.c \
-	state/ferror.c
+	state/ferror.c \
+	seek/fseek.c \
+	seek/fseeko.c \
+	seek/ftell.c \
+	seek/ftello.c \
+	seek/rewind.c \
+	seek/fgetpos.c \
+	seek/fsetpos.c
 
 # stdlib-
 STDLIB_SRCS := \

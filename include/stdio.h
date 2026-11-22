@@ -10,7 +10,7 @@
  * @file stdio.h
  * @brief Standard I/O definitions.
  * @Created: 2026/10/03 15:57:41 by Moutig
- * @Updated: 2026/11/22 23:04:35 by Moutig
+ * @Updated: 2026/11/22 23:22:35 by Moutig
  *
  * Declares the FILE object and the types, macros and functions of the
  * C standard I/O library, as specified by ISO C11 and POSIX.1-2024.
@@ -53,7 +53,7 @@ extern FILE *stdout;	/**< Standard output stream. */
 extern FILE *stderr;	/**< Standard error stream. */
 
 
-/* --- Open / close -------------------------------------------------------- */
+/* ----- Open / close ----- */
 
 /**
  * @brief Open a file and return a stream.
@@ -95,7 +95,7 @@ int		fclose(FILE *f);
 int		fileno(FILE *f);
 
 
-/* --- Buffer management --------------------------------------------------- */
+/* ----- Buffer management ----- */
 
 /**
  * @brief Flush a stream (or every stream if @p f is NULL).
@@ -122,7 +122,7 @@ int		setvbuf(FILE *__HAJ_RESTRICT f, char *__HAJ_RESTRICT buf, int mode, size_t 
 void	setbuf(FILE *__HAJ_RESTRICT f, char *__HAJ_RESTRICT buf);
 
 
-/* --- I/O ----------------------------------------------------------------- */
+/* ----- I/O ----- */
 
 /**
  * @brief Read a block of data from a stream.
@@ -145,7 +145,7 @@ size_t	fread(void *__HAJ_RESTRICT ptr, size_t size, size_t nmemb, FILE *__HAJ_RE
 size_t	fwrite(const void *__HAJ_RESTRICT ptr, size_t size, size_t nmemb, FILE *__HAJ_RESTRICT f);
 
 
-/* --- Stream state -------------------------------------------------------- */
+/* ----- Stream state ----- */
 
 /**
  * @brief Test the end-of-file indicator of a stream.
@@ -166,6 +166,63 @@ int		ferror(FILE *f);
  * @param f Stream.
  */
 void	clearerr(FILE *f);
+
+
+/* ----- Positioning ----- */
+
+/**
+ * @brief Reposition a stream.
+ * @param f      Stream.
+ * @param offset Offset relative to @p whence.
+ * @param whence SEEK_SET, SEEK_CUR or SEEK_END.
+ * @return 0 on success, -1 on error (errno set).
+ */
+int		fseek(FILE *f, long offset, int whence);
+
+/**
+ * @brief Reposition a stream (off_t variant).
+ * @param f      Stream.
+ * @param offset Offset relative to @p whence.
+ * @param whence SEEK_SET, SEEK_CUR or SEEK_END.
+ * @return 0 on success, -1 on error (errno set).
+ */
+int		fseeko(FILE *f, off_t offset, int whence);
+
+/**
+ * @brief Return the current position of a stream.
+ * @param f Stream.
+ * @return The position, or -1 on error (errno set).
+ */
+long	ftell(FILE *f);
+
+/**
+ * @brief Return the current position of a stream (off_t variant).
+ * @param f Stream.
+ * @return The position, or -1 on error (errno set).
+ */
+off_t	ftello(FILE *f);
+
+/**
+ * @brief Rewind a stream to the beginning.
+ * @param f Stream.
+ */
+void	rewind(FILE *f);
+
+/**
+ * @brief Get the current position of a stream.
+ * @param f   Stream.
+ * @param pos Output: the position.
+ * @return 0 on success, -1 on error (errno set).
+ */
+int		fgetpos(FILE *__HAJ_RESTRICT f, fpos_t *__HAJ_RESTRICT pos);
+
+/**
+ * @brief Set the current position of a stream.
+ * @param f   Stream.
+ * @param pos Position obtained from fgetpos.
+ * @return 0 on success, -1 on error (errno set).
+ */
+int		fsetpos(FILE *f, const fpos_t *pos);
 
 /* ----- Formatted output ----- */
 

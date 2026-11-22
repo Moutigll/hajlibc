@@ -10,7 +10,7 @@
  * @file stdioImpl.h
  * @brief Internal FILE structure, flags and private helpers.
  * @Created: 2026/11/21 20:26:40 by Moutig
- * @Updated: 2026/11/21 23:48:18 by Moutig
+ * @Updated: 2026/11/22 04:04:31 by Moutig
  *
  * Defines the concrete layout of struct FILE (opaque to user code),
  * the F_* state flags, and the __haj_* prototypes shared by the stdio
@@ -272,6 +272,19 @@ int		__haj_fdClose(struct FILE *f);
  * @return 0 on success, -1 on invalid mode (errno = EINVAL).
  */
 int		__haj_modeToFlags(const char *mode, int *oflags, int *fdflags);
+
+/* ----- Buffer management ----- */
+
+/**
+ * @brief Allocate the read/write buffer of @p f.
+ *
+ * Does nothing if @p f already has a buffer. On success, f->buf,
+ * f->bufSize and F_MYBUF are set. On malloc failure, f->buf is
+ * NULL and f->bufSize is 0, which makes the stream unbuffered.
+ *
+ * @param f Stream to equip (must not be NULL).
+ */
+void	__haj_allocBuf(struct FILE *f);
 
 
 /* ----- Exit hook ----- */

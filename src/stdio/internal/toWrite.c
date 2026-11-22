@@ -14,7 +14,8 @@
  *
  * Mirror of toRead.c. If the stream is currently in read mode,
  * drops any unread bytes from the read buffer and repositions the
- * descriptor on the logical position, then clears F_NOWR.
+ * descriptor on the logical position. A stream opened read-only
+ * (F_NOWR) fails with EBADF and F_ERR set.
  *
  * Called by fwrite / fputc / fputs / puts / printf just before
  * they touch the write buffer.
@@ -29,12 +30,15 @@ int	__haj_toWrite(struct FILE *f)
 {
 	size_t	unread;
 
+	if (f->flags & F_NOWR)
+	{
+		f->flags |= F_ERR;
+		errno = EBADF;
+		return (-1);
+	}
 	/* Nothing to do if there is no pending read data. */
 	if (f->rpos == f->rend)
-	{
-		f->flags &= ~F_NOWR;
 		return (0);
-	}
 	unread = (size_t)(f->rend - f->rpos);
 	/*
 	 * Reposition the descriptor back by the number of unread
@@ -53,6 +57,5 @@ int	__haj_toWrite(struct FILE *f)
 		}
 	}
 	f->rpos = f->rend;
-	f->flags &= ~F_NOWR;
 	return (0);
 }

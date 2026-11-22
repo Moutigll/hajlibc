@@ -33,6 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `imaxabs` and `imaxdiv`
 
+#### Standard I/O (`src/stdio/`)
+
+- `fopen`, `fdopen`, `freopen`, `fclose` and `fileno`, on top of an
+  internal `struct FILE` with pluggable read / write / seek / close
+  backends (file-descriptor backend for now)
+- Mode strings `r`, `w`, `a` with the `+`, `b`, `x` (`O_EXCL`) and
+  `e` (`O_CLOEXEC`) modifiers; `a+` keeps `O_APPEND`
+- Buffer sized from `st_blksize` (`BUFSIZ` if `fstat` fails), allocated
+  on open; if `malloc` fails the stream is unbuffered instead of the
+  open failing. Terminals are line-buffered, other files fully buffered
+- Static `stdin` (line-buffered), `stdout` (line-buffered) and
+  `stderr` (unbuffered), usable before `malloc` runs; `fclose` on them
+  flushes but keeps the object, so `freopen` can reuse it
+- Thread safety: per-`FILE` recursive futex lock, skipped while the
+  program has a single thread, and a global open-file list for
+  `fflush(NULL)` and `exit`
+- `freopen` with a NULL path (mode change) fails with `EINVAL`
+
 #### File status and terminals
 
 - `fstat`, thin wrapper over the `fstat` syscall
@@ -58,7 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   length modifiers follow the types picked by `<bits/types.h>`
   (`int64_t` is `long` on LP64, `long long` otherwise)
 - `<stdlib.h>`: `strtol` and `strtoll` declarations
-- `<stdio.h>`: `fpos_t`, `EOF`, and the constants of `<bits/stdio.h>`
+- `<stdio.h>`: `fpos_t`, `EOF`, the constants of `<bits/stdio.h>`,
+  and the `fopen` / `fdopen` / `freopen` / `fclose` / `fileno`
+  declarations; `snprintf` and `fprintf` stay declared for their
+  existing callers but are not implemented yet
 - `<bits/stdio.h>`: internal header for the constants shared by
   `<stdio.h>` and `<unistd.h>`: `SEEK_SET` / `SEEK_CUR` / `SEEK_END`,
   `BUFSIZ`, `FILENAME_MAX`, `FOPEN_MAX`, `L_ctermid`, `L_tmpnam`,

@@ -141,13 +141,19 @@ STAT_SRCS := \
 
 # stdio
 STDIO_SRCS := \
-	internal/lock.c \
-	internal/ofl.c \
+	internal/bufAlloc.c \
 	internal/fdBackend.c \
+	internal/files.c \
+	internal/lock.c \
 	internal/modeFlags.c \
+	internal/ofl.c \
 	internal/toRead.c \
 	internal/toWrite.c \
-	internal/files.c
+	open/fclose.c \
+	open/fdopen.c \
+	open/fileno.c \
+	open/fopen.c \
+	open/freopen.c
 
 # stdlib-
 STDLIB_SRCS := \

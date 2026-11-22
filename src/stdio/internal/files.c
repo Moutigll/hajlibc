@@ -61,7 +61,7 @@ static unsigned char	gStdoutBuf[BUFSIZ];
  * @brief The stdin stream object.
  */
 static struct FILE	gStdin = {
-	.flags	= F_PERM | F_NORD | F_LBF,
+	.flags	= F_PERM | F_NOWR | F_LBF,
 	.rpos		= gStdinBuf,
 	.rend		= gStdinBuf,
 	.wpos		= NULL,
@@ -89,7 +89,7 @@ static struct FILE	gStdin = {
  * @brief The stdout stream object.
  */
 static struct FILE	gStdout = {
-	.flags		= F_PERM | F_NOWR | F_LBF,
+	.flags		= F_PERM | F_NORD | F_LBF,
 	.rpos		= NULL,
 	.rend		= NULL,
 	.wpos		= gStdoutBuf,
@@ -117,7 +117,7 @@ static struct FILE	gStdout = {
  * @brief The stderr stream object.
  */
 static struct FILE	gStderr = {
-	.flags		= F_PERM | F_NOWR | F_UNBUF,
+	.flags		= F_PERM | F_NORD | F_UNBUF,
 	.rpos		= NULL,
 	.rend		= NULL,
 	.wpos		= NULL,

@@ -18,7 +18,8 @@
  * switch: if the stream is currently in write mode, it flushes the
  * write buffer and repositions the descriptor on the logical
  * position, then drops any pending read buffer (there is none, by
- * construction) and clears the F_NORD flag.
+ * construction). A stream opened write-only (F_NORD) fails with
+ * EBADF and F_ERR set.
  *
  * The function is called by fread / fgetc / fgets / getline /
  * scanf just before they touch the read buffer, and by fseek /
@@ -34,12 +35,15 @@ int	__haj_toRead(struct FILE *f)
 	size_t	pending;
 	size_t	n;
 
+	if (f->flags & F_NORD)
+	{
+		f->flags |= F_ERR;
+		errno = EBADF;
+		return (-1);
+	}
 	/* Nothing to do if there is no pending write data. */
 	if (f->wpos == f->wbase)
-	{
-		f->flags &= ~F_NORD;
 		return (0);
-	}
 	/*
 	 * Flush the write buffer through the backend.
 	 */
@@ -81,6 +85,5 @@ int	__haj_toRead(struct FILE *f)
 			}
 		}
 	}
-	f->flags &= ~F_NORD;
 	return (0);
 }

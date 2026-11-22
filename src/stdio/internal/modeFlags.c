@@ -76,7 +76,8 @@ static int	hajBaseMode(int c, int *oflags, int *fdflags)
 /**
  * @brief Apply one modifier character to the mode.
  *
- *   '+' -> switch to O_RDWR, clear F_NORD and F_NOWR, drop O_APPEND
+ *   '+' -> switch to O_RDWR, clear F_NORD and F_NOWR (O_APPEND is
+ *          kept: "a+" reads anywhere but always writes at the end)
  *   'b' -> ignored (POSIX: no effect)
  *   'x' -> add O_EXCL (C11 exclusive create)
  *   'e' -> add O_CLOEXEC (POSIX.1-2024)
@@ -90,7 +91,7 @@ static int	hajModifier(int c, int *oflags, int *fdflags)
 {
 	if (c == '+')
 	{
-		*oflags = (*oflags & ~(O_RDONLY | O_WRONLY | O_APPEND))
+		*oflags = (*oflags & ~(O_RDONLY | O_WRONLY))
 			| O_RDWR;
 		*fdflags &= ~(F_NORD | F_NOWR);
 		return (0);

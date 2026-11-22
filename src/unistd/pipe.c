@@ -24,7 +24,7 @@
 int pipe(int pipefd[2]) {
 	long r;
 
-	r = __haj_syscall1(SYS_pipe2, (long)pipefd);
+	r = __haj_syscall2(SYS_pipe2, (long)pipefd, 0);
 	if (r < 0) {
 		errno = (int)-r;
 		return (-1);

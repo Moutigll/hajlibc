@@ -17,10 +17,12 @@
  * by fopen, fdopen and freopen; string and memory streams install
  * their own backends instead.
  *
- * The read and write backends loop on partial results and EINTR so
- * that the stdio layer above (fread / fwrite) can assume a single
- * call returns the full request or a definitive EOF / error. The
- * write backend never loops forever on a zero-byte write: a zero
+ * The read backend does a single read(2) (retried on EINTR): it may
+ * return less than requested, so a buffer refill on a tty or a pipe
+ * returns as soon as data is available; fread loops above it. The
+ * write backend loops on partial results and EINTR so that the stdio
+ * layer can assume a single call writes the full request or fails.
+ * It never loops forever on a zero-byte write: a zero
  * return is treated as an error, because write(2) only returns 0
  * when count is 0, and the stdio layer never calls it with 0.
  *
@@ -36,25 +38,17 @@
 
 size_t	__haj_fdRead(struct FILE *f, unsigned char *buf, size_t n)
 {
-	size_t	total;
 	ssize_t	r;
 
-	total = 0;
-	while (total < n)
+	do
+		r = read(f->fd, buf, n);
+	while (r < 0 && errno == EINTR);
+	if (r < 0)
 	{
-		r = read(f->fd, buf + total, n - total);
-		if (r < 0)
-		{
-			if (errno == EINTR)
-				continue ;
-			f->flags |= F_ERR;
-			return ((size_t)-1);
-		}
-		if (r == 0)
-			break ;
-		total += (size_t)r;
+		f->flags |= F_ERR;
+		return ((size_t)-1);
 	}
-	return (total);
+	return ((size_t)r);
 }
 
 size_t	__haj_fdWrite(struct FILE *f, const unsigned char *buf, size_t n)

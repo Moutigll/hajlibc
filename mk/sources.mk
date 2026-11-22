@@ -156,7 +156,9 @@ STDIO_SRCS := \
 	open/freopen.c \
 	buf/fflush.c \
 	buf/setvbuf.c \
-	buf/setbuf.c
+	buf/setbuf.c \
+	io/fread.c \
+	io/fwrite.c
 
 # stdlib-
 STDLIB_SRCS := \

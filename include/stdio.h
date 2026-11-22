@@ -10,7 +10,7 @@
  * @file stdio.h
  * @brief Standard I/O definitions.
  * @Created: 2026/10/03 15:57:41 by Moutig
- * @Updated: 2026/11/22 20:56:18 by Moutig
+ * @Updated: 2026/11/22 22:33:55 by Moutig
  *
  * Declares the FILE object and the types, macros and functions of the
  * C standard I/O library, as specified by ISO C11 and POSIX.1-2024.
@@ -120,6 +120,30 @@ int		setvbuf(FILE *__HAJ_RESTRICT f, char *__HAJ_RESTRICT buf, int mode, size_t 
  * @param buf Buffer to use, or NULL to disable buffering.
  */
 void	setbuf(FILE *__HAJ_RESTRICT f, char *__HAJ_RESTRICT buf);
+
+
+/* --- I/O ----------------------------------------------------------------- */
+
+/**
+ * @brief Read a block of data from a stream.
+ * @param ptr   Destination buffer.
+ * @param size  Size of one element.
+ * @param nmemb Number of elements to read.
+ * @param f     Stream to read from.
+ * @return Number of elements read.
+ */
+size_t	fread(void *__HAJ_RESTRICT ptr, size_t size, size_t nmemb, FILE *__HAJ_RESTRICT f);
+
+/**
+ * @brief Write a block of data to a stream.
+ * @param ptr   Source buffer.
+ * @param size  Size of one element.
+ * @param nmemb Number of elements to write.
+ * @param f     Stream to write to.
+ * @return Number of elements written.
+ */
+size_t	fwrite(const void *__HAJ_RESTRICT ptr, size_t size, size_t nmemb,
+			FILE *__HAJ_RESTRICT f);
 
 /* ----- Formatted output ----- */
 

@@ -61,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `malloc` failure leaves the stream untouched; a caller buffer of
   size 0 and a second `setvbuf` on the same stream fail with `EINVAL`
   (`freopen` re-allows it)
+- `fread` and `fwrite`, under the per-`FILE` lock: buffered bytes are
+  consumed first, requests at least as large as the buffer bypass it,
+  and unbuffered streams write through. Line-buffered streams flush
+  when the chunk just copied holds a newline. `fread` loops on short
+  reads and sets the EOF indicator on a zero read; a `size * nmemb`
+  overflow fails with `EOVERFLOW`
+- The fd read backend does a single `read(2)`, so a buffer refill on
+  a terminal or a pipe returns as soon as data is available instead
+  of waiting for a full buffer
 
 #### File status and terminals
 
@@ -110,6 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `pipe` passed no `flags` argument to `pipe2` (garbage in the second
+  register, random `EINVAL`)
 - `PRIdPTR`, `PRIiPTR`, `PRIuPTR`, `PRIxPTR` and `PRIXPTR` used the
   64-bit length modifier on 32-bit platforms, where `intptr_t` is an
   `int`

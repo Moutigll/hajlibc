@@ -10,7 +10,7 @@
  * @file stdio.h
  * @brief Standard I/O definitions.
  * @Created: 2026/10/03 15:57:41 by Moutig
- * @Updated: 2026/11/22 04:44:13 by Moutig
+ * @Updated: 2026/11/22 20:56:18 by Moutig
  *
  * Declares the FILE object and the types, macros and functions of the
  * C standard I/O library, as specified by ISO C11 and POSIX.1-2024.
@@ -61,7 +61,7 @@ extern FILE *stderr;	/**< Standard error stream. */
  * @param mode Mode string ("r", "w", "a", "r+", ...).
  * @return A new FILE on success, NULL on error (errno set).
  */
-FILE	*fopen(const char *restrict path, const char *restrict mode);
+FILE	*fopen(const char *__HAJ_RESTRICT path, const char *__HAJ_RESTRICT mode);
 
 /**
  * @brief Associate a stream with an existing file descriptor.
@@ -78,7 +78,7 @@ FILE	*fdopen(int fd, const char *mode);
  * @param f    Stream to reuse.
  * @return @p f on success, NULL on error (errno set).
  */
-FILE	*freopen(const char *restrict path, const char *restrict mode, FILE *restrict f);
+FILE	*freopen(const char *__HAJ_RESTRICT path, const char *__HAJ_RESTRICT mode, FILE *__HAJ_RESTRICT f);
 
 /**
  * @brief Close a stream.
@@ -94,6 +94,33 @@ int		fclose(FILE *f);
  */
 int		fileno(FILE *f);
 
+
+/* --- Buffer management --------------------------------------------------- */
+
+/**
+ * @brief Flush a stream (or every stream if @p f is NULL).
+ * @param f Stream to flush, or NULL to flush every open stream.
+ * @return 0 on success, EOF on error (errno set).
+ */
+int		fflush(FILE *f);
+
+/**
+ * @brief Set the buffering mode and buffer of a stream.
+ * @param f    Stream to configure.
+ * @param buf  Buffer to use, or NULL to let stdio allocate one.
+ * @param mode _IOFBF, _IOLBF or _IONBF.
+ * @param size Size of @p buf.
+ * @return 0 on success, -1 on error (errno set).
+ */
+int		setvbuf(FILE *__HAJ_RESTRICT f, char *__HAJ_RESTRICT buf, int mode, size_t size);
+
+/**
+ * @brief Set the buffer of a stream (legacy interface).
+ * @param f   Stream to configure.
+ * @param buf Buffer to use, or NULL to disable buffering.
+ */
+void	setbuf(FILE *__HAJ_RESTRICT f, char *__HAJ_RESTRICT buf);
+
 /* ----- Formatted output ----- */
 
 /*
@@ -101,8 +128,8 @@ int		fileno(FILE *f);
  * callers (psignal, assert, sysconf, __stack_chk_fail, ...) compile.
  * Not implemented yet.
  */
-int	snprintf(char *restrict str, size_t size, const char *restrict format, ...);
-int	fprintf(FILE *restrict stream, const char *restrict format, ...);
+int	snprintf(char *__HAJ_RESTRICT str, size_t size, const char *__HAJ_RESTRICT format, ...);
+int	fprintf(FILE *__HAJ_RESTRICT stream, const char *__HAJ_RESTRICT format, ...);
 
 
 #endif /* _STDIO_H */

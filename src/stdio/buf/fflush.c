@@ -1,0 +1,145 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Moutig <moutig-tan@proton.me>
+ *
+ * This file is part of hajlibc.
+ * See LICENSE for the full license text.
+ */
+
+/**
+ * @file fflush.c
+ * @brief Flush a stream's buffer.
+ * @Created: 2026/11/22 20:46:49 by Moutig
+ * @Updated: 2026/11/22 20:53:26 by Moutig
+ *
+ * fflush(f) flushes pending writes through the backend. For a
+ * seekable input stream, it also repositions the descriptor on
+ * the logical position (POSIX: "the file offset is set to the
+ * current position of the stream"), so that a subsequent read(2)
+ * by the caller sees the bytes the stream has not consumed.
+ *
+ * fflush(NULL) flushes stdin / stdout / stderr (never in the list,
+ * see fclose.c), then walks the global open-file list and flushes
+ * every stream. The list walk uses a trylock on each per-FILE lock
+ * so that a thread that already owns a stream does not deadlock
+ * against itself (POSIX does not require fflush(NULL) to block).
+ * It returns EOF if any stream failed.
+ *
+ * fflush on an output stream with no pending bytes is a no-op.
+ * fflush on an input stream with no read buffer is a no-op.
+ */
+
+#include "../internal/stdioImpl.h"
+
+#include <stdio.h>
+#include <errno.h>
+
+/**
+ * @brief Flush pending writes of @p f through its backend.
+ *
+ * @param f Stream.
+ * @return 0 on success, -1 on error (F_ERR set).
+ */
+static int	hajFlushWrites(struct FILE *f)
+{
+	size_t	n;
+
+	if (f->wpos == f->wbase)
+		return (0);
+	/* The backend either writes everything or fails with F_ERR set. */
+	n = f->write(f, f->wbase, (size_t)(f->wpos - f->wbase));
+	if (n == (size_t)-1)
+		return (-1);
+	f->wpos = f->wbase;
+	return (0);
+}
+
+/**
+ * @brief Reposition the descriptor of an input stream on the
+ *        logical position.
+ *
+ * After a read, [rpos, rend) contains bytes that have been read
+ * from the kernel but not consumed by the caller. POSIX requires
+ * fflush on a seekable input stream to rewind the descriptor by
+ * that amount, so that a subsequent read(2) sees those bytes.
+ *
+ * @param f Stream.
+ * @return 0 on success, -1 on error (ESPIPE is ignored).
+ */
+static int	hajFlushRead(struct FILE *f)
+{
+	off_t	unread;
+
+	if (f->rpos == f->rend)
+		return (0);
+	if (f->seek == NULL)
+		return (0); /* not seekable, nothing to do */
+	unread = (off_t)(f->rend - f->rpos);
+	if (f->seek(f, -unread, SEEK_CUR) == (off_t)-1)
+	{
+		if (errno == ESPIPE)
+			return (0); /* pipe or tty: nothing to do */
+		f->flags |= F_ERR;
+		return (-1);
+	}
+	f->rpos = f->rend;
+	return (0);
+}
+
+/**
+ * @brief Flush one stream; the caller holds its lock.
+ *
+ * @param f Stream.
+ * @return 0 on success, -1 on error.
+ */
+static int	hajFlushLocked(struct FILE *f)
+{
+	if (hajFlushWrites(f) < 0)
+		return (-1);
+	return (hajFlushRead(f));
+}
+
+/**
+ * @brief __haj_oflForeach callback for fflush(NULL).
+ *
+ * @param f   Stream (locked by __haj_oflForeach).
+ * @param arg int * error accumulator, set to 1 on failure.
+ */
+static void	hajFlushCb(struct FILE *f, void *arg)
+{
+	if (hajFlushLocked(f) < 0)
+		*(int *)arg = 1;
+}
+
+/**
+ * @brief Flush one stream under its lock.
+ *
+ * @param f Stream.
+ * @return 0 on success, -1 on error.
+ */
+static int	hajFlushOne(struct FILE *f)
+{
+	int	r;
+
+	__haj_lockFile(f);
+	r = hajFlushLocked(f);
+	__haj_unlockFile(f);
+	return (r);
+}
+
+int	fflush(FILE *f)
+{
+	int	err;
+
+	if (f != NULL)
+		return (hajFlushOne(f) < 0 ? EOF : 0);
+	err = 0;
+	if (hajFlushOne(stdin) < 0)
+		err = 1;
+	if (hajFlushOne(stdout) < 0)
+		err = 1;
+	if (hajFlushOne(stderr) < 0)
+		err = 1;
+	__haj_oflForeach(hajFlushCb, &err, 1);
+	return (err ? EOF : 0);
+}

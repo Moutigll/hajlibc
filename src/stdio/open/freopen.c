@@ -65,7 +65,8 @@ FILE	*freopen(const char *path, const char *mode, FILE *f)
 		f->close(f);
 	f->wpos = f->wbase;
 	f->rpos = f->rend;
-	f->flags &= ~(F_EOF | F_ERR | F_NORD | F_NOWR | F_APP | F_LBF | F_UNBUF);
+	f->flags &= ~(F_EOF | F_ERR | F_NORD | F_NOWR | F_APP | F_LBF | F_UNBUF
+		| F_SVB);
 	if (path == NULL)
 	{
 		/*

@@ -153,7 +153,10 @@ STDIO_SRCS := \
 	open/fdopen.c \
 	open/fileno.c \
 	open/fopen.c \
-	open/freopen.c
+	open/freopen.c \
+	buf/fflush.c \
+	buf/setvbuf.c \
+	buf/setbuf.c
 
 # stdlib-
 STDLIB_SRCS := \

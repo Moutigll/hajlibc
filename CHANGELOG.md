@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   program has a single thread, and a global open-file list for
   `fflush(NULL)` and `exit`
 - `freopen` with a NULL path (mode change) fails with `EINVAL`
+- `fflush`: writes pending output through the backend; on a seekable
+  input stream, rewinds the descriptor over the unread bytes so a
+  following `read(2)` sees them. `fflush(NULL)` flushes `stdin`,
+  `stdout` and `stderr`, then walks the open-file list with a trylock
+  on each stream, and returns `EOF` if any stream failed
+- `setvbuf` (`_IOFBF`, `_IOLBF`, `_IONBF`, caller buffer or a
+  stdio-allocated one, `BUFSIZ` when `size` is 0) and `setbuf` on top
+  of it. The new buffer is allocated before the old one is freed, so
+  a `malloc` failure leaves the stream untouched; a caller buffer of
+  size 0 and a second `setvbuf` on the same stream fail with `EINVAL`
+  (`freopen` re-allows it)
 
 #### File status and terminals
 

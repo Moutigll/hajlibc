@@ -170,7 +170,10 @@ STDIO_SRCS := \
 	seek/ftello.c \
 	seek/rewind.c \
 	seek/fgetpos.c \
-	seek/fsetpos.c
+	seek/fsetpos.c \
+	lock/flockfile.c \
+	lock/ftrylockfile.c \
+	lock/funlockfile.c
 
 # stdlib-
 STDLIB_SRCS := \

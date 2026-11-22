@@ -116,36 +116,87 @@ struct FILE
 /**
  * @brief Set to 1 by pthread_create() the first time a thread is spawned.
  *
- * While 0, __haj_lockFile / __haj_unlockFile are no-ops: a single-threaded
- * program never pays the futex cost.
+ * While 0, the inline __haj_lockFile / __haj_unlockFile wrappers are
+ * no-ops: a single-threaded program never pays the futex cost.
  */
 extern volatile int __haj_stdioThreaded;
 
 
-/* ----- Per-FILE recursive lock ----- */
+/* ----- Per-FILE recursive lock (lock.c) ----- */
 
 /**
- * @brief Acquire the recursive lock of @p f.
+ * @brief Acquire the recursive lock of @p f (always, even before
+ *        the first thread). Used by flockfile.
  * @param f Stream to lock.
  */
-void	__haj_lockFile(struct FILE *f);
+void	__haj_lockFileSlow(struct FILE *f);
 
 /**
- * @brief Try to acquire the recursive lock of @p f without blocking.
+ * @brief Try to acquire the recursive lock of @p f without blocking
+ *        (always, even before the first thread). Used by ftrylockfile.
  *
- * Returns 0 on success (the lock is held by the caller), -1 with
- * errno = EBUSY if another thread owns it.
+ * Does not touch errno.
  *
  * @param f Stream to lock.
- * @return 0 on success, -1 on failure.
+ * @return 0 on success (lock held by the caller), -1 if another
+ *         thread owns it.
  */
-int		__haj_tryLockFile(struct FILE *f);
+int		__haj_tryLockFileSlow(struct FILE *f);
 
 /**
- * @brief Release one level of the recursive lock of @p f.
+ * @brief Release one level of the recursive lock of @p f. Ignored
+ *        if the caller does not own it. Used by funlockfile.
  * @param f Stream to unlock.
  */
-void	__haj_unlockFile(struct FILE *f);
+void	__haj_unlockFileSlow(struct FILE *f);
+
+/**
+ * @brief Non-zero once the process has spawned a thread.
+ * @return The value of __haj_stdioThreaded (acquire load).
+ */
+__HAJ_INLINE
+static int	__haj_stdioIsThreaded(void)
+{
+	return (__atomic_load_n(&__haj_stdioThreaded, __ATOMIC_ACQUIRE));
+}
+
+/**
+ * @brief Acquire the lock of @p f; no-op (inline, no call) while the
+ *        process is single-threaded.
+ * @param f Stream to lock.
+ */
+__HAJ_INLINE
+static void	__haj_lockFile(struct FILE *f)
+{
+	if (__haj_stdioIsThreaded())
+		__haj_lockFileSlow(f);
+}
+
+/**
+ * @brief Try to acquire the lock of @p f; always succeeds while the
+ *        process is single-threaded. Does not touch errno.
+ * @param f Stream to lock.
+ * @return 0 on success, -1 if another thread owns it.
+ */
+__HAJ_INLINE
+static int	__haj_tryLockFile(struct FILE *f)
+{
+	if (!__haj_stdioIsThreaded())
+		return (0);
+	return (__haj_tryLockFileSlow(f));
+}
+
+/**
+ * @brief Release one level of the lock of @p f; no-op while the
+ *        process is single-threaded.
+ * @param f Stream to unlock.
+ */
+__HAJ_INLINE
+static void	__haj_unlockFile(struct FILE *f)
+{
+	if (__haj_stdioIsThreaded())
+		__haj_unlockFileSlow(f);
+}
 
 
 /* ----- Global open-file list ----- */

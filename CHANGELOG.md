@@ -81,6 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error indicator. `fpos_t` holds a plain `off_t` (byte-oriented
   streams only)
 - `clearerr` takes the stream lock
+- `flockfile`, `ftrylockfile` and `funlockfile` over the per-`FILE`
+  recursive lock. They always take the lock, even before the first
+  `pthread_create`, so a stream locked by the user stays locked for
+  threads created while it is held
+- Internal stream locks are inline wrappers that skip the call while
+  the process is single-threaded; the trylock used by `fflush(NULL)`
+  no longer sets `errno`
 
 #### File status and terminals
 

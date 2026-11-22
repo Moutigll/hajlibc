@@ -18,11 +18,19 @@
  * by the same thread, funlockfile() releases one level at a time,
  * and the lock is actually freed when lockCount drops to zero.
  *
- * While __haj_stdioThreaded is zero (no thread has ever been
- * created), both functions are no-ops: a single-threaded program
- * never pays the futex cost. pthread_create() sets the flag to one
- * before spawning the first thread, so every stream in the process
- * starts taking the lock from that point on.
+ * This file holds the slow paths, which always operate on the lock
+ * word. The internal entry points (__haj_lockFile, __haj_tryLockFile,
+ * __haj_unlockFile) are inline wrappers in stdioImpl.h that skip the
+ * call entirely while __haj_stdioThreaded is zero, so a single-
+ * threaded program never pays even the function call. pthread_create()
+ * sets the flag before spawning the first thread.
+ *
+ * The public flockfile / ftrylockfile / funlockfile call the slow
+ * paths directly: a stream locked by the user before the first
+ * pthread_create stays locked for the threads created afterwards.
+ * Mixing is safe: while the flag is zero the internal calls are
+ * no-ops, and once it is set they see the user's tid as owner and
+ * just recurse.
  *
  * The lock word is an int: 0 means free, any other value is the
  * tid of the owner. Contention waits on the same word through
@@ -31,7 +39,6 @@
 
 #include "stdioImpl.h"
 
-#include <errno.h>
 #include <bits/thread/futex.h>
 #include <bits/thread/thread.h>
 
@@ -45,13 +52,10 @@
  */
 volatile int	__haj_stdioThreaded = 0;
 
-void	__haj_lockFile(struct FILE *f)
+void	__haj_lockFileSlow(struct FILE *f)
 {
 	int	tid;
 	int	owner;
-
-	if (!__atomic_load_n(&__haj_stdioThreaded, __ATOMIC_ACQUIRE))
-		return ;
 
 	tid = __haj_gettid();
 	owner = __atomic_load_n(&f->lock, __ATOMIC_RELAXED);
@@ -85,13 +89,11 @@ void	__haj_lockFile(struct FILE *f)
 }
 
 
-int	__haj_tryLockFile(struct FILE *f)
+int	__haj_tryLockFileSlow(struct FILE *f)
 {
 	int	tid;
 	int	owner;
 
-	if (!__haj_stdioThreaded)
-		return (0);
 	tid = __haj_gettid();
 	owner = __atomic_load_n(&f->lock, __ATOMIC_RELAXED);
 	if (owner == 0)
@@ -109,7 +111,7 @@ int	__haj_tryLockFile(struct FILE *f)
 		f->lockCount++;
 		return (0);
 	}
-	errno = EBUSY;
+	/* No errno: fflush(NULL) and exit call this on every stream. */
 	return (-1);
 }
 
@@ -121,12 +123,9 @@ int	__haj_tryLockFile(struct FILE *f)
  *
  * @param f Stream to unlock (must not be NULL and owned by the caller).
  */
-void	__haj_unlockFile(struct FILE *f)
+void	__haj_unlockFileSlow(struct FILE *f)
 {
 	int	tid;
-
-	if (!__atomic_load_n(&__haj_stdioThreaded, __ATOMIC_ACQUIRE))
-		return ;
 
 	tid = __haj_gettid();
 	if (__atomic_load_n(&f->lock, __ATOMIC_RELAXED) != tid)

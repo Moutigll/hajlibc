@@ -10,7 +10,7 @@
  * @file stdio.h
  * @brief Standard I/O definitions.
  * @Created: 2026/10/03 15:57:41 by Moutig
- * @Updated: 2026/11/22 23:22:35 by Moutig
+ * @Updated: 2026/11/22 23:42:13 by Moutig
  *
  * Declares the FILE object and the types, macros and functions of the
  * C standard I/O library, as specified by ISO C11 and POSIX.1-2024.
@@ -223,6 +223,28 @@ int		fgetpos(FILE *__HAJ_RESTRICT f, fpos_t *__HAJ_RESTRICT pos);
  * @return 0 on success, -1 on error (errno set).
  */
 int		fsetpos(FILE *f, const fpos_t *pos);
+
+
+/* ----- Locking ----- */
+
+/**
+ * @brief Lock a stream for exclusive use.
+ * @param f Stream to lock.
+ */
+void	flockfile(FILE *f);
+
+/**
+ * @brief Try to lock a stream without blocking.
+ * @param f Stream to lock.
+ * @return 0 on success, non-zero on failure.
+ */
+int		ftrylockfile(FILE *f);
+
+/**
+ * @brief Release one level of the lock of a stream.
+ * @param f Stream to unlock.
+ */
+void	funlockfile(FILE *f);
 
 /* ----- Formatted output ----- */
 

@@ -10,7 +10,7 @@
  * @file toWrite.c
  * @brief Switch a stream to write mode.
  * @Created: 2026/11/21 23:47:26 by Moutig
- * @Updated: 2026/11/21 23:50:49 by Moutig
+ * @Updated: 2026/11/22 22:53:05 by Moutig
  *
  * Mirror of toRead.c. If the stream is currently in read mode,
  * drops any unread bytes from the read buffer and repositions the
@@ -28,34 +28,11 @@
 
 int	__haj_toWrite(struct FILE *f)
 {
-	size_t	unread;
-
 	if (f->flags & F_NOWR)
 	{
 		f->flags |= F_ERR;
 		errno = EBADF;
 		return (-1);
 	}
-	/* Nothing to do if there is no pending read data. */
-	if (f->rpos == f->rend)
-		return (0);
-	unread = (size_t)(f->rend - f->rpos);
-	/*
-	 * Reposition the descriptor back by the number of unread
-	 * bytes. If the backend is not seekable (pipe, tty), the
-	 * bytes are lost, which POSIX allows: "the file offset is
-	 * unspecified" after a read-then-write on an unseekable
-	 * update stream.
-	 */
-	if (f->seek != NULL)
-	{
-		if (f->seek(f, -(off_t)unread, SEEK_CUR) == (off_t)-1
-			&& errno != ESPIPE)
-		{
-			f->flags |= F_ERR;
-			return (-1);
-		}
-	}
-	f->rpos = f->rend;
-	return (0);
+	return (__haj_dropRead(f));
 }

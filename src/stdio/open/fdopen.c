@@ -10,7 +10,7 @@
  * @file fdopen.c
  * @brief Associate a stream with an existing file descriptor.
  * @Created: 2026/11/22 03:43:21 by Moutig
- * @Updated: 2026/11/22 04:08:50 by Moutig
+ * @Updated: 2026/11/22 22:53:36 by Moutig
  *
  * fdopen() wraps an existing descriptor into a FILE without
  * opening anything. The mode string must be compatible with the
@@ -26,17 +26,12 @@
 #include "../internal/stdioImpl.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <errno.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
 
 FILE	*fdopen(int fd, const char *mode)
 {
 	int		oflags;
 	int		fdflags;
-	struct FILE	*f;
 
 	if (fd < 0 || mode == NULL)
 	{
@@ -45,29 +40,5 @@ FILE	*fdopen(int fd, const char *mode)
 	}
 	if (__haj_modeToFlags(mode, &oflags, &fdflags) < 0)
 		return (NULL);
-	f = malloc(sizeof(*f));
-	if (f == NULL)
-		return (NULL);
-	memset(f, 0, sizeof(*f));
-	f->fd = fd;
-	f->flags = (unsigned)fdflags;
-	f->read = __haj_fdRead;
-	f->write = __haj_fdWrite;
-	f->seek = __haj_fdSeek;
-	f->close = __haj_fdClose;
-	__haj_allocBuf(f);
-	f->rpos = f->buf;
-	f->rend = f->buf;
-	f->wbase = f->buf;
-	f->wpos = f->buf;
-	f->wend = f->buf + f->bufSize;
-	if (isatty(fd))
-	{
-		f->flags |= F_LBF;
-		f->lbf = '\n';
-	}
-	else
-		f->lbf = -1;
-	__haj_oflAdd(f);
-	return (f);
+	return (__haj_newFdFile(fd, fdflags));
 }

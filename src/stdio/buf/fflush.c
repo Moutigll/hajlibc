@@ -10,7 +10,7 @@
  * @file fflush.c
  * @brief Flush a stream's buffer.
  * @Created: 2026/11/22 20:46:49 by Moutig
- * @Updated: 2026/11/22 20:53:26 by Moutig
+ * @Updated: 2026/11/22 22:49:45 by Moutig
  *
  * fflush(f) flushes pending writes through the backend. For a
  * seekable input stream, it also repositions the descriptor on
@@ -32,59 +32,6 @@
 #include "../internal/stdioImpl.h"
 
 #include <stdio.h>
-#include <errno.h>
-
-/**
- * @brief Flush pending writes of @p f through its backend.
- *
- * @param f Stream.
- * @return 0 on success, -1 on error (F_ERR set).
- */
-static int	hajFlushWrites(struct FILE *f)
-{
-	size_t	n;
-
-	if (f->wpos == f->wbase)
-		return (0);
-	/* The backend either writes everything or fails with F_ERR set. */
-	n = f->write(f, f->wbase, (size_t)(f->wpos - f->wbase));
-	if (n == (size_t)-1)
-		return (-1);
-	f->wpos = f->wbase;
-	return (0);
-}
-
-/**
- * @brief Reposition the descriptor of an input stream on the
- *        logical position.
- *
- * After a read, [rpos, rend) contains bytes that have been read
- * from the kernel but not consumed by the caller. POSIX requires
- * fflush on a seekable input stream to rewind the descriptor by
- * that amount, so that a subsequent read(2) sees those bytes.
- *
- * @param f Stream.
- * @return 0 on success, -1 on error (ESPIPE is ignored).
- */
-static int	hajFlushRead(struct FILE *f)
-{
-	off_t	unread;
-
-	if (f->rpos == f->rend)
-		return (0);
-	if (f->seek == NULL)
-		return (0); /* not seekable, nothing to do */
-	unread = (off_t)(f->rend - f->rpos);
-	if (f->seek(f, -unread, SEEK_CUR) == (off_t)-1)
-	{
-		if (errno == ESPIPE)
-			return (0); /* pipe or tty: nothing to do */
-		f->flags |= F_ERR;
-		return (-1);
-	}
-	f->rpos = f->rend;
-	return (0);
-}
 
 /**
  * @brief Flush one stream; the caller holds its lock.
@@ -94,9 +41,9 @@ static int	hajFlushRead(struct FILE *f)
  */
 static int	hajFlushLocked(struct FILE *f)
 {
-	if (hajFlushWrites(f) < 0)
+	if (__haj_flushWrites(f) < 0)
 		return (-1);
-	return (hajFlushRead(f));
+	return (__haj_dropRead(f));
 }
 
 /**

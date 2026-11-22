@@ -143,12 +143,14 @@ STAT_SRCS := \
 STDIO_SRCS := \
 	internal/bufAlloc.c \
 	internal/fdBackend.c \
+	internal/fdFile.c \
 	internal/files.c \
 	internal/lock.c \
 	internal/modeFlags.c \
 	internal/ofl.c \
 	internal/toRead.c \
 	internal/toWrite.c \
+	internal/window.c \
 	open/fclose.c \
 	open/fdopen.c \
 	open/fileno.c \

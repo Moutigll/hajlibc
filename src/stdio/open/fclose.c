@@ -10,7 +10,7 @@
  * @file fclose.c
  * @brief Close a stream.
  * @Created: 2026/11/22 03:43:51 by Moutig
- * @Updated: 2026/11/22 04:07:59 by Moutig
+ * @Updated: 2026/11/22 22:53:32 by Moutig
  *
  * fclose() flushes pending writes, closes the descriptor, frees
  * the buffer if it was allocated by stdio, and removes the stream
@@ -28,25 +28,6 @@
 #include <stdlib.h>
 #include <errno.h>
 
-/**
- * @brief Flush pending writes of @p f through its backend.
- *
- * @param f Stream.
- * @return 0 on success, -1 on error (F_ERR set).
- */
-static int	hajFlushWrites(struct FILE *f)
-{
-	size_t	n;
-
-	if (f->wpos == f->wbase)
-		return (0);
-	n = f->write(f, f->wbase, (size_t)(f->wpos - f->wbase));
-	if (n == (size_t)-1)
-		return (-1);
-	f->wpos = f->wbase;
-	return (0);
-}
-
 int	fclose(FILE *f)
 {
 	int	r;
@@ -63,7 +44,7 @@ int	fclose(FILE *f)
 		__haj_oflRemove(f);
 	__haj_lockFile(f);
 	r = 0;
-	if (hajFlushWrites(f) < 0)
+	if (__haj_flushWrites(f) < 0)
 		r = EOF;
 	if (f->flags & F_PERM)
 	{

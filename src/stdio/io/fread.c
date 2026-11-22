@@ -10,7 +10,7 @@
  * @file fread.c
  * @brief Read a block of data from a stream.
  * @Created: 2026/11/22 22:27:28 by Moutig
- * @Updated: 2026/11/22 22:30:25 by Moutig
+ * @Updated: 2026/11/22 22:53:21 by Moutig
  *
  * fread() copies @p nmemb * @p size bytes from the stream into
  * @p ptr. It returns the number of *elements* actually read (not
@@ -34,9 +34,7 @@
 #include "../internal/stdioImpl.h"
 
 #include <stdio.h>
-#include <errno.h>
 #include <string.h>
-#include <stdint.h>
 
 /**
  * @brief Copy bytes from the read window of @p f.
@@ -91,14 +89,9 @@ size_t	fread(void *ptr, size_t size, size_t nmemb, FILE *f)
 
 	if (f == NULL || ptr == NULL || size == 0 || nmemb == 0)
 		return (0);
-	if (nmemb > SIZE_MAX / size)
-	{
-		errno = EOVERFLOW;
-		f->flags |= F_ERR;
+	if (__haj_blockSize(f, size, nmemb, &request) < 0)
 		return (0);
-	}
 	dst = (unsigned char *)ptr;
-	request = size * nmemb;
 	__haj_lockFile(f);
 	if (__haj_toRead(f) < 0)
 	{

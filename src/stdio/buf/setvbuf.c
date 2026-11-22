@@ -10,7 +10,7 @@
  * @file setvbuf.c
  * @brief Set the buffering mode of a stream.
  * @Created: 2026/11/22 20:53:00 by Moutig
- * @Updated: 2026/11/22 21:00:09 by Moutig
+ * @Updated: 2026/11/22 22:50:00 by Moutig
  *
  * setvbuf() sets the buffering mode and, optionally, the buffer
  * itself. It must be called after fopen and before any I/O; a
@@ -91,11 +91,7 @@ int	setvbuf(FILE *f, char *buf, int mode, size_t size)
 	f->lbf = (mode == _IOLBF) ? '\n' : -1;
 	f->buf = newBuf;
 	f->bufSize = newSize;
-	f->rpos = f->buf;
-	f->rend = f->buf;
-	f->wbase = f->buf;
-	f->wpos = f->buf;
-	f->wend = f->buf + f->bufSize;
+	__haj_resetWindows(f);
 	__haj_unlockFile(f);
 	return (0);
 }

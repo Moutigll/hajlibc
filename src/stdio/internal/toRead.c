@@ -10,7 +10,7 @@
  * @file toRead.c
  * @brief Switch a stream to read mode.
  * @Created: 2026/11/21 23:44:37 by Moutig
- * @Updated: 2026/11/21 23:47:14 by Moutig
+ * @Updated: 2026/11/22 22:52:58 by Moutig
  *
  * POSIX requires a stream opened for update ("r+", "w+", "a+") to
  * alternate between read and write, with an fflush or a file
@@ -32,9 +32,6 @@
 
 int	__haj_toRead(struct FILE *f)
 {
-	size_t	pending;
-	size_t	n;
-
 	if (f->flags & F_NORD)
 	{
 		f->flags |= F_ERR;
@@ -44,24 +41,8 @@ int	__haj_toRead(struct FILE *f)
 	/* Nothing to do if there is no pending write data. */
 	if (f->wpos == f->wbase)
 		return (0);
-	/*
-	 * Flush the write buffer through the backend.
-	 */
-	pending = (size_t)(f->wpos - f->wbase);
-	n = f->write(f, f->wbase, pending);
-	if (n == (size_t)-1)
+	if (__haj_flushWrites(f) < 0)
 		return (-1);
-	/*
-	 * If the backend wrote less than requested, the stream is in
-	 * an unrecoverable state: F_ERR is already set, report it.
-	 */
-	if (n != pending)
-	{
-		errno = EIO;
-		f->flags |= F_ERR;
-		return (-1);
-	}
-	f->wpos = f->wbase;
 	/*
 	 * Reposition the descriptor on the logical position: the
 	 * write side advanced the kernel offset past the bytes we

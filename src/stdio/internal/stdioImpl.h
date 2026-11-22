@@ -10,7 +10,7 @@
  * @file stdioImpl.h
  * @brief Internal FILE structure, flags and private helpers.
  * @Created: 2026/11/21 20:26:40 by Moutig
- * @Updated: 2026/11/22 04:04:31 by Moutig
+ * @Updated: 2026/11/22 22:51:08 by Moutig
  *
  * Defines the concrete layout of struct FILE (opaque to user code),
  * the F_* state flags, and the __haj_* prototypes shared by the stdio
@@ -27,6 +27,8 @@
 # define _STDIO_IMPL_H
 
 # include <stddef.h>
+# include <stdint.h>
+# include <errno.h>
 # include <sys/types.h>
 
 /* ----- FILE state flags ----- */
@@ -285,6 +287,94 @@ int		__haj_modeToFlags(const char *mode, int *oflags, int *fdflags);
  * @param f Stream to equip (must not be NULL).
  */
 void	__haj_allocBuf(struct FILE *f);
+
+
+/* ----- Read / write windows (window.c) ----- */
+
+/**
+ * @brief Write the pending bytes [wbase, wpos) through the backend.
+ *
+ * On success wpos is reset to wbase. Does nothing if there is no
+ * pending byte.
+ *
+ * @param f Stream (locked by the caller).
+ * @return 0 on success, -1 on error (F_ERR set by the backend).
+ */
+int		__haj_flushWrites(struct FILE *f);
+
+/**
+ * @brief Discard the unread bytes [rpos, rend).
+ *
+ * Moves the descriptor back over them when the backend can seek
+ * (ESPIPE is ignored), then empties the read window.
+ *
+ * @param f Stream (locked by the caller).
+ * @return 0 on success, -1 on error (F_ERR set).
+ */
+int		__haj_dropRead(struct FILE *f);
+
+/**
+ * @brief Point both windows at the start of f->buf (empty buffer).
+ * @param f Stream.
+ */
+static void __HAJ_INLINE __haj_resetWindows(struct FILE *f)
+{
+	f->rpos = f->buf;
+	f->rend = f->buf;
+	f->wbase = f->buf;
+	f->wpos = f->buf;
+	f->wend = f->buf + f->bufSize;
+}
+
+
+/* ----- fd streams (fdFile.c) ----- */
+
+/**
+ * @brief Attach @p f to @p fd: fd backend, buffer, windows, and
+ *        line buffering on a terminal.
+ *
+ * The permission flags (F_NORD / F_NOWR / F_APP) are left to the
+ * caller.
+ *
+ * @param f  Stream.
+ * @param fd Open file descriptor.
+ */
+void	__haj_fdInit(struct FILE *f, int fd);
+
+/**
+ * @brief Allocate a FILE over @p fd and register it in the open-file
+ *        list.
+ *
+ * @param fd      Open file descriptor (not closed on failure).
+ * @param fdflags Initial FILE flags from __haj_modeToFlags.
+ * @return The new stream, or NULL if malloc failed.
+ */
+struct FILE	*__haj_newFdFile(int fd, int fdflags);
+
+
+/* ----- Block I/O size check ----- */
+
+/**
+ * @brief Compute size * nmemb for fread / fwrite, failing on overflow.
+ *
+ * @param f     Stream (F_ERR set on overflow).
+ * @param size  Element size (non-zero).
+ * @param nmemb Element count.
+ * @param out   Output: total byte count.
+ * @return 0 on success, -1 on overflow (errno = EOVERFLOW).
+ */
+static __HAJ_INLINE int	__haj_blockSize(struct FILE *f, size_t size,
+	size_t nmemb, size_t *out)
+{
+	if (nmemb > SIZE_MAX / size)
+	{
+		errno = EOVERFLOW;
+		f->flags |= F_ERR;
+		return (-1);
+	}
+	*out = size * nmemb;
+	return (0);
+}
 
 
 /* ----- Exit hook ----- */

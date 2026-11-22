@@ -10,7 +10,7 @@
  * @file fwrite.c
  * @brief Write a block of data to a stream.
  * @Created: 2026/11/22 22:31:27 by Moutig
- * @Updated: 2026/11/22 22:32:41 by Moutig
+ * @Updated: 2026/11/22 22:53:28 by Moutig
  *
  * fwrite() copies @p nmemb * @p size bytes from @p ptr to the
  * stream. It returns the number of *elements* actually written
@@ -38,28 +38,7 @@
 #include "../internal/stdioImpl.h"
 
 #include <stdio.h>
-#include <errno.h>
 #include <string.h>
-#include <stdint.h>
-
-/**
- * @brief Flush pending writes of @p f through the backend.
- *
- * @param f Stream.
- * @return 0 on success, -1 on error (F_ERR set).
- */
-static int	hajFlush(struct FILE *f)
-{
-	size_t	n;
-
-	if (f->wpos == f->wbase)
-		return (0);
-	n = f->write(f, f->wbase, (size_t)(f->wpos - f->wbase));
-	if (n == (size_t)-1)
-		return (-1);
-	f->wpos = f->wbase;
-	return (0);
-}
 
 /**
  * @brief Number of elements of @p request bytes really written when
@@ -94,14 +73,9 @@ size_t	fwrite(const void *ptr, size_t size, size_t nmemb, FILE *f)
 
 	if (f == NULL || ptr == NULL || size == 0 || nmemb == 0)
 		return (0);
-	if (nmemb > SIZE_MAX / size)
-	{
-		errno = EOVERFLOW;
-		f->flags |= F_ERR;
+	if (__haj_blockSize(f, size, nmemb, &request) < 0)
 		return (0);
-	}
 	src = (const unsigned char *)ptr;
-	request = size * nmemb;
 	__haj_lockFile(f);
 	if (__haj_toWrite(f) < 0)
 	{
@@ -114,7 +88,7 @@ size_t	fwrite(const void *ptr, size_t size, size_t nmemb, FILE *f)
 	 */
 	if ((f->flags & F_UNBUF) || request >= f->bufSize)
 	{
-		if (hajFlush(f) < 0 || f->write(f, src, request) == (size_t)-1)
+		if (__haj_flushWrites(f) < 0 || f->write(f, src, request) == (size_t)-1)
 		{
 			__haj_unlockFile(f);
 			return (0);
@@ -131,7 +105,7 @@ size_t	fwrite(const void *ptr, size_t size, size_t nmemb, FILE *f)
 	failed = 0;
 	while (!failed && done < request)
 	{
-		if (f->wpos == f->wend && hajFlush(f) < 0)
+		if (f->wpos == f->wend && __haj_flushWrites(f) < 0)
 		{
 			failed = 1;
 			break ;
@@ -144,7 +118,7 @@ size_t	fwrite(const void *ptr, size_t size, size_t nmemb, FILE *f)
 			&& memchr(f->wpos, f->lbf, take) != NULL;
 		f->wpos += take;
 		done += take;
-		if (lineHit && hajFlush(f) < 0)
+		if (lineHit && __haj_flushWrites(f) < 0)
 			failed = 1;
 	}
 	if (failed)

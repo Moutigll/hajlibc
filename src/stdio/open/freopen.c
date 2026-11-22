@@ -10,7 +10,7 @@
  * @file freopen.c
  * @brief Reopen a stream on a new file.
  * @Created: 2026/11/22 03:43:39 by Moutig
- * @Updated: 2026/11/22 04:40:12 by Moutig
+ * @Updated: 2026/11/22 22:53:49 by Moutig
  *
  * freopen() closes the descriptor of @p f, opens @p path with the
  * new mode, and reinitialises @p f in place. The FILE object is
@@ -28,11 +28,9 @@
 #include "../internal/stdioImpl.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/stat.h>
 
 FILE	*freopen(const char *path, const char *mode, FILE *f)
 {
@@ -52,15 +50,10 @@ FILE	*freopen(const char *path, const char *mode, FILE *f)
 	 * fclose() because that would free the FILE and remove it
 	 * from the global list; we want to keep both.
 	 */
-	if (f->write != NULL && f->wpos > f->wbase)
-	{
-		if (f->write(f, f->wbase, (size_t)(f->wpos - f->wbase))
-			== (size_t)-1)
-		{
-			/* Keep going: POSIX says freopen is not required to
-			 * preserve the old stream on failure. */
-		}
-	}
+	/* Keep going on error: POSIX does not require freopen to
+	 * preserve the old stream on failure. */
+	if (f->write != NULL)
+		(void)__haj_flushWrites(f);
 	if (f->close != NULL)
 		f->close(f);
 	f->wpos = f->wbase;
@@ -84,21 +77,8 @@ FILE	*freopen(const char *path, const char *mode, FILE *f)
 		f->flags |= F_ERR;
 		return (NULL);
 	}
-	f->fd = fd;
 	f->flags |= (unsigned)fdflags;
-	if (isatty(fd))
-	{
-		f->flags |= F_LBF;
-		f->lbf = '\n';
-	}
-	else
-		f->lbf = -1;
-	/* Reuse the buffer if it exists, otherwise allocate one. */
-	__haj_allocBuf(f);
-	f->rpos = f->buf;
-	f->rend = f->buf;
-	f->wbase = f->buf;
-	f->wpos = f->buf;
-	f->wend = f->buf + f->bufSize;
+	/* Reuses the buffer if it exists, otherwise allocates one. */
+	__haj_fdInit(f, fd);
 	return (f);
 }

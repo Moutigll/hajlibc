@@ -33,8 +33,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `imaxabs` and `imaxdiv`
 
+#### Standard I/O (`src/stdio/`)
+
+- `fopen`, `fdopen`, `freopen`, `fclose` and `fileno`, on top of an
+  internal `struct FILE` with pluggable read / write / seek / close
+  backends (file-descriptor backend for now)
+- Mode strings `r`, `w`, `a` with the `+`, `b`, `x` (`O_EXCL`) and
+  `e` (`O_CLOEXEC`) modifiers; `a+` keeps `O_APPEND`
+- Buffer sized from `st_blksize` (`BUFSIZ` if `fstat` fails), allocated
+  on open; if `malloc` fails the stream is unbuffered instead of the
+  open failing. Terminals are line-buffered, other files fully buffered
+- Static `stdin` (line-buffered), `stdout` (line-buffered) and
+  `stderr` (unbuffered), usable before `malloc` runs; `fclose` on them
+  flushes but keeps the object, so `freopen` can reuse it
+- Thread safety: per-`FILE` recursive futex lock, skipped while the
+  program has a single thread, and a global open-file list for
+  `fflush(NULL)` and `exit`
+- `freopen` with a NULL path (mode change) fails with `EINVAL`
+- `fflush`: writes pending output through the backend; on a seekable
+  input stream, rewinds the descriptor over the unread bytes so a
+  following `read(2)` sees them. `fflush(NULL)` flushes `stdin`,
+  `stdout` and `stderr`, then walks the open-file list with a trylock
+  on each stream, and returns `EOF` if any stream failed
+- `setvbuf` (`_IOFBF`, `_IOLBF`, `_IONBF`, caller buffer or a
+  stdio-allocated one, `BUFSIZ` when `size` is 0) and `setbuf` on top
+  of it. The new buffer is allocated before the old one is freed, so
+  a `malloc` failure leaves the stream untouched; a caller buffer of
+  size 0 and a second `setvbuf` on the same stream fail with `EINVAL`
+  (`freopen` re-allows it)
+- `fread` and `fwrite`, under the per-`FILE` lock: buffered bytes are
+  consumed first, requests at least as large as the buffer bypass it,
+  and unbuffered streams write through. Line-buffered streams flush
+  when the chunk just copied holds a newline. `fread` loops on short
+  reads and sets the EOF indicator on a zero read; a `size * nmemb`
+  overflow fails with `EOVERFLOW`
+- The fd read backend does a single `read(2)`, so a buffer refill on
+  a terminal or a pipe returns as soon as data is available instead
+  of waiting for a full buffer
+- `feof`, `ferror` and `clearerr` on the stream's end-of-file and
+  error indicators
+- `fseek`, `fseeko`, `ftell`, `ftello`, `rewind`, `fgetpos` and
+  `fsetpos`: seeking flushes pending writes, drops the read window and
+  clears the end-of-file indicator on success (`rewind` also clears
+  the error indicator); `ftell` reports the logical position (kernel
+  offset minus unread bytes) and fails with `EOVERFLOW` past
+  `LONG_MAX`. A rejected seek (`ESPIPE`, `EINVAL`) does not set the
+  error indicator. `fpos_t` holds a plain `off_t` (byte-oriented
+  streams only)
+- `clearerr` takes the stream lock
+- `flockfile`, `ftrylockfile` and `funlockfile` over the per-`FILE`
+  recursive lock. They always take the lock, even before the first
+  `pthread_create`, so a stream locked by the user stays locked for
+  threads created while it is held
+- Internal stream locks are inline wrappers that skip the call while
+  the process is single-threaded; the trylock used by `fflush(NULL)`
+  no longer sets `errno`
+- `exit` flushes every stream (step 4, after the `atexit` handlers
+  and the destructors), with a trylock so a stream held by another
+  thread is skipped instead of deadlocking; streams are synced, not
+  closed. `_exit` still does not flush
+- `fork` keeps stdio usable in the child: the open-file list lock is
+  held across the fork, and in the child the locks of the forking
+  thread are handed to the child's tid while those of the other
+  (vanished) threads are cleared. The stdio hooks run after the
+  user's `pthread_atfork` prepare handlers and before the child ones
+
+#### File status and terminals
+
+- `fstat`, thin wrapper over the `fstat` syscall
+- `isatty`: `TCGETS` on the descriptor, 1 on success, 0 with
+  `errno = ENOTTY` otherwise
+- `ioctl`, variadic, third argument passed as `unsigned long`
+
 #### Headers
 
+- `<sys/stat.h>`: `fstat` declaration; `<bits/stat.h>`: `struct stat`
+  matching the kernel layout of x86_64 and aarch64 (asm-generic),
+  `st_atim` / `st_mtim` / `st_ctim` with the `st_atime` / `st_mtime` /
+  `st_ctime` macros, the `S_IF*` type bits, the `S_IS*` tests and the
+  permission bits
+- `<termios.h>` and `<bits/termios.h>`: `struct termios` (kernel ABI)
+  and the `TCGETS` / `TCSETS` / `TCSETSW` / `TCSETSF` requests
+- `<sys/ioctl.h>`: `ioctl` declaration
+- `<unistd.h>`: `isatty` declaration
 - `<inttypes.h>`: `imaxdiv_t`, declarations of `imaxabs`, `imaxdiv`
   and `strtoimax`, and every printf / scanf format macro: `PRI*` and
   `SCN*` for `d i o u x` (plus `PRIX*`), for the exact-width (`8`,
@@ -42,9 +123,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   length modifiers follow the types picked by `<bits/types.h>`
   (`int64_t` is `long` on LP64, `long long` otherwise)
 - `<stdlib.h>`: `strtol` and `strtoll` declarations
+- `<stdio.h>`: `fpos_t`, `EOF`, the constants of `<bits/stdio.h>`,
+  and the `fopen` / `fdopen` / `freopen` / `fclose` / `fileno`
+  declarations; `snprintf` and `fprintf` stay declared for their
+  existing callers but are not implemented yet
+- `<bits/stdio.h>`: internal header for the constants shared by
+  `<stdio.h>` and `<unistd.h>`: `SEEK_SET` / `SEEK_CUR` / `SEEK_END`,
+  `BUFSIZ`, `FILENAME_MAX`, `FOPEN_MAX`, `L_ctermid`, `L_tmpnam`,
+  `TMP_MAX`, and the `_IOFBF` / `_IOLBF` / `_IONBF` buffering modes
 
 ### Changed
 
+- `<bits/types.h>`: `nlink_t` and `blksize_t` are 32 bits on aarch64,
+  matching the asm-generic `struct stat`; they stay 64 bits
+  on x86_64
 - License headers also cover `.inl` templates: the pre-commit hook
   and `scripts/header-update.sh` handle `.inl`, `make headers-add`
   handles `.hpp`, `.cpp` and `.inl`, and the VS Code on-save update
@@ -54,6 +146,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `pipe` passed no `flags` argument to `pipe2` (garbage in the second
+  register, random `EINVAL`)
 - `PRIdPTR`, `PRIiPTR`, `PRIuPTR`, `PRIxPTR` and `PRIXPTR` used the
   64-bit length modifier on 32-bit platforms, where `intptr_t` is an
   `int`

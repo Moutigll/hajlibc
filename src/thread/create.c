@@ -10,7 +10,7 @@
  * @file create.c
  * @brief Implementation of pthread_create().
  * @Created: 2026/10/01 10:27:30 by Moutig
- * @Updated: 2026/10/05 12:35:56 by Moutig
+ * @Updated: 2026/11/21 21:33:20 by Moutig
  *
  * pthread_create allocates a stack from the reuse pool, places
  * a TCB at the top of it, initializes the TCB with the start
@@ -31,6 +31,7 @@
  * Errors are returned as positive errno values, per POSIX.
  */
 
+#include "../stdio/internal/stdioImpl.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -156,6 +157,15 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 	 * listed; that function is idempotent and does nothing.
 	 */
 	__haj_threadListAdd(tcb);
+
+	/**
+	 * From this point on, a second thread may exist: switch the
+	 * stdio locks from the mono-thread fast path to the futex
+	 * path. The release store makes the flag visible to the new
+	 * thread before it starts running.
+	 * @see: stdio/internal/lock.c
+	 */
+	__atomic_store_n(&__haj_stdioThreaded, 1, __ATOMIC_RELEASE);
 
 	/*
 	 * Create the thread. __haj_clone dispatches between

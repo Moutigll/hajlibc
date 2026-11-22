@@ -136,10 +136,44 @@ STACK_CHK_SRCS := \
 	stack_chk_guard.c
 
 # stat
-STAT_SRCS :=
+STAT_SRCS := \
+	fstat.c
 
 # stdio
-STDIO_SRCS :=
+STDIO_SRCS := \
+	internal/bufAlloc.c \
+	internal/fdBackend.c \
+	internal/fdFile.c \
+	internal/files.c \
+	internal/lock.c \
+	internal/modeFlags.c \
+	internal/ofl.c \
+	internal/toRead.c \
+	internal/toWrite.c \
+	internal/window.c \
+	open/fclose.c \
+	open/fdopen.c \
+	open/fileno.c \
+	open/fopen.c \
+	open/freopen.c \
+	buf/fflush.c \
+	buf/setvbuf.c \
+	buf/setbuf.c \
+	io/fread.c \
+	io/fwrite.c \
+	state/clearerr.c \
+	state/feof.c \
+	state/ferror.c \
+	seek/fseek.c \
+	seek/fseeko.c \
+	seek/ftell.c \
+	seek/ftello.c \
+	seek/rewind.c \
+	seek/fgetpos.c \
+	seek/fsetpos.c \
+	lock/flockfile.c \
+	lock/ftrylockfile.c \
+	lock/funlockfile.c
 
 # stdlib-
 STDLIB_SRCS := \
@@ -223,6 +257,7 @@ SYS_SRCS := \
 	resource/priority.c \
 	resource/rlimit.c \
 	auxv.c \
+	ioctl.c \
 	getentropy.c \
 	getrandom.c \
 	prctl.c \
@@ -281,6 +316,7 @@ UNISTD_SRCS := \
 	getcwd.c \
 	getids.c \
 	getpagesize.c \
+	isatty.c \
 	lseek.c \
 	pipe.c \
 	read.c \

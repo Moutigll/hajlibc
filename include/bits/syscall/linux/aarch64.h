@@ -10,7 +10,7 @@
  * @file aarch64.h
  * @brief Syscall numbers for the aarch64 architecture.
  * @Created: 2026/09/24 15:06:42 by Moutig
- * @Updated: 2026/10/05 13:44:35 by Moutig
+ * @Updated: 2026/11/22 00:33:17 by Moutig
  *
  * Source: <asm-generic/unistd.h> from the Linux kernel.
  * aarch64 uses the generic syscall numbering. Many syscalls
@@ -49,6 +49,7 @@
 # define SYS_pwrite64			68
 # define SYS_readv				65
 # define SYS_writev				66
+# define SYS_fstat				80
 # define SYS_ioctl				29
 # define SYS_poll				7
 # define SYS_pselect6			72

@@ -10,7 +10,7 @@
  * @file stdio.h
  * @brief Standard I/O definitions.
  * @Created: 2026/10/03 15:57:41 by Moutig
- * @Updated: 2026/11/22 22:33:55 by Moutig
+ * @Updated: 2026/11/22 23:04:35 by Moutig
  *
  * Declares the FILE object and the types, macros and functions of the
  * C standard I/O library, as specified by ISO C11 and POSIX.1-2024.
@@ -142,8 +142,30 @@ size_t	fread(void *__HAJ_RESTRICT ptr, size_t size, size_t nmemb, FILE *__HAJ_RE
  * @param f     Stream to write to.
  * @return Number of elements written.
  */
-size_t	fwrite(const void *__HAJ_RESTRICT ptr, size_t size, size_t nmemb,
-			FILE *__HAJ_RESTRICT f);
+size_t	fwrite(const void *__HAJ_RESTRICT ptr, size_t size, size_t nmemb, FILE *__HAJ_RESTRICT f);
+
+
+/* --- Stream state -------------------------------------------------------- */
+
+/**
+ * @brief Test the end-of-file indicator of a stream.
+ * @param f Stream.
+ * @return Non-zero if the indicator is set, 0 otherwise.
+ */
+int		feof(FILE *f);
+
+/**
+ * @brief Test the error indicator of a stream.
+ * @param f Stream.
+ * @return Non-zero if the indicator is set, 0 otherwise.
+ */
+int		ferror(FILE *f);
+
+/**
+ * @brief Clear the end-of-file and error indicators of a stream.
+ * @param f Stream.
+ */
+void	clearerr(FILE *f);
 
 /* ----- Formatted output ----- */
 

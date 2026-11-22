@@ -70,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The fd read backend does a single `read(2)`, so a buffer refill on
   a terminal or a pipe returns as soon as data is available instead
   of waiting for a full buffer
+- `feof`, `ferror` and `clearerr` on the stream's end-of-file and
+  error indicators
 
 #### File status and terminals
 

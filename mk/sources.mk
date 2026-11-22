@@ -160,7 +160,10 @@ STDIO_SRCS := \
 	buf/setvbuf.c \
 	buf/setbuf.c \
 	io/fread.c \
-	io/fwrite.c
+	io/fwrite.c \
+	state/clearerr.c \
+	state/feof.c \
+	state/ferror.c
 
 # stdlib-
 STDLIB_SRCS := \

@@ -10,50 +10,34 @@
  * @file stpcpy.c
  * @brief C standard stpcpy implementation.
  * @Created: 2026/09/26 01:24:18 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/11/25 12:00:00 by Moutig
  *
  * Optimized word-at-a-time implementation. Aligns dest first,
  * then uses either an aligned loop (if src is also aligned) or
  * a "merge" loop (if src is unaligned), so that both reads and
  * writes are aligned. This mirrors glibc's stpcpy strategy.
  *
- * @TODO: use sysconf(_SC_PAGESIZE) instead of a hard-coded 4096
- * on platforms where the page size differs (some aarch64 systems
- * use 16 KiB or 64 KiB pages).
+ * Reads: an aligned word never crosses a page, and the next aligned
+ * word of src is only read once the current one is known to hold no
+ * NUL, so the string goes on into it: no read can fault.
+ * Writes: only words with no NUL are stored whole; the word holding
+ * the terminator is copied byte by byte, so nothing past the NUL in
+ * dest is modified.
  */
 
 #include <string.h>
 #include "../impl/wordOps.h"
 
-/** Default page size. On Linux x86_64 and most aarch64, it's 4 KiB. */
-#define __HAJ_PAGE_SIZE 4096U
-
 /**
- * @brief Check if a word read at `addr` is within the same page as `page_base`.
- * @param addr Pointer to the start of the word to read.
- * @param page_base Pointer to the base of the page (aligned to page size).
- * @return 1 if the word read at `addr` is within the same page as `page_base`, 0 otherwise.
+ * @brief Copy bytes from s to d up to and including the first NUL.
+ * @param d Destination.
+ * @param s Source.
+ * @return Pointer to the NUL written in d.
  */
-static inline int __hajWordInPage(const unsigned char *addr, const unsigned char *page_base)
+static inline char *__hajStpcpyBytes(unsigned char *d, const unsigned char *s)
 {
-	size_t offset = (size_t)(addr - page_base);
-
-	return (offset + sizeof(__hajULW_t) <= __HAJ_PAGE_SIZE);
-}
-
-/**
- * @brief Write a word to dest and return a pointer to the first NUL byte in that word.
- * @param d Pointer to the destination buffer (must be aligned).
- * @param w Word to write.
- * @return Pointer to the first NUL byte in the written word, or d + sizeof(__hajULW_t) if no NUL was found.
- */
-static inline char *__hajStpcpyByteTail(unsigned char *d, const unsigned char *s, size_t limit)
-{
-	while (limit--)
+	while ((*d = *s) != '\0')
 	{
-		*d = *s;
-		if (*s == '\0')
-			return ((char *)d);
 		d++;
 		s++;
 	}
@@ -61,104 +45,59 @@ static inline char *__hajStpcpyByteTail(unsigned char *d, const unsigned char *s
 }
 
 /**
- * @brief Write a word to dest and return a pointer to the first NUL byte in that word.
- * @param d Pointer to the destination buffer (must be aligned).
- * @param w Word to write.
- * @return Pointer to the first NUL byte in the written word, or d + sizeof(__hajULW_t) if no NUL was found.
- */
-static inline char *__hajStpcpyWriteWord(unsigned char *d, __hajWord_t word)
-{
-	__hajWord_t	mask = __hajHasZeroByte(word);
-	size_t		idx = __hajFirstZeroByteIndex(mask);
-
-	*(__hajULW_t *)d = word;
-	return ((char *)(d + idx));
-}
-
-/**
- * @brief Write a word to dest and return a pointer to the first NUL byte in that word.
- * @param d Pointer to the destination buffer (must be aligned).
- * @param w Word to write.
- * @return Pointer to the first NUL byte in the written word, or d + sizeof(__hajULW_t) if no NUL was found.
+ * @brief Word loop when dest and src are both aligned.
+ * @param d Destination (aligned).
+ * @param s Source (aligned).
+ * @return Pointer to the NUL written in d.
  */
 static inline char *__hajStpcpyAlignedLoop(unsigned char *d, const unsigned char *s)
 {
 	for (;;)
 	{
-		__hajWord_t w	= *(const __hajULW_t *)s;
-		__hajWord_t mask	= __hajHasZeroByte(w);
+		__hajWord_t w = *(const __hajULW_t *)s;
 
+		if (__hajHasZeroByte(w))
+			return (__hajStpcpyBytes(d, s));
 		*(__hajULW_t *)d = w;
-
-		if (mask)
-			return ((char *)(d + __hajFirstZeroByteIndex(mask)));
-
 		d += sizeof(__hajULW_t);
 		s += sizeof(__hajULW_t);
 	}
 }
 
 /**
- * @brief Copy bytes from src to dest, handling the case where src is unaligned.
- * @param d Pointer to the destination buffer (must be aligned).
- * @param s Pointer to the source buffer (may be unaligned).
- * @param ofs Offset of src from the previous aligned address.
- * @return Pointer to the first NUL byte in dest, or d + n if no NUL was found.
+ * @brief Word loop when dest is aligned and src is not.
+ *
+ * Each stored word is merged from the tail of the aligned source word
+ * w0 and the head of the next one w1; both are NUL-free before it is
+ * stored.
+ * @param d Destination (aligned).
+ * @param s Source, at offset ofs (1..sizeof(word)-1) from alignment.
+ * @param ofs Offset of s from the previous aligned address.
+ * @return Pointer to the NUL written in d.
  */
 static inline char *__hajStpcpyUnalignedLoop(unsigned char *d, const unsigned char *s, size_t ofs)
 {
-	const unsigned char *aligned = s - ofs;
-	const unsigned char *page_base = (const unsigned char *)((size_t)aligned & ~((size_t)__HAJ_PAGE_SIZE - 1));
+	const unsigned char	*aligned = s - ofs;
+	const size_t		sh_1 = ofs * 8;
+	const size_t		sh_2 = sizeof(__hajULW_t) * 8 - sh_1;
+	__hajWord_t			w0;
+	__hajWord_t			w1;
 
-	size_t sh_1 = ofs * 8;
-	size_t sh_2 = sizeof(__hajULW_t) * 8 - sh_1;
+	/* The source bytes of the first aligned word, before reading on. */
+	for (size_t i = ofs; i < sizeof(__hajULW_t); i++)
+		if (aligned[i] == '\0')
+			return (__hajStpcpyBytes(d, s));
 
-	__hajWord_t w0 = *(const __hajULW_t *)aligned;
-	__hajWord_t w1;
-	__hajWord_t w;
-
+	w0 = *(const __hajULW_t *)aligned;
 	for (;;)
 	{
-		const unsigned char *next = aligned + sizeof(__hajULW_t);
-
-		/*
-		 * Check that reading a word at `next` is safe (same page).
-		 * If not, fall back to byte-by-byte for the rest.
-		 */
-		if (!__hajWordInPage(next, page_base))
-		{
-			/* Flush the pending word w0 to dest first, if it has no NUL. */
-			if (__hajHasZeroByte(w0))
-				return (__hajStpcpyWriteWord(d, w0));
-
-			*(__hajULW_t *)d = w0;
-			d += sizeof(__hajULW_t);
-
-			/*
-			 * Byte-by-byte from `next` (which is the start of the
-			 * next aligned word, i.e. past the current one).
-			 * The remaining bytes are at most sizeof(word) - ofs.
-			 */
-			return (__hajStpcpyByteTail(d, next,
-										 sizeof(__hajULW_t)));
-		}
-
-		w1 = *(const __hajULW_t *)next;
-		w = __hajMergeBytes(w0, sh_1, w1, sh_2);
-
-		if (__hajHasZeroByte(w))
-			return (__hajStpcpyWriteWord(d, w));
-
-		*(__hajULW_t *)d = w;
-		d += sizeof(__hajULW_t);
-
+		w1 = *(const __hajULW_t *)(aligned + sizeof(__hajULW_t));
 		if (__hajHasZeroByte(w1))
-		{
-			/* The NUL is in the next merged word. */
-			w = __hajMergeBytes(w1, sh_1, (__hajWord_t)0, sh_2);
-			return (__hajStpcpyWriteWord(d, w));
-		}
+			return (__hajStpcpyBytes(d, s));
 
+		*(__hajULW_t *)d = __hajMergeBytes(w0, sh_1, w1, sh_2);
+		d += sizeof(__hajULW_t);
+		s += sizeof(__hajULW_t);
 		aligned += sizeof(__hajULW_t);
 		w0 = w1;
 	}

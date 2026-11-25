@@ -10,9 +10,12 @@
  * @file memrchr.c
  * @brief GNU memrchr: find the last occurrence of a byte.
  * @Created: 2026/09/25 22:34:12 by Moutig
- * @Updated: 2026/09/30 09:20:16 by Moutig
+ * @Updated: 2026/11/25 12:00:00 by Moutig
  *
  * Searches backwards. Word-at-a-time for the aligned middle part.
+ * The zero-byte mask is only exact for the lowest zero byte (a borrow
+ * can flag the byte above a match), so a word with a candidate is
+ * scanned byte by byte from its end.
  */
 
 #include <string.h>
@@ -41,30 +44,30 @@ void *memrchr(const void *s, int c, size_t n)
 	/* --- Step 2: word-at-a-time, backwards. --- */
 	if (n >= sizeof(__hajULW_t))
 	{
-		__hajULW_t splat = __hajSplatByte(v);
+		__hajWord_t splat = __hajSplatByte(v);
 
 		while (n >= sizeof(__hajULW_t))
 		{
 			p -= sizeof(__hajULW_t);
 			n -= sizeof(__hajULW_t);
 
-			__hajULW_t w = *(const __hajULW_t *)p;
-			__hajULW_t mask = __hajHasZeroByte(w ^ splat);
+			__hajWord_t w = *(const __hajULW_t *)p;
+			__hajWord_t mask = __hajHasZeroByte(w ^ splat);
 
 			if (mask)
 			{
-				size_t idx = __hajLastZeroByteIndex(mask);
-				return ((void *)(p + idx));
+				for (size_t i = sizeof(__hajULW_t); i--; )
+					if (p[i] == v)
+						return ((void *)(p + i));
 			}
 		}
 	}
 
-	/* --- Step 3: remaining bytes at the beginning. --- */
-	while (n)
+	/* --- Step 3: remaining bytes at the beginning, below p. --- */
+	while (n--)
 	{
-		n--;
-		if (p[n] == v)
-			return ((void *)(p + n));
+		if (*--p == v)
+			return ((void *)p);
 	}
 
 	return (NULL);

@@ -170,6 +170,15 @@ typedef __haj_u64 __haj_nlink;
  */
 typedef __haj_size __HAJ_UNALIGNED_WORD __hajULW_t;
 
+/**
+ * __hajWord_t: a machine word with natural alignment.
+ * Use it for word values passed to or returned from functions.
+ * __hajULW_t is only for accessing memory through a pointer: an
+ * under-aligned scalar passed by value crashes GCC on aarch64
+ * (ICE in aarch64_function_arg_alignment when not inlined, e.g. -O0).
+ */
+typedef __haj_size __hajWord_t;
+
 
 /* ----- Public types ----- */
 

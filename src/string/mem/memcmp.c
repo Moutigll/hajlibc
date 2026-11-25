@@ -21,11 +21,11 @@
 #include <string.h>
 
 
-static inline int __hajMemcmpWord(__hajULW_t w1, __hajULW_t w2,
+static inline int __hajMemcmpWord(__hajWord_t w1, __hajWord_t w2,
 								   const unsigned char *p1,
 								   const unsigned char *p2)
 {
-	__hajULW_t	diff = w1 ^ w2;
+	__hajWord_t	diff = w1 ^ w2;
 	size_t					idx;
 
 #if defined(__HAJ_LITTLE_ENDIAN)
@@ -72,8 +72,8 @@ int memcmp(const void *s1, const void *s2, size_t n)
 	/* --- Step 2: word-at-a-time. --- */
 	while (n >= sizeof(__hajULW_t))
 	{
-		__hajULW_t w1 = *(const __hajULW_t *)p1;
-		__hajULW_t w2 = *(const __hajULW_t *)p2;
+		__hajWord_t w1 = *(const __hajULW_t *)p1;
+		__hajWord_t w2 = *(const __hajULW_t *)p2;
 
 		if (w1 != w2)
 			return (__hajMemcmpWord(w1, w2, p1, p2));

@@ -41,15 +41,15 @@ void *memrchr(const void *s, int c, size_t n)
 	/* --- Step 2: word-at-a-time, backwards. --- */
 	if (n >= sizeof(__hajULW_t))
 	{
-		__hajULW_t splat = __hajSplatByte(v);
+		__hajWord_t splat = __hajSplatByte(v);
 
 		while (n >= sizeof(__hajULW_t))
 		{
 			p -= sizeof(__hajULW_t);
 			n -= sizeof(__hajULW_t);
 
-			__hajULW_t w = *(const __hajULW_t *)p;
-			__hajULW_t mask = __hajHasZeroByte(w ^ splat);
+			__hajWord_t w = *(const __hajULW_t *)p;
+			__hajWord_t mask = __hajHasZeroByte(w ^ splat);
 
 			if (mask)
 			{

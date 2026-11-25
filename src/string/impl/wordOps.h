@@ -31,9 +31,9 @@
  * @param c The byte to splat.
  * @return The word with the byte splatted.
  */
-static inline __hajULW_t __hajSplatByte(unsigned char c)
+static inline __hajWord_t __hajSplatByte(unsigned char c)
 {
-	__hajULW_t w = (__hajULW_t)c;
+	__hajWord_t w = (__hajWord_t)c;
 	w |= w << 8;
 	w |= w << 16;
 # if __HAJ_WORDSIZE == 64
@@ -49,11 +49,11 @@ static inline __hajULW_t __hajSplatByte(unsigned char c)
  * @param w The word to check.
  * @return Non-zero if the word contains a zero byte, otherwise zero.
  */
-static inline __hajULW_t __hajHasZeroByte(__hajULW_t w)
+static inline __hajWord_t __hajHasZeroByte(__hajWord_t w)
 {
-	return ((w - (__hajULW_t)0x0101010101010101ULL)
+	return ((w - (__hajWord_t)0x0101010101010101ULL)
 			& ~w
-			& (__hajULW_t)0x8080808080808080ULL);
+			& (__hajWord_t)0x8080808080808080ULL);
 }
 
 /**
@@ -63,7 +63,7 @@ static inline __hajULW_t __hajHasZeroByte(__hajULW_t w)
  * @param w The word to check.
  * @return The index of the first zero byte, or sizeof(word) if no zero byte is found.
  */
-static inline size_t __hajFirstZeroByteIndex(__hajULW_t w)
+static inline size_t __hajFirstZeroByteIndex(__hajWord_t w)
 {
 #if defined(__HAJ_LITTLE_ENDIAN)
 	return ((size_t)__builtin_ctzll((unsigned long long)w) / 8);
@@ -78,11 +78,11 @@ static inline size_t __hajFirstZeroByteIndex(__hajULW_t w)
  * Returns a word with the high bit (0x80) set for every byte that is
  * non-zero. Inverse of __hajHasZeroByte.
  */
-static inline __hajULW_t __hajHasNonZeroByte(__hajULW_t w)
+static inline __hajWord_t __hajHasNonZeroByte(__hajWord_t w)
 {
 	return (((w | (w >> 1) | (w >> 2) | (w >> 3)
 			  | (w >> 4) | (w >> 5) | (w >> 6) | (w >> 7))
-			  & (__hajULW_t)0x0101010101010101ULL)
+			  & (__hajWord_t)0x0101010101010101ULL)
 			  * 0xFF);
 }
 
@@ -93,10 +93,10 @@ static inline __hajULW_t __hajHasNonZeroByte(__hajULW_t w)
  * @param w The word to check.
  * @return The index of the last zero byte, or sizeof(word) if no zero byte is found.
  */
-static inline size_t __hajLastZeroByteIndex(__hajULW_t mask)
+static inline size_t __hajLastZeroByteIndex(__hajWord_t mask)
 {
 #if defined(__HAJ_LITTLE_ENDIAN)
-	return (sizeof(__hajULW_t) - 1
+	return (sizeof(__hajWord_t) - 1
 			- (size_t)__builtin_clzll((unsigned long long)mask) / 8);
 #elif defined(__HAJ_BIG_ENDIAN)
 	return ((size_t)__builtin_ctzll((unsigned long long)mask) / 8);
@@ -112,12 +112,12 @@ static inline size_t __hajLastZeroByteIndex(__hajULW_t mask)
  * @param w2 The second word to compare.
  * @return The index of the first differing or zero byte, or sizeof(word) if no such byte is found.
  */
-static inline size_t __hajFirstDiffOrZero(__hajULW_t w1, __hajULW_t w2)
+static inline size_t __hajFirstDiffOrZero(__hajWord_t w1, __hajWord_t w2)
 {
-	__hajULW_t z1 = __hajHasZeroByte(w1);
-	__hajULW_t z2 = __hajHasZeroByte(w2);
-	__hajULW_t d = __hajHasNonZeroByte(w1 ^ w2);
-	__hajULW_t mask = z1 | z2 | d;
+	__hajWord_t z1 = __hajHasZeroByte(w1);
+	__hajWord_t z2 = __hajHasZeroByte(w2);
+	__hajWord_t d = __hajHasNonZeroByte(w1 ^ w2);
+	__hajWord_t mask = z1 | z2 | d;
 
 #if defined(__HAJ_LITTLE_ENDIAN)
 	return ((size_t)__builtin_ctzll((unsigned long long)mask) / 8);
@@ -137,8 +137,8 @@ static inline size_t __hajFirstDiffOrZero(__hajULW_t w1, __hajULW_t w2)
  * @param sh_2 The number of bits to shift the second word left.
  * @return The merged word.
  */
-static inline __hajULW_t __hajMergeBytes(__hajULW_t w0, size_t sh_1,
-										 __hajULW_t w1, size_t sh_2)
+static inline __hajWord_t __hajMergeBytes(__hajWord_t w0, size_t sh_1,
+										 __hajWord_t w1, size_t sh_2)
 {
 #if defined(__HAJ_LITTLE_ENDIAN)
 	return ((w0 >> sh_1) | (w1 << sh_2));

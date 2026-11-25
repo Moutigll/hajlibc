@@ -41,8 +41,8 @@ size_t strlen(const char *s)
 	/* --- Step 2: word-at-a-time. --- */
 	for (;;)
 	{
-		__hajULW_t w = *(const __hajULW_t *)p;
-		__hajULW_t mask = __hajHasZeroByte(w);
+		__hajWord_t w = *(const __hajULW_t *)p;
+		__hajWord_t mask = __hajHasZeroByte(w);
 
 		if (mask)
 		{

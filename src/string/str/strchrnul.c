@@ -37,12 +37,12 @@ char *__strchrnul(const char *s, int c)
 
 	/* --- Step 2: word-at-a-time. --- */
 	{
-		__hajULW_t splat = __hajSplatByte(v);
+		__hajWord_t splat = __hajSplatByte(v);
 
 		for (;;)
 		{
-			__hajULW_t w	= *(const __hajULW_t *)p;
-			__hajULW_t mask	= __hajHasZeroByte(w) | __hajHasZeroByte(w ^ splat);
+			__hajWord_t w	= *(const __hajULW_t *)p;
+			__hajWord_t mask	= __hajHasZeroByte(w) | __hajHasZeroByte(w ^ splat);
 
 			if (mask)
 			{

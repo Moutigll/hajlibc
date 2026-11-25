@@ -41,8 +41,8 @@ size_t strnlen(const char *s, size_t maxlen)
 	/* --- Step 2: word-at-a-time while a full word is available. --- */
 	while (n >= sizeof(__hajULW_t))
 	{
-		__hajULW_t w = *(const __hajULW_t *)p;
-		__hajULW_t mask = __hajHasZeroByte(w);
+		__hajWord_t w = *(const __hajULW_t *)p;
+		__hajWord_t mask = __hajHasZeroByte(w);
 
 		if (mask)
 		{

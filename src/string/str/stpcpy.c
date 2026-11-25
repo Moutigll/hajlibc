@@ -66,9 +66,9 @@ static inline char *__hajStpcpyByteTail(unsigned char *d, const unsigned char *s
  * @param w Word to write.
  * @return Pointer to the first NUL byte in the written word, or d + sizeof(__hajULW_t) if no NUL was found.
  */
-static inline char *__hajStpcpyWriteWord(unsigned char *d, __hajULW_t word)
+static inline char *__hajStpcpyWriteWord(unsigned char *d, __hajWord_t word)
 {
-	__hajULW_t	mask = __hajHasZeroByte(word);
+	__hajWord_t	mask = __hajHasZeroByte(word);
 	size_t		idx = __hajFirstZeroByteIndex(mask);
 
 	*(__hajULW_t *)d = word;
@@ -85,8 +85,8 @@ static inline char *__hajStpcpyAlignedLoop(unsigned char *d, const unsigned char
 {
 	for (;;)
 	{
-		__hajULW_t w	= *(const __hajULW_t *)s;
-		__hajULW_t mask	= __hajHasZeroByte(w);
+		__hajWord_t w	= *(const __hajULW_t *)s;
+		__hajWord_t mask	= __hajHasZeroByte(w);
 
 		*(__hajULW_t *)d = w;
 
@@ -113,9 +113,9 @@ static inline char *__hajStpcpyUnalignedLoop(unsigned char *d, const unsigned ch
 	size_t sh_1 = ofs * 8;
 	size_t sh_2 = sizeof(__hajULW_t) * 8 - sh_1;
 
-	__hajULW_t w0 = *(const __hajULW_t *)aligned;
-	__hajULW_t w1;
-	__hajULW_t w;
+	__hajWord_t w0 = *(const __hajULW_t *)aligned;
+	__hajWord_t w1;
+	__hajWord_t w;
 
 	for (;;)
 	{
@@ -155,7 +155,7 @@ static inline char *__hajStpcpyUnalignedLoop(unsigned char *d, const unsigned ch
 		if (__hajHasZeroByte(w1))
 		{
 			/* The NUL is in the next merged word. */
-			w = __hajMergeBytes(w1, sh_1, (__hajULW_t)0, sh_2);
+			w = __hajMergeBytes(w1, sh_1, (__hajWord_t)0, sh_2);
 			return (__hajStpcpyWriteWord(d, w));
 		}
 

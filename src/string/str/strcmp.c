@@ -45,12 +45,12 @@ int strcmp(const char *s1, const char *s2)
 	/* Word-at-a-time. */
 	for (;;)
 	{
-		__hajULW_t w1 = *(const __hajULW_t *)p1;
-		__hajULW_t w2 = *(const __hajULW_t *)p2;
+		__hajWord_t w1 = *(const __hajULW_t *)p1;
+		__hajWord_t w2 = *(const __hajULW_t *)p2;
 
-		__hajULW_t z1 = __hajHasZeroByte(w1);
-		__hajULW_t z2 = __hajHasZeroByte(w2);
-		__hajULW_t d = __hajHasZeroByte(w1 ^ w2);
+		__hajWord_t z1 = __hajHasZeroByte(w1);
+		__hajWord_t z2 = __hajHasZeroByte(w2);
+		__hajWord_t d = __hajHasZeroByte(w1 ^ w2);
 
 		if (z1 | z2 | d)
 		{
